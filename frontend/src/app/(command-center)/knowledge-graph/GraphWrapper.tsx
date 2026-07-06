@@ -9,7 +9,7 @@ interface GraphWrapperProps {
 }
 
 export default function GraphWrapper({ data, onNodeClick }: GraphWrapperProps) {
-  const fgRef = useRef<any>();
+  const fgRef = useRef<any>(null);
 
   // Optional: Auto-fit graph on load
   useEffect(() => {

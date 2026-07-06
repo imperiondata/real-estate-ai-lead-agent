@@ -10,6 +10,7 @@ import GlobalFilters from './GlobalFilters'
 import ExportReport from './ExportReport'
 import TooltipInfo from './TooltipInfo'
 import OnboardingWalkthrough from './OnboardingWalkthrough'
+import PriorityAlertCard from './PriorityAlertCard'
 
 type Props = {
   searchParams: Promise<{ [key: string]: string | string[] | undefined }>
@@ -221,16 +222,7 @@ export default async function DashboardPage(props: Props) {
               </p>
               <div className="space-y-3">
                 {priorityLeads.map(l => (
-                  <Link href={`/crm?leadId=${l.id}`} key={l.id} className="bg-white dark:bg-zinc-950/50 border border-slate-200 dark:border-white/5 p-3 rounded-xl flex justify-between items-center shadow-sm hover:border-emerald-300 dark:hover:border-emerald-500/50 transition-colors group">
-                    <div className="min-w-0 flex-1 pr-4">
-                      <div className="flex items-center gap-2 mb-1">
-                        <p className="text-sm font-medium text-slate-900 dark:text-white truncate">{l.name || l.phone}</p>
-                        <span className="px-2 py-0.5 bg-emerald-100 dark:bg-emerald-500/20 text-emerald-600 dark:text-emerald-400 text-[10px] rounded-full font-bold uppercase whitespace-nowrap">Call Now</span>
-                      </div>
-                      <p className="text-xs text-slate-500 dark:text-zinc-400 truncate">{l.budget || 'Budget unknown'} • {l.location || 'Unknown loc'}</p>
-                    </div>
-                    <ArrowUpRight className="w-4 h-4 text-slate-400 group-hover:text-emerald-500 transition-colors flex-shrink-0" />
-                  </Link>
+                  <PriorityAlertCard key={l.id} lead={l} />
                 ))}
                 {priorityLeads.length === 0 && <p className="text-slate-500 dark:text-zinc-500 text-sm">No critical alerts currently.</p>}
               </div>

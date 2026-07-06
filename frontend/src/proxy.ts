@@ -10,7 +10,6 @@ export default function middleware(request: NextRequest) {
     return NextResponse.next();
   }
   // -------------------------------------------------
-
   // Extract the JWT securely from HttpOnly cookie
   const token = request.cookies.get('jwt')?.value;
 

@@ -996,36 +996,37 @@ async def process_chat(session_id: str, user_message: str, db: DBSession, client
                 action_type=f"assigned_to_{lead.assigned_agent.replace(' ', '_').lower()}",
                 agent_type="System"
             ))
-
-        # --- FIX: SYNCHRONIZE FUNNEL STAGE WITH EVENT LOGS ---
-        is_fully_qualified_now = bool(
-            lead.visit_date and lead.phone and lead.name and lead.location and lead.budget and lead.property_type
-        )
-
-        if is_fully_qualified_now:
-            if lead.funnel_stage not in ["Site Visit Done", "Closed Won"]:
-                lead.funnel_stage = "Appointment Scheduled"
-        elif has_core:
-            if lead.funnel_stage == "New":
-                lead.funnel_stage = "Contacted"
-
-        if f_state:
-            lead.followup_stage = f_state.follow_up_stage
-
-        # =================================================================
-        # UNIVERSAL QUALIFICATION OVERRIDE (Fires closing template safely)
-        # =================================================================
-        if is_fully_qualified_now and not was_fully_qualified_initial:
-            loc = lead.location
-            vdate = lead.visit_date
-            final_text = f"Fantastic! Everything is set for your visit to {loc} on {vdate}. Our team will be in touch to confirm. Looking forward to seeing you! 🏡"
-
-            session.status = "closed"
-            if f_state:
-                f_state.follow_up_status = "completed"
-                f_state.next_follow_up_at = None
-
         db.commit()
+
+    # --- SYNCHRONIZE FUNNEL STAGE WITH EVENT LOGS (MOVED OUTSIDE AGENT ASSIGNMENT) ---
+    is_fully_qualified_now = bool(
+        lead.visit_date and lead.phone and lead.name and lead.location and lead.budget and lead.property_type
+    )
+
+    if is_fully_qualified_now:
+        if lead.funnel_stage not in ["Site Visit Done", "Closed Won"]:
+            lead.funnel_stage = "Appointment Scheduled"
+    elif has_core:
+        if lead.funnel_stage == "New":
+            lead.funnel_stage = "Contacted"
+
+    if f_state:
+        lead.followup_stage = f_state.follow_up_stage
+
+    # =================================================================
+    # UNIVERSAL QUALIFICATION OVERRIDE (Fires closing template safely)
+    # =================================================================
+    if is_fully_qualified_now and not initial_was_fully_qualified:
+        loc = lead.location
+        vdate = lead.visit_date
+        final_text = f"Fantastic! Everything is set for your visit to {loc} on {vdate}. Our team will be in touch to confirm. Looking forward to seeing you! 🏡"
+
+        session.status = "closed"
+        if f_state:
+            f_state.follow_up_status = "completed"
+            f_state.next_follow_up_at = None
+
+    db.commit()
 
     if lead.score == "High" and not lead.visit_date and session.status != "closed":
         # We rely on the LLM to naturally propose a visit if the context feels right.

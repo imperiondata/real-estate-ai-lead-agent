@@ -118,7 +118,7 @@ export default function KanbanBoard({ initialLeads }: { initialLeads: Lead[] }) 
               onDrop={(e) => handleDrop(e, col.name)}
             >
               {col.items.map((lead: Lead) => {
-                const isClaimed = claimedLeadIds.has(lead.id)
+                const isClaimed = claimedLeadIds.has(lead.id) || lead.conversion_status === 'claimed'
                 return (
                   <div 
                     key={lead.id} 

@@ -535,9 +535,10 @@ async def portals_webhook(payload: dict, current_client: models.Client = Depends
 @app.post("/api/v1/notifications/acknowledge")
 def acknowledge_notification(lead_id: int, current_client: models.Client = Depends(auth.get_current_client),
                              db: DBSession = Depends(get_db)):
-    """Allows human agents to clear the Priority Alert from the dashboard."""
-    from models import NotificationLog
-    # Strict tenant isolation
+    """Allows human agents to clear the Priority Alert from the dashboard and claim the lead."""
+    from models import NotificationLog, Lead
+    
+    # 1. Clear the Escalation Timer
     log = db.query(NotificationLog).filter(
         NotificationLog.lead_id == lead_id,
         NotificationLog.client_id == current_client.id,
@@ -546,9 +547,14 @@ def acknowledge_notification(lead_id: int, current_client: models.Client = Depen
 
     if log:
         log.status = "acknowledged"
-        db.commit()
-        return {"status": "success", "message": "Alert acknowledged and escalation canceled."}
-    return {"status": "ignored", "message": "No pending alerts found."}
+
+    # 2. Mark the Lead as Claimed so the Frontend button stays hidden permanently
+    lead = db.query(Lead).filter(Lead.id == lead_id, Lead.client_id == current_client.id).first()
+    if lead and lead.conversion_status != "claimed":
+        lead.conversion_status = "claimed"
+        
+    db.commit()
+    return {"status": "success", "message": "Lead successfully claimed and alert acknowledged."}
 
 @app.post("/api/v1/whatsapp")
 async def whatsapp_webhook(

@@ -185,6 +185,17 @@ def escalation_cron_job():
 
                 log.status = "escalated_30m"
 
+            # --- NOTIFICATION DELIVERY FAILURE HANDLER ---
+            failed_notifs = db.query(NotificationLog).filter(
+                NotificationLog.status == "failed",
+                NotificationLog.sent_at <= now - timedelta(minutes=5)
+            ).all()
+            for log in failed_notifs:
+                tenant_id_ctx.set(f"Client_{log.client_id}")
+                logger.error(f"⚠️ NOTIFICATION DELIVERY FAILED: Lead {log.lead_id}, agent {log.assigned_agent}")
+                send_critical_alert("Notification Delivery Failure",
+                    f"Lead {log.lead_id} failed to deliver to {log.assigned_agent}.")
+
             db.commit()
         except Exception as e:
             logger.error(f"Escalation job failed: {e}")
@@ -212,7 +223,7 @@ app = FastAPI(
 )
 
 # TLS Enforcement (Redirect HTTP to HTTPS)
-if os.getenv("RENDER") or os.getenv("PRODUCTION"):
+if settings.IS_PRODUCTION or os.getenv("RENDER"):
     app.add_middleware(HTTPSRedirectMiddleware)
 
 # CORS configuration to allow local Dashboard frontend to access API
@@ -220,7 +231,7 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=[
         "http://localhost:3000",
-        "https://real-estate-ai-lead-agent-5q20tzn22.vercel.app" # Your actual Vercel domain from layout.tsx
+        os.getenv("FRONTEND_URL", "https://real-estate-ai-lead-agent-5q20tzn22.vercel.app")
     ],
     allow_credentials=True,
     allow_methods=["*"],
@@ -390,7 +401,8 @@ async def background_process_and_push(session_id: str, Body: str, client_id: int
                     target_endpoint="twilio_outbound",
                     payload=payload_dlq,
                     error_trace=str(fallback_err),
-                    status="pending"
+                    status="pending",
+                    client_id=client_id
                 )
                 db.add(dlq_entry)
                 db.commit()

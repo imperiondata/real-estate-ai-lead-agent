@@ -23,8 +23,12 @@ export default function KanbanBoard({ initialLeads }: { initialLeads: Lead[] }) 
   // Group leads strictly by their current funnel stage
   const columns = STAGES.map(stage => ({
     name: stage,
-    items: leads.filter((l: Lead) => (l.funnel_stage === stage) || (stage === "New" && !STAGES.includes(l.funnel_stage)))
+    items: leads.filter((l: Lead) => l.funnel_stage === stage)
   }))
+  columns.push({
+    name: "Other",
+    items: leads.filter((l: Lead) => !STAGES.includes(l.funnel_stage))
+  })
 
   const handleDragStart = (e: React.DragEvent, leadId: number) => {
     e.dataTransfer.effectAllowed = 'move'
@@ -56,8 +60,10 @@ export default function KanbanBoard({ initialLeads }: { initialLeads: Lead[] }) 
     } catch (error) {
       console.error('Failed to update lead stage:', error)
       setToast({ message: 'Failed to update stage. Please try again.', type: 'error' })
-      // Revert if failed
-      setLeads(initialLeads)
+      // Revert only the failed lead, not all changes
+      setLeads(prev => prev.map(l =>
+        l.id === leadId ? { ...l, funnel_stage: leadToMove.funnel_stage } : l
+      ))
     }
   }
 

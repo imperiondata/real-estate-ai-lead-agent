@@ -419,7 +419,7 @@ def check_and_send_followups():
                 try:
                     # DLQ TEST HOOK: set FOLLOW_UP_DLQ_TEST=true in .env (alongside TEST_MODE)
                     # to force a DLQ entry. Check dlq_events table, then remove it from .env.
-                    if settings.FOLLOW_UP_TEST_MODE and settings.FOLLOW_UP_DLQ_TEST:
+                    if not settings.IS_PRODUCTION and settings.FOLLOW_UP_TEST_MODE and settings.FOLLOW_UP_DLQ_TEST:
                         raise Exception("QA_DLQ_TEST — intentional failure to verify DLQ pipeline")
 
                     # Day 7 is the final stage — send a closure notice, not another follow-up.
@@ -488,7 +488,6 @@ def check_and_send_followups():
                         raise ValueError("ML Engine returned an empty message payload.")
 
                     # Dispatch
-                    success = False
                     success = False
                     followup_latency_ms = None
 

@@ -25,7 +25,7 @@ class Settings(BaseSettings):
     NGROK_AUTHTOKEN: str = ""
 
     # Database Settings
-    DATABASE_URL: str = "sqlite:///./real_estate_agent.db"
+    DATABASE_URL: str = ""
     REDIS_URL: str = "redis://localhost:6379/0"
 
     # Model configuration — gemini-3.1-flash-lite is the current test model.

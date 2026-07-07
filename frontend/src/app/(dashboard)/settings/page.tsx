@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { User, Building2, SlidersHorizontal, Bell, Save, Check } from 'lucide-react'
 
 const TABS = [
@@ -85,6 +85,25 @@ export default function SettingsPage() {
   const [newLeadNotif, setNewLeadNotif] = usePersistentState('settings_newLeadNotif', true)
   const [weeklyReport, setWeeklyReport] = usePersistentState('settings_weeklyReport', false)
 
+  // Fetch settings from backend on mount
+  useEffect(() => {
+    fetch('/api/v1/settings', { credentials: 'include' })
+      .then(res => res.ok ? res.json() : null)
+      .then(data => {
+        if (data?.settings) {
+          if (data.settings.displayName) setDisplayName(data.settings.displayName)
+          if (data.settings.company) setCompany(data.settings.company)
+          if (data.settings.defaultView) setDefaultView(data.settings.defaultView)
+          if (data.settings.leadsPerPage) setLeadsPerPage(data.settings.leadsPerPage)
+          if (typeof data.settings.emailDigest === 'boolean') setEmailDigest(data.settings.emailDigest)
+          if (typeof data.settings.whatsappAlerts === 'boolean') setWhatsappAlerts(data.settings.whatsappAlerts)
+          if (typeof data.settings.newLeadNotif === 'boolean') setNewLeadNotif(data.settings.newLeadNotif)
+          if (typeof data.settings.weeklyReport === 'boolean') setWeeklyReport(data.settings.weeklyReport)
+        }
+      })
+      .catch(() => {})  // Silently fall back to localStorage
+  }, [])
+
   const handleSave = () => {
     // Persist all current state values to localStorage
     localStorage.setItem('settings_displayName', JSON.stringify(displayName))
@@ -95,6 +114,19 @@ export default function SettingsPage() {
     localStorage.setItem('settings_whatsappAlerts', JSON.stringify(whatsappAlerts))
     localStorage.setItem('settings_newLeadNotif', JSON.stringify(newLeadNotif))
     localStorage.setItem('settings_weeklyReport', JSON.stringify(weeklyReport))
+
+    // Sync to backend
+    fetch('/api/v1/settings', {
+      method: 'PATCH',
+      credentials: 'include',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        settings: {
+          displayName, company, defaultView, leadsPerPage,
+          emailDigest, whatsappAlerts, newLeadNotif, weeklyReport
+        }
+      })
+    }).catch(() => {})
 
     setSaved(true)
     setTimeout(() => setSaved(false), 2500)

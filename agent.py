@@ -895,22 +895,21 @@ async def process_chat(session_id: str, user_message: str, db: DBSession, client
         })
 
     # --- FIX 1: Calculate advanced lead score outside the loop or with proper check ---
-    if True: # Ensure it runs even if past_messages is empty
-        # 1. Calculate advanced lead score
-        # Map Gemini's database intent strings to the scoring engine's expected weights
-        _raw_intent = (lead.intent or "").lower()
-        if _raw_intent in ("buy", "invest", "investment"):
-            _scoring_intent = "high"
-        elif _raw_intent in ("rent", "lease", "buy/rent", "buy or rent"):
-            _scoring_intent = "medium"
-        else:
-            _scoring_intent = "low"
+    # 1. Calculate advanced lead score
+    # Map Gemini's database intent strings to the scoring engine's expected weights
+    _raw_intent = (lead.intent or "").lower()
+    if _raw_intent in ("buy", "invest", "investment"):
+        _scoring_intent = "high"
+    elif _raw_intent in ("rent", "lease", "buy/rent", "buy or rent"):
+        _scoring_intent = "medium"
+    else:
+        _scoring_intent = "low"
 
-        ml_score_data = calculate_lead_score(
-            query=user_message,
-            memory=memory_dicts,
-            intent=_scoring_intent
-        )
+    ml_score_data = calculate_lead_score(
+        query=user_message,
+        memory=memory_dicts,
+        intent=_scoring_intent
+    )
 
     lead.conversion_probability = ml_score_data.get("conversion_probability", 0)
     lead.lead_temperature = ml_score_data.get("lead_temperature", "cold")
@@ -961,10 +960,11 @@ async def process_chat(session_id: str, user_message: str, db: DBSession, client
     if prob >= 82:
         logger.info(f"🔔 HUMAN HANDOFF NOTIFICATION: Lead {lead.phone} has crossed HOT threshold! Immediate agent action required.")
 
-        # --> TRIGGER NOTIFICATION (Fire & Forget) <--
-        asyncio.create_task(
-            trigger_hot_lead_notification(lead.id, "Explicit human agent requested.")
-        )
+        # --> TRIGGER NOTIFICATION (Fire & Forget) -- only if session not already closed by explicit handoff <--
+        if session.status != "closed":
+            asyncio.create_task(
+                trigger_hot_lead_notification(lead.id, "Explicit human agent requested.")
+            )
 
         lead.score = "High"
         lead.lead_temperature = "hot"

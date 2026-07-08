@@ -24,6 +24,13 @@ PUNE_AREAS = ["wakad", "hinjewadi", "baner", "kharadi", "kothrud", "hadapsar",
                   "kondhwa", "undri", "mundhwa", "punawale", "tathawade", "bavdhan",
                   "sinhagad road", "pune"]
 
+
+def is_hinglish(text: str) -> bool:
+    hinglish_keywords = {"kya", "hai", "hain", "mujhe", "mein", "me", "chahiye", "tha", "bas", "nahi", "ha", "haan", "kab", "ka", "ki", "ko", "kar", "karna"}
+    words = set(text.lower().replace("?", "").replace(".", "").replace(",", "").split())
+    return bool(words.intersection(hinglish_keywords))
+
+
 # 2. Lightweight Guardrail & Tracking Helpers
 async def log_event_async(session_id: str, action_type: str, latency_ms: int = 0, agent_type: str = "AI",
                           client_id: int = 1):
@@ -251,11 +258,6 @@ async def process_chat(session_id: str, user_message: str, db: DBSession, client
             lead.phone = raw_phone
 
     db.commit()
-
-    # --- SNAPSHOT STATE AT START OF TURN ---
-    was_fully_qualified_initial = bool(
-        lead.visit_date and lead.phone and lead.name and lead.location and lead.budget and lead.property_type
-    )
 
     from models import FollowUpState
     f_state = db.query(FollowUpState).filter(FollowUpState.session_id == session_id).first()
@@ -745,8 +747,6 @@ async def process_chat(session_id: str, user_message: str, db: DBSession, client
                 prev_name = lead.name
                 prev_visit_date = lead.visit_date
                 prev_property_type = lead.property_type
-                # --- FIX 5: Use distinct name for initial state tracking ---
-                initial_was_fully_qualified = bool(lead.visit_date and lead.phone and lead.name and lead.location and lead.budget and lead.property_type)
 
                 # Update Lead table fields dynamically (using the in-memory lead object)
                 # OPTIMIZATION: Only overwrite DB fields if Gemini passes a non-null, valid value.
@@ -796,13 +796,6 @@ async def process_chat(session_id: str, user_message: str, db: DBSession, client
                 if not text_from_response and response.text:
                     text_from_response = response.text.strip()
 
-                # --- FIX 5: Use transition tracking logic ---
-                is_now_fully_qualified = bool(
-                    lead and lead.visit_date and lead.phone and lead.name and lead.location and lead.budget and lead.property_type)
-                
-                if is_now_fully_qualified and not initial_was_fully_qualified:
-                    logger.info(f"🏆 LEAD FULLY QUALIFIED: {lead.phone} | Session {session_id}")
-                    # You could trigger specific 'qualified' events here
                 captured_fields = [k for k in
                                    ["name", "phone", "budget", "location", "property_type", "intent", "visit_date"]
                                    if k in args]
@@ -1004,15 +997,21 @@ async def process_chat(session_id: str, user_message: str, db: DBSession, client
     # =================================================================
     # UNIVERSAL QUALIFICATION OVERRIDE (Fires closing template safely)
     # =================================================================
-    if is_fully_qualified_now and not initial_was_fully_qualified:
+    if is_fully_qualified_now and session.status != "closed":
         loc = lead.location
         vdate = lead.visit_date
-        final_text = f"Fantastic! Everything is set for your visit to {loc} on {vdate}. Our team will be in touch to confirm. Looking forward to seeing you! 🏡"
+
+        if is_hinglish(user_message):
+            final_text = f"Perfect! Aapka {loc} ka site visit {vdate} ke liye schedule ho gaya hai. Humari team jaldi hi confirmation ke liye aapse connect karegi. See you there! 🏡"
+        else:
+            final_text = f"Fantastic! Everything is set for your visit to {loc} on {vdate}. Our team will be in touch to confirm. Looking forward to seeing you! 🏡"
 
         session.status = "closed"
         if f_state:
             f_state.follow_up_status = "completed"
             f_state.next_follow_up_at = None
+
+        logger.info(f"🏆 LEAD FULLY QUALIFIED: {lead.phone} | Session {session_id}")
 
     db.commit()
 

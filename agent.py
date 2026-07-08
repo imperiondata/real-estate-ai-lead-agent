@@ -189,9 +189,9 @@ def extract_lead_info(
     Args:
         name: The name of the client (VERY IMPORTANT to capture).
         phone: The phone number of the client.
-        budget: The requested budget range (e.g., '80L', '20k', '1Cr').
-        location: The area they are looking in. If they mention multiple or add a new area to an existing search, return BOTH areas combined (e.g., 'Baner, Wakad').
-        property_type: The type of property they want (e.g., '1BHK', '2BHK', 'Villa'). MUST remain empty/None if the user has not explicitly stated a size. Do NOT guess or default to 2BHK.
+        budget: The requested budget range. MUST remain empty/None if the user has not explicitly stated their own personal budget. NEVER extract or assume a budget based on the RAG 'Property Context' or bot price suggestions.
+        location: The area they are looking in. MUST remain empty/None if the user has not explicitly stated their preferred area. NEVER extract or assume a location based on RAG context.
+        property_type: The type of property they want (e.g., '1BHK', '2BHK'). MUST remain empty/None if the user has not explicitly stated a size. Do NOT guess or default based on suggestions.
         intent: The goal (e.g., 'buy', 'rent', 'investment', 'browsing').
         score: Your internal lead scoring evaluation (High, Medium, Low).
         visit_date: The user's requested visit date/time (e.g., 'Tuesday 2pm', 'Saturday morning').

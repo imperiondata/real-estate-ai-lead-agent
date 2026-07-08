@@ -151,66 +151,60 @@ def normalize_lead_data(args: dict, existing_intent: str = None) -> dict:
 
 
 # 4. Structured Tool Calling Definition
-def extract_lead_info(
-        name: str = None,
-        phone: str = None,
-        budget: str = None,
-        location: str = None,
-        property_type: str = None,
-        intent: str = None,
-        score: str = None,
-        visit_date: str = None,
-        conversational_reply: str = None,
-        confidence_score: int = 100
-):
-    """
-    Saves the lead's property search details to the CRM database.
+extract_lead_tool = types.Tool(
+    function_declarations=[
+        types.FunctionDeclaration(
+            name="extract_lead_info",
+            description="""Saves the lead's property search details to the CRM database.
 
-    ⚠️  WHEN TO CALL THIS TOOL:
-    YOU MUST call this tool IMMEDIATELY the very first time the user provides ANY of these:
-    - Their name
-    - Their phone number
-    - Their budget (e.g. "80 lakhs", "25k per month", "1.2 crores")
-    - Their preferred location (e.g. "Baner", "Wakad", "Hinjewadi")
-    - Their property type preference (e.g. "2BHK", "3BHK", "Villa")
-    - Their intent (buy / rent / investment)
-    - A requested visit date or time
-    Do NOT wait to gather more information. Extract what you have immediately.
+⚠️ WHEN TO CALL THIS TOOL:
+YOU MUST call this tool IMMEDIATELY the very first time the user provides ANY of these:
+- Their name
+- Their phone number
+- Their budget (e.g. "80 lakhs", "25k per month", "1.2 crores")
+- Their preferred location (e.g. "Baner", "Wakad", "Hinjewadi")
+- Their property type preference (e.g. "2BHK", "3BHK", "Villa")
+- Their intent (buy / rent / investment)
+- A requested visit date or time
+Do NOT wait to gather more information. Extract what you have immediately.
 
-    ⛔ DO NOT CALL THIS TOOL for:
-    - General property questions ("What are prices in Baner?")
-    - Questions about amenities, connectivity, traffic, schools
-    - Acknowledgements ("Thanks", "Perfect", "Ok", "Got it")
-    - Greetings ("Hi", "Hello", "Hey")
-    - Any message that doesn't contain NEW personal search data
-    For those messages, respond naturally with text only.
+⛔ DO NOT CALL THIS TOOL for:
+- General property questions
+- Questions about amenities, connectivity, traffic, schools
+- Acknowledgements ("Thanks", "Perfect", "Ok", "Got it")
+- Greetings
+- Any message that doesn't contain NEW personal search data
+For those messages, respond naturally with text only.
 
-    Args:
-        name: The name of the client (VERY IMPORTANT to capture).
-        phone: The phone number of the client.
-        budget: The requested budget range. MUST remain empty/None if the user has not explicitly stated their own personal budget. NEVER extract or assume a budget based on the RAG 'Property Context' or bot price suggestions.
-        location: The area they are looking in. MUST remain empty/None if the user has not explicitly stated their preferred area. NEVER extract or assume a location based on RAG context.
-        property_type: The type of property they want (e.g., '1BHK', '2BHK'). MUST remain empty/None if the user has not explicitly stated a size. Do NOT guess or default based on suggestions.
-        intent: The goal (e.g., 'buy', 'rent', 'investment', 'browsing').
-        score: Your internal lead scoring evaluation (High, Medium, Low).
-        visit_date: The user's requested visit date/time (e.g., 'Tuesday 2pm', 'Saturday morning').
-        conversational_reply: Your natural, conversational response to the user's message. MUST NOT BE EMPTY.
-        confidence_score: Rate your confidence in the extracted data from 0 to 100. If the user is ambiguous, unsure, giving contradictory statements (e.g. changing locations or budgets), output a score below 75.
+INTENT-BASED BEHAVIOR:
+- HIGH: Be proactive. Offer a specific next step like shortlisting or a site visit.
+- MEDIUM: Provide data/description only. Answer and STOP.
+- LOW: Provide general info. Ask one clarifying question.
+- CRITICAL: For Medium/Low intent, you are FORBIDDEN from ending with "Would you like to see options?" or "Shall I help you buy?"
 
-    INTENT-BASED BEHAVIOR:
-    - HIGH: Be proactive. Offer a specific next step like shortlisting or a site visit.
-    - MEDIUM: Provide data/description only. Do NOT ask follow-up questions or offer next steps. Answer and STOP.
-    - LOW: Provide general info. Ask one clarifying question (e.g., buy vs. rent) to narrow the search.
-    - CRITICAL: For Medium/Low intent, you are FORBIDDEN from ending with "Would you like to see options?" or "Shall I help you buy?"
-
-    -----------------------------------
-    🔹 TOOL CALL RULE (CRITICAL):
-    - Whenever you call extract_lead_info, you MUST also write a conversational text reply in the SAME response.
-    - The text reply should naturally continue the conversation based on what the user said.
-    - NEVER return a function call without also including a text message.
-    - Do NOT mention data capture, fields, or databases in your text reply.
-    """
-    pass  # Schema definition only. Execution is handled in process_chat.
+🔹 TOOL CALL RULE (CRITICAL):
+- Whenever you call extract_lead_info, you MUST also write a conversational text reply in the SAME response.
+- The text reply should naturally continue the conversation based on what the user said.
+- NEVER return a function call without also including a text message.
+- Do NOT mention data capture, fields, or databases in your text reply.""",
+            parameters=types.Schema(
+                type="OBJECT",
+                properties={
+                    "name": types.Schema(type="STRING", description="The name of the client."),
+                    "phone": types.Schema(type="STRING", description="The phone number of the client."),
+                    "budget": types.Schema(type="STRING", description="The requested budget range. MUST remain empty if the user has not explicitly stated their own personal budget. NEVER extract or assume a budget based on RAG context."),
+                    "location": types.Schema(type="STRING", description="The area they are looking in. MUST remain empty if the user has not explicitly stated their preferred area."),
+                    "property_type": types.Schema(type="STRING", description="The type of property they want (e.g., '1BHK', '2BHK'). MUST remain empty if not explicitly stated."),
+                    "intent": types.Schema(type="STRING", description="The goal (buy / rent / investment)."),
+                    "score": types.Schema(type="STRING", description="Internal lead scoring (High, Medium, Low)."),
+                    "visit_date": types.Schema(type="STRING", description="Requested visit date/time."),
+                    "conversational_reply": types.Schema(type="STRING", description="Your natural response to the user's message. MUST NOT BE EMPTY."),
+                    "confidence_score": types.Schema(type="INTEGER", description="Rate confidence from 0 to 100. If ambiguous, output below 75.")
+                }
+            )
+        )
+    ]
+)
 
 
 # 3. Stateful Memory Function
@@ -603,7 +597,7 @@ async def process_chat(session_id: str, user_message: str, db: DBSession, client
             # Offload synchronous RAG/FAISS to thread to prevent blocking FastAPI event loop
             context_items, score = await asyncio.wait_for(
                 asyncio.to_thread(retrieve, rag_query),
-                timeout=2.0
+                timeout=3.5
             )
             rag_time = round((time.time() - rag_start) * 1000)
             logger.info(json.dumps({"event": "rag_retrieval", "latency_ms": rag_time, "success": True}))
@@ -629,7 +623,7 @@ async def process_chat(session_id: str, user_message: str, db: DBSession, client
     # Start Gemini Chat with retrieved history
     chat = client.aio.chats.create(
         model=settings.GEMINI_MODEL,
-        config={"system_instruction": REAL_ESTATE_SYSTEM_PROMPT, "tools": [extract_lead_info]},
+        config={"system_instruction": REAL_ESTATE_SYSTEM_PROMPT, "tools": [extract_lead_tool]},
         history=sanitized_history
     )
 
@@ -740,7 +734,8 @@ async def process_chat(session_id: str, user_message: str, db: DBSession, client
             if function_call.name == "extract_lead_info":
                 fc = function_call
                 # Extract and normalize arguments payload securely
-                args = normalize_lead_data(dict(fc.args), existing_intent=lead.intent)
+                raw_args = fc.args if isinstance(fc.args, dict) else dict(fc.args)
+                args = normalize_lead_data(raw_args, existing_intent=lead.intent)
 
                 # Snapshot which fields are GENUINELY NEW in this turn vs already known.
                 # This prevents re-extracted old data from triggering the same template repeatedly.

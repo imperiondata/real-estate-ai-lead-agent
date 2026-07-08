@@ -3,28 +3,26 @@ import os
 from functools import lru_cache
 
 import faiss
-import google.generativeai as genai
 import numpy as np
 
-from config import settings
-
-genai.configure(api_key=settings.GEMINI_API_KEY)
+from google.genai import types
+from llm_client import client
 
 def get_embeddings(texts: list[str]):
-    result = genai.embed_content(
-        model="models/gemini-embedding-001",
-        content=texts,
-        task_type="retrieval_document"
+    result = client.models.embed_content(
+        model="gemini-embedding-001",
+        contents=texts,
+        config=types.EmbedContentConfig(task_type="RETRIEVAL_DOCUMENT")
     )
-    return result['embedding']
+    return [emb.values for emb in result.embeddings]
 
 def get_query_embedding(text: str):
-    result = genai.embed_content(
-        model="models/gemini-embedding-001",
-        content=text,
-        task_type="retrieval_query"
+    result = client.models.embed_content(
+        model="gemini-embedding-001",
+        contents=text,
+        config=types.EmbedContentConfig(task_type="RETRIEVAL_QUERY")
     )
-    return result['embedding']
+    return result.embeddings[0].values
 
 @lru_cache(maxsize=128)
 def get_query_embedding_cached(text: str):

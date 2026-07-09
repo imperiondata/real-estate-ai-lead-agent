@@ -1,48 +1,93 @@
-# IREIOS 3.0 — Multi-Agent Event-Driven Architecture
+# IREIOS 3.0 — Architecture Diagrams
 
-Compiled reference diagrams for the IREIOS platform (Phase 3.0), covering the system
-overview and all five execution paths (A–E). Diagrams use [Mermaid](https://mermaid.js.org),
-which renders natively on GitHub, GitLab, Notion, and most static site generators. In VS Code,
-install the **"Markdown Preview Mermaid Support"** extension to preview locally, or paste any
-block into [mermaid.live](https://mermaid.live).
+Canonical **system architecture** for Imperion Real Estate Intelligence OS (Phase 3.0).
+
+| This doc owns | Sibling docs own |
+|---|---|
+| Layers 1–11, components, Path A–E, event catalog, KG overview, tech map | **Workflows** → per-agent behavior (`plans/IREIOS_3.0_AI_Automation_Workflows.md`) |
+| | **Implementation** → phases, files, migration (`plans/IREIOS_3.0_IMPLEMENTATION_PLAN.md`) |
+
+Sources: Phase 3 direction assignment (PDF), multi-agent overview (JPEG), refined Path A–E design.
+
+Diagrams use [Mermaid](https://mermaid.js.org). Preview: VS Code **Markdown Preview Mermaid Support**, or [mermaid.live](https://mermaid.live).
+
+---
 
 ## Legend
 
 | Color | Meaning |
 |---|---|
-| Gray | Infrastructure / triggers / neutral steps |
-| Blue | Data & execution layer (writes, engines) |
-| Teal | Events / message bus |
-| Purple | AI agents |
-| Amber | Decision points / scoring |
-| Coral | Fan-out targets / failure / escalation |
+| Gray | Infrastructure / triggers / neutral |
+| Blue | Data & execution (API gateway, engines, writes) |
+| Teal | Events / message bus / memory bus |
+| Purple | AI agents / CEO orchestrator |
+| Amber | Decisions / scoring / approval gates |
+| Coral | Fan-out, failure, escalation, HITL reject |
 
 ---
 
-## System overview (Layers 1–11)
+## 1. Canonical layers (PDF contract)
+
+Joint deliverable layers. Numbers below are **authoritative** for planning and APIs.
+
+| Layer | Name | Backend (this repo) | Frontend (Mayank) |
+|---|---|---|---|
+| **1** | CEO AI Orchestrator | Agent registry, scheduler, task queue, agent memory hooks, health, communication bus | — |
+| **2** | AI Agents | Full: WhatsApp, Sales, Marketing, CRM automation, Customer Success, Competitor (+ handlers). Placeholders for remaining of “15” | Surfaces via dashboard / copilot |
+| **3** | Knowledge Graph | Neo4j schema, relationships, Graph APIs, query engine, versioned schema, async writers | KG visualization |
+| **4** | Forecast / Predictive Engine | Lead score, booking, revenue, cancel risk, cashflow, inventory APIs (build on `app/intelligence`) | Forecast widgets |
+| **5** | Digital Twin MVP | Event/SSE feeds + graph snapshots | Digital Twin UI |
+| **6** | Autonomous Execution | **Automation Engine** + **Execution Engine** (n8n, LangGraph, templates, retry, fallback, HITL) | Approval UI hooks |
+| **7** | Negotiation AI (prototype) | Placeholder agent + workflow hook | — |
+| **8** | Self-Learning | Feedback loops into models/playbooks (incremental) | — |
+| **9** | Company / AI Memory | Conversation, long-term, decision, action memory + context retrieval | Timeline / memory views |
+| **10** | Market Intelligence | Competitor monitoring + alerts | Market panels |
+| **11** | Executive Command Interface | Prediction + SSE + chat APIs | Dashboard, AI Chat, Command Center |
+
+**Product story flow (JPEG):** sources → lead in → qualify/store → CEO → actions → dashboard, with agents ↔ graph ↔ predictive ↔ execution ↔ memory ↔ market intel ↔ self-learning. Same system; PDF layer IDs above are used in code and docs.
+
+---
+
+## 2. System overview
 
 ```mermaid
-flowchart LR
-    I1[WhatsApp] --> L1
-    I2[Website] --> L1
-    I3[Meta / Google Ads] --> L1
-    I4[Other sources] --> L1
+flowchart TB
+    subgraph SRC["External sources"]
+        S1[WhatsApp / Twilio]
+        S2[Website chat]
+        S3[Meta / Google Ads]
+        S4[CRM / Portals / Email]
+    end
 
-    L1[1. Lead enters system] --> L2[2. AI qualifies + stores lead]
-    L2 --> L3[3. CEO AI orchestrator]
-    L3 --> L4[4. Actions executed]
-    L4 --> L5[5. Dashboard + insights]
+    GW[API Gateway<br/>RBAC · tenant · rate limit · audit]
+    BUS[Event Bus]
+    CEO[L1 CEO Orchestrator<br/>registry · route · queue · health]
+    AG[L2 Agents & workflows<br/>WA · Sales · Mkt · CRM · CS · Competitor · placeholders]
+    AE[L6 Automation Engine<br/>validate · LangGraph · n8n · linear · HITL]
+    EE[L6 Execution Engine<br/>Twilio · CRM · Calendar · Notify · Ads…]
+    KG[L3 Neo4j Knowledge Graph]
+    MEM[L9 Company / AI Memory]
+    PE[L4 Predictive Engine]
+    MI[L10 Market Intelligence]
+    SL[L8 Self-Learning]
+    FE[L5/L11 SSE + APIs → Dashboard · Twin · Timeline · KG viz · Copilot]
 
-    L3 <--> AG["6. AI agents<br/>Marketing, CRM, Sales, WhatsApp, Pricing..."]
-    AG <--> KG["7. Knowledge graph<br/>Leads, projects, units, payments..."]
-    KG --> PE["8. Predictive engine<br/>Scores, forecasts, risk"]
-    KG --> EE["9. Execution engine<br/>Autonomous actions"]
-    PE --> CM["10. Company memory<br/>Tasks, approvals, objections"]
-    EE --> CM
-    KG --> MI["11. Market intelligence<br/>Competitor + demand signals"]
-    CM --> SL["Self-learning system<br/>Improves models + playbooks"]
+    S1 & S2 & S3 & S4 --> GW --> BUS --> CEO --> AG
+    AG --> AE --> EE
+    EE -->|success / failure events| BUS
+    BUS --> KG
+    BUS --> MEM
+    BUS --> PE
+    BUS --> FE
+    BUS --> MI
+    KG --> PE
+    MEM --> AG
+    PE --> AG
     MI --> SL
+    MEM --> SL
     SL --> AG
+    AE -.->|requires_approval| HITL[HITL Approval Queue]
+    HITL -->|approve / reject| AE
 
     classDef gray fill:#F1EFE8,stroke:#5F5E5A,color:#2C2C2A;
     classDef blue fill:#E6F1FB,stroke:#185FA5,color:#0C447C;
@@ -51,142 +96,237 @@ flowchart LR
     classDef amber fill:#FAEEDA,stroke:#854F0B,color:#633806;
     classDef coral fill:#FAECE7,stroke:#993C1D,color:#712B13;
 
-    class I1,I2,I3,I4 gray
-    class L1,L2,L3,L4,L5 blue
-    class AG purple
-    class KG teal
-    class PE,EE amber
-    class CM,MI coral
-    class SL gray
+    class S1,S2,S3,S4,SL gray
+    class GW,AE,EE blue
+    class BUS,MEM teal
+    class CEO,AG purple
+    class PE,HITL amber
+    class KG,MI,FE coral
+```
+
+### Core runtime rule
+
+```
+Event → CEO routes → Agent decides → Automation Engine plans/HITL → Execution Engine acts → Event → fan-out
+```
+
+No silent side effects: external writes go through **Execution Engine** and publish result events.
+
+---
+
+## 3. Component inventory
+
+| Component | Role | Tech (target) |
+|---|---|---|
+| API Gateway | Auth, RBAC, tenant, webhooks, public/prediction APIs | FastAPI `main.py` |
+| Event Bus | Pub/sub nervous system | In-process asyncio → Redis Streams later |
+| CEO Orchestrator | Registry, route by event/policy, task queue, health, agent comms | Python `app/orchestrator` |
+| Agents (L2) | Stateless: fetch context → analyze → decide (action request) | `app/agents` |
+| Workflows | Deterministic automations (CRM tags, follow-up poll, competitor cron) | `app/workflows` |
+| Automation Engine | Validate action, load template, LangGraph / n8n / linear, HITL pause/resume | `app/automation_engine` + n8n + LangGraph |
+| Execution Engine | Dumb executors: API call in → success/error out | `app/execution_engine` |
+| Knowledge Graph | Entities + relationships; query APIs; async ingest from events | Neo4j + `app/knowledge_graph` |
+| AI / Company Memory | Conversation, long-term, decision, action; retrieval for agents | Postgres + vectors (FAISS/embeddings) + graph context |
+| Predictive Engine | Scoring & forecast APIs | `app/intelligence` + HTTP surface |
+| Market Intelligence | Competitor / demand signals | Workflow + events |
+| SSE / realtime | Pulse dashboard, timeline, twin | FastAPI SSE → frontend |
+| DLQ + replay | Failed external calls | `dlq_events` + `dlq_replay.py` |
+| Scheduler | Time-based work outside pure event path | APScheduler |
+
+---
+
+## 4. Event catalog (canonical)
+
+Names are stable contracts across backend, AE/EE, Neo4j writers, and FE.
+
+### 4.1 PDF-required business events
+
+| Event | When | Typical consumers |
+|---|---|---|
+| `lead.created` | New lead row / first contact | CRM automation, Memory, KG, Follow-up |
+| `lead.assigned` | Human/AI agent assignment | Sales, Dashboard, KG |
+| `whatsapp.sent` | Outbound WA delivered/accepted by executor | Memory, Timeline, KG |
+| `call.made` | Call logged | Memory, KG, Sales |
+| `site_visit.scheduled` | Visit booked | Calendar result, Memory, KG, Sales |
+| `booking.confirmed` | Booking done | CS, Memory, KG, Predictive |
+| `payment.received` | Payment recorded | CS, Memory, KG, Predictive |
+
+### 4.2 Runtime / pipeline events
+
+| Event | When | Typical consumers |
+|---|---|---|
+| `whatsapp.received` | Inbound WA webhook accepted | CEO → WhatsApp AI |
+| `chat.received` | Website chat message | CEO → WhatsApp/Chat AI |
+| `lead.qualified` | Enough fields for qualification | CRM automation, Predictive, Sales |
+| `lead.scored` | Score/temperature updated | Sales, Dashboard |
+| `lead.hot` | High-intent threshold | Notification, Sales |
+| `lead.crm_synced` | CRM executor success | KG, Dashboard |
+| `followup.sent` | Scheduled follow-up sent | Memory, Timeline |
+| `whatsapp.response.generated` | Agent finished reply analysis (async side work) | Lead scoring handler |
+| `brochure.sent` / `floorplan.sent` | Document media sent | Memory, Timeline, KG |
+| `market.alert.generated` | Competitor/intel alert | Marketing, Sales, Dashboard |
+| `approval.requested` / `approval.resolved` | HITL | AE resume, Memory, Dashboard |
+| `*.failed` / DLQ write | Executor exhausted retries | Ops, replay |
+
+Payload envelope (all events):
+
+```text
+event_id, event_type, tenant_id, entity_id, source, timestamp, correlation_id, payload
 ```
 
 ---
 
-## Path A — Lead intake & qualification (happy path, part 1)
+## 5. Knowledge Graph overview (Layer 3)
+
+### 5.1 Entities (PDF)
+
+Leads · Projects · Towers · Units · Customers · Payments · Salespersons · Inventory · Site Visits · Documents · Calls · WhatsApp Conversations · Emails
+
+### 5.2 Core relationships (illustrative)
+
+```text
+(:Client/Tenant)-[:OWNS]->(:Lead|:Project|…)
+(:Lead)-[:INTERESTED_IN]->(:Project|:Unit)
+(:Lead)-[:ASSIGNED_TO]->(:Salesperson)
+(:Lead)-[:HAS_CONVERSATION]->(:WhatsAppConversation|:Email)
+(:Lead)-[:SCHEDULED]->(:SiteVisit)
+(:Lead)-[:BECAME]->(:Customer)
+(:Customer)-[:MADE]->(:Payment)
+(:Project)-[:HAS_TOWER]->(:Tower)-[:HAS_UNIT]->(:Unit)
+(:Unit)-[:IN_INVENTORY]->(:Inventory)
+(:Document)-[:ABOUT]->(:Project|:Unit)
+(:Call)-[:WITH]->(:Lead)
+```
+
+Postgres remains **transactional source of truth** for leads/sessions/messages. Neo4j is the **relationship & traversal** layer; writes from the bus are **async** so chat latency is protected.
+
+### 5.3 Graph API surface (backend-owned)
+
+- Schema version + migrate  
+- Upsert entity / relationship  
+- Query: lead context, project inventory, agent workload, conversation links  
+- Used by agents via `GraphClient` and by FE KG visualization  
+
+---
+
+## 6. AI Memory (Layer 9)
+
+| Memory type | Content | Used by |
+|---|---|---|
+| Conversation | Recent turns (Postgres messages + window) | WhatsApp AI |
+| Long-term | Stable lead prefs, objections, outcomes | All agents |
+| Decision | Why agent chose an action | Audit, self-learning |
+| Action | What was executed + result | Timeline, DLQ context |
+| Context retrieval | Ranked pull across memory + graph + RAG (FAISS) | Agent `fetch_context` |
+
+---
+
+## 7. Execution paths A–E
+
+### Path A — Lead intake & qualification (part 1)
 
 ```mermaid
 flowchart TD
-    A1["WhatsApp message<br/>New inbound message"]
-    A2["API gateway<br/>RBAC + tenant resolution"]
-    A3["Event bus<br/>whatsapp.received"]
-    A4["CEO orchestrator<br/>Routes to WhatsApp AI"]
-    A5["Context fetch<br/>Postgres, FAISS, Neo4j"]
-    A6{"Qualification check<br/>Enough info gathered?"}
-    A7["Clarifying question sent<br/>waits for next message (Path B)"]
-
-    A1 --> A2 --> A3 --> A4 --> A5 --> A6
-    A6 -->|No| A7
-    A6 -->|"Yes → continues below"| B1
+    A1[WhatsApp message] --> A2[API Gateway<br/>RBAC + tenant]
+    A2 --> A3[Event Bus<br/>whatsapp.received]
+    A3 --> A4[CEO Orchestrator<br/>route to WhatsApp AI]
+    A4 --> A5[Context fetch<br/>Postgres · FAISS · Memory · Neo4j]
+    A5 --> A6{Enough info to qualify?}
+    A6 -->|No| A7[Clarifying question<br/>via AE → EE → whatsapp.sent]
+    A6 -->|Yes| B1
 
     classDef gray fill:#F1EFE8,stroke:#5F5E5A,color:#2C2C2A;
     classDef blue fill:#E6F1FB,stroke:#185FA5,color:#0C447C;
     classDef teal fill:#E1F5EE,stroke:#0F6E56,color:#085041;
     classDef purple fill:#EEEDFE,stroke:#534AB7,color:#3C3489;
     classDef amber fill:#FAEEDA,stroke:#854F0B,color:#633806;
-    classDef coral fill:#FAECE7,stroke:#993C1D,color:#712B13;
 
-    class A1 gray
+    class A1,A7 gray
     class A2 blue
     class A3 teal
-    class A4 purple
-    class A5 purple
+    class A4,A5 purple
     class A6 amber
-    class A7 gray
     class B1 teal
 ```
 
-## Path A — Qualified lead fan-out (part 2)
+### Path A — Qualified lead fan-out (part 2)
 
 ```mermaid
 flowchart TD
-    B1["Action request<br/>update_lead"]
-    B2["Execution engine<br/>n8n / LangGraph"]
-    B3["CRM write<br/>Idempotency check, Postgres"]
-    B4["Event bus<br/>lead.qualified"]
-    B5["Neo4j graph<br/>Async, protects latency"]
-    B6["Company memory<br/>Logs action + reasoning"]
-    B7["Executive dashboard<br/>Real-time SSE pulse"]
+    B1[Action request<br/>e.g. update_lead / qualify]
+    B2[Automation Engine<br/>template · validate]
+    B3[Execution Engine<br/>CRM / DB executor]
+    B4[Event Bus<br/>lead.qualified]
+    B5[Neo4j async write]
+    B6[Company Memory]
+    B7[SSE → Dashboard / Timeline]
 
     B1 --> B2 --> B3 --> B4
     B4 --> B5
     B4 --> B6
     B4 --> B7
 
-    classDef gray fill:#F1EFE8,stroke:#5F5E5A,color:#2C2C2A;
     classDef blue fill:#E6F1FB,stroke:#185FA5,color:#0C447C;
     classDef teal fill:#E1F5EE,stroke:#0F6E56,color:#085041;
-    classDef purple fill:#EEEDFE,stroke:#534AB7,color:#3C3489;
-    classDef amber fill:#FAEEDA,stroke:#854F0B,color:#633806;
     classDef coral fill:#FAECE7,stroke:#993C1D,color:#712B13;
 
     class B1 teal
-    class B2 blue
-    class B3 blue
-    class B4 teal
-    class B5 purple
-    class B6 teal
-    class B7 coral
+    class B2,B3 blue
+    class B4,B6 teal
+    class B5,B7 coral
 ```
 
-## Path A — Scoring to confirmation (part 3)
+### Path A — Scoring to confirmation (part 3)
 
 ```mermaid
 flowchart TD
-    C1["CRM AI<br/>Auto-tags, publishes lead.assigned"]
-    C2["Predictive engine<br/>e.g. 84% conversion, hot"]
-    C3["Sales AI<br/>e.g. schedule site visit"]
-    C4{"Approval check<br/>requires_approval?"}
-    C5["Calendar executor<br/>site_visit.scheduled"]
-    C6["Confirmation sent<br/>whatsapp.sent, via Twilio"]
-    C7(["Routes to Path C<br/>approval queue"])
+    C1[CRM automation<br/>tags · assign → lead.assigned]
+    C2[Predictive Engine<br/>score / temperature]
+    C3[Sales AI<br/>next best action]
+    C4{requires_approval?}
+    C5[AE → EE Calendar<br/>site_visit.scheduled]
+    C6[WhatsApp confirm<br/>whatsapp.sent]
+    C7[Path C HITL queue]
 
     C1 --> C2 --> C3 --> C4
     C4 -->|No| C5 --> C6
     C4 -->|Yes| C7
 
-    classDef gray fill:#F1EFE8,stroke:#5F5E5A,color:#2C2C2A;
     classDef blue fill:#E6F1FB,stroke:#185FA5,color:#0C447C;
     classDef teal fill:#E1F5EE,stroke:#0F6E56,color:#085041;
     classDef purple fill:#EEEDFE,stroke:#534AB7,color:#3C3489;
     classDef amber fill:#FAEEDA,stroke:#854F0B,color:#633806;
     classDef coral fill:#FAECE7,stroke:#993C1D,color:#712B13;
 
-    class C1 purple
-    class C2 amber
-    class C3 purple
-    class C4 amber
+    class C1,C3 purple
+    class C2,C4 amber
     class C5 blue
     class C6 teal
     class C7 coral
 ```
 
-## Path B — Multi-turn conversation
+WhatsApp AI may also: FAQ (RAG), **brochure**, **floor plan**, site-visit request, escalation — behavior detail in Workflows doc.
 
-Path B is not a separate branch — every new WhatsApp message re-enters **Path A** at the top.
-The only difference is that Context Fetch pulls short-term memory (previous questions asked)
-and company memory (previously extracted intent), so the WhatsApp AI skips fields it already
-has and only asks for what's missing. This loop continues until the qualification check in
-Path A part 1 returns "Yes."
+### Path B — Multi-turn conversation
 
----
+Not a separate topology. Each new inbound message republishes `whatsapp.received` and re-enters Path A. Context fetch loads short-term conversation memory and long-term extracted intent so the agent only asks for missing fields until qualification succeeds.
 
-## Path C — Human-in-the-loop approval (Maitri's automation engine)
+### Path C — Human-in-the-loop (HITL)
 
 ```mermaid
 flowchart TD
-    D1["Sales AI flags action<br/>requires_approval = true"]
-    D2["Workflow pauses<br/>n8n / LangGraph"]
-    D3["Notify manager<br/>Dashboard or WhatsApp"]
-    D4{"Manager decision"}
-    D5["Rejected<br/>Logged to company memory"]
-    D6["Approved<br/>Resumes, sends proposal"]
-    D7["Publish result event<br/>Fans out to Neo4j, memory, SSE"]
+    D1[Agent / workflow sets<br/>requires_approval = true]
+    D2[Automation Engine pauses<br/>LangGraph state / n8n wait]
+    D3[Notify manager<br/>Dashboard / WhatsApp]
+    D4{Manager decision}
+    D5[Rejected → Memory]
+    D6[Approved → resume plan]
+    D7[EE executes · result event<br/>→ Neo4j · Memory · SSE]
 
     D1 --> D2 --> D3 --> D4
     D4 -->|Reject| D5 --> D7
     D4 -->|Approve| D6 --> D7
 
-    classDef gray fill:#F1EFE8,stroke:#5F5E5A,color:#2C2C2A;
     classDef blue fill:#E6F1FB,stroke:#185FA5,color:#0C447C;
     classDef teal fill:#E1F5EE,stroke:#0F6E56,color:#085041;
     classDef purple fill:#EEEDFE,stroke:#534AB7,color:#3C3489;
@@ -195,190 +335,176 @@ flowchart TD
 
     class D1 purple
     class D2 blue
-    class D3 amber
-    class D4 amber
+    class D3,D4 amber
     class D5 coral
-    class D6 teal
-    class D7 teal
+    class D6,D7 teal
 ```
 
----
+HITL is a **core path**, not a late add-on. Sales discounts, campaign spend changes, and high-risk actions use it.
 
-## Path D — Disaster recovery (execution failure)
+### Path D — Execution failure (disaster recovery)
 
 ```mermaid
 flowchart TD
-    E1["API call fails<br/>HubSpot, Twilio, or Meta"]
-    E2["Retry with backoff<br/>Up to 3 attempts"]
-    E3{"Retry limit reached?"}
-    E4["Fallback channel<br/>e.g. send via email instead"]
-    E5{"Fallback still failed?"}
-    E6["Escalate to DLQ<br/>Written to dlq_events"]
-    E7["Replay recovers data<br/>dlq_replay.py, once API is back"]
+    E1[Executor API fails<br/>Twilio · HubSpot · Meta…]
+    E2[Retry with backoff]
+    E3{Retry limit?}
+    E4[Fallback channel<br/>e.g. email]
+    E5{Fallback ok?}
+    E6[DLQ dlq_events]
+    E7[dlq_replay when healthy]
 
     E1 --> E2 --> E3
     E3 -->|No| E2
     E3 -->|Yes| E4 --> E5
-    E5 -->|Yes| E6 --> E7
-    E5 -->|No, delivered| E1
+    E5 -->|No| E6 --> E7
+    E5 -->|Yes| E1
 
-    classDef gray fill:#F1EFE8,stroke:#5F5E5A,color:#2C2C2A;
     classDef blue fill:#E6F1FB,stroke:#185FA5,color:#0C447C;
     classDef teal fill:#E1F5EE,stroke:#0F6E56,color:#085041;
-    classDef purple fill:#EEEDFE,stroke:#534AB7,color:#3C3489;
     classDef amber fill:#FAEEDA,stroke:#854F0B,color:#633806;
     classDef coral fill:#FAECE7,stroke:#993C1D,color:#712B13;
 
-    class E1 coral
-    class E2 amber
-    class E3 amber
+    class E1,E6 coral
+    class E2,E3,E5 amber
     class E4 blue
-    class E5 amber
-    class E6 coral
     class E7 teal
 ```
 
----
+Owned by **Automation Engine + Execution Engine** (retry/fallback policy), not by individual agents.
 
-## Path E — Scheduled / background work (proactive engine)
+### Path E — Scheduled / background work
 
 ```mermaid
 flowchart TD
-    F1["APScheduler cron<br/>Runs every 60 seconds"]
-    F2["Check FollowUpState<br/>Postgres, via follow_up.py"]
-    F3{"Trigger found?"}
-    F4["Send follow-up<br/>Logs followup.sent"]
-    F5["Sleep<br/>no action"]
-    F6["Midnight job<br/>Market intel + daily rollups"]
+    F1[APScheduler]
+    F2[Follow-up due check<br/>FollowUpState]
+    F3{Due?}
+    F4[AE → EE send<br/>followup.sent]
+    F5[Sleep]
+    F6[Midnight · Market intel<br/>rollups · forecasts]
 
     F1 --> F2 --> F3
     F3 -->|Yes| F4
     F3 -->|No| F5
-    F1 -.->|At midnight| F6
+    F1 -.->|cron| F6
 
     classDef gray fill:#F1EFE8,stroke:#5F5E5A,color:#2C2C2A;
     classDef blue fill:#E6F1FB,stroke:#185FA5,color:#0C447C;
     classDef teal fill:#E1F5EE,stroke:#0F6E56,color:#085041;
-    classDef purple fill:#EEEDFE,stroke:#534AB7,color:#3C3489;
     classDef amber fill:#FAEEDA,stroke:#854F0B,color:#633806;
-    classDef coral fill:#FAECE7,stroke:#993C1D,color:#712B13;
 
-    class F1 gray
+    class F1,F5,F6 gray
     class F2 blue
     class F3 amber
     class F4 teal
-    class F5 gray
-    class F6 gray
 ```
 
 ---
 
-## Appendix — Original architecture reference (source ASCII diagram)
+## 8. Automation Engine vs Execution Engine
+
+| | Automation Engine (brain of actions) | Execution Engine (muscle) |
+|---|---|---|
+| Input | Action request from agent/workflow | Concrete executor call plan |
+| Does | Validate, choose LangGraph / n8n / linear template, HITL, retry policy | Call Twilio, HubSpot, Calendar, email, ads APIs |
+| Output | Plan + pause/resume | `{status: success\|error, …}` + trigger result event |
+| Must not | Embed vendor SDK details in agents | Contain LLM business reasoning |
+
+```mermaid
+flowchart LR
+    AR[Action request] --> AE[Automation Engine]
+    AE -->|approved plan| EE[Execution Engine]
+    EE --> X1[WhatsAppExecutor]
+    EE --> X2[CRMExecutor]
+    EE --> X3[CalendarExecutor]
+    EE --> X4[NotificationExecutor]
+    X1 & X2 & X3 & X4 --> EV[Result event → Bus]
+```
+
+---
+
+## 9. CEO Orchestrator (Layer 1)
+
+| Concern | Behavior |
+|---|---|
+| Agent registry | Name, subscriptions, health, placeholder vs active |
+| Routing | `event_type` + tenant policy → agent/workflow handler |
+| Task queue | Serialize/prioritize work per tenant/entity where needed |
+| Agent memory hooks | Attach decision/action memory ids to tasks |
+| Health | Heartbeat / last error / circuit for bad agents |
+| Communication bus | Agents do not call each other directly; they publish events; CEO routes |
+
+MVP CEO may be a **thin policy router** with full registry/queue/health. LLM-based multi-step planning can deepen later without changing event contracts.
+
+---
+
+## 10. Security & monitoring (platform)
+
+| Area | Requirement |
+|---|---|
+| Tenant isolation | All queries and events carry `tenant_id` / `client_id` |
+| RBAC + API keys | Existing gateway patterns extended to new routes |
+| Audit | Action + decision memory; approval outcomes |
+| Encryption | Secrets via env/AWS secrets; no secrets in events logs |
+| Monitoring | Structured logs, request tracing, latency metrics, health endpoints, DLQ recovery |
+| Failure recovery | Path D + replay |
+
+---
+
+## 11. Frontend consumers (contracts only)
+
+Mayank owns UI. Backend owns:
+
+| FE surface | Backend contract |
+|---|---|
+| Executive Dashboard | SSE KPI/alert pulses + REST analytics |
+| AI Timeline | Event stream (`whatsapp.*`, `lead.*`, approvals, follow-ups) |
+| Digital Twin | Graph snapshot + live events |
+| Knowledge Graph viz | Graph query APIs |
+| Sales Copilot | Lead context + NBA + timeline |
+| Executive AI Chat | CEO / orchestrated agent channel (SSE or chat API) |
+
+Wire existing mocks to these contracts; no architecture redesign required in this doc.
+
+---
+
+## 12. Technology map
+
+| Concern | Choice |
+|---|---|
+| API | FastAPI |
+| OLTP | Postgres |
+| Vectors / RAG | FAISS + embeddings (existing `rag.py`) |
+| Graph | Neo4j |
+| Event Bus | In-process asyncio first; Redis Streams when multi-worker |
+| Workflow AI state | LangGraph |
+| Integration workflows | n8n |
+| Cron | APScheduler |
+| Channels | Twilio WhatsApp, HubSpot CRM, Meta/Google (as integrated) |
+| LLM | Existing Gemini client (`llm_client`) |
+| Observability | Logging + Prometheus metrics (extend) |
+
+---
+
+## Appendix — Historical ASCII Path A–E
+
+Preserved as the refined narrative source that Mermaid paths above formalize. Prefer Mermaid sections for new work.
 
 ```text
-IREIOS 3.0 — MULTI-AGENT EVENT-DRIVEN ARCHITECTURE (REFINED)
-────────────────────────────────────────────────────────────
-
 PATH A — New lead, straightforward qualification (Happy Path)
-────────────────────────────────────────────────────────────
-WhatsApp message
-  ↓
-API Gateway → RBAC / API Key Validation → resolves client_id + tenant
-  ↓
-Publish event: `whatsapp.received` → Central Event Bus (Kafka/Redis)
-  ↓
-CEO AI Orchestrator (Layer 1) → Routes task to WhatsApp AI (Layer 2)
-  ↓
-Context Fetch (Layer 3 & 9):
-      ├─ Postgres (Current transactional state — Source of Truth)
-      ├─ FAISS (Past conversation vector history)
-      └─ Neo4j (Entity relationships: Lead → Project → Unit)
-  ↓
-WhatsApp AI extracts intent (budget, location, unit type, objections)
-  ↓
-Enough info to qualify?
-  ├── NO  → Generates clarifying question → WhatsApp Executor → (Ends, waits for Path B)
-  └── YES → continue below
-  ↓
-Action Request: `update_lead`
-  ↓
-Execution / Automation Engine (n8n / LangGraph)
-  ↓
-Idempotency check → CRM Executor writes to Postgres (Transactional)
-  ↓
-Publish event: `lead.qualified` → Central Event Bus
-  ↓
-        ┌────────────────────────┬────────────────────────┬────────────────────────┐
-        ▼                        ▼                        ▼
-  Neo4j Knowledge Graph    Company Memory (Layer 9)   Executive Dashboard (Layer 11)
-  (STRICTLY ASYNC to       (Logs the action PLUS      (Pushes real-time SSE pulse
-  protect chat latency)    objections & AI reasoning) to UI / Digital Twin / Timeline)
-        └────────────────────────┴────────────────────────┴────────────────────────┘
-  ↓
-CRM AI (Layer 2): Auto-tags, routes to human agent → publishes `lead.assigned`
-  ↓
-Predictive Engine (Layer 4): Calculates Lead Conversion Score (e.g., 84% / Hot)
-  ↓
-Sales AI (Layer 2): Determines Next Best Action (e.g., "Schedule site visit for Tower B")
-  ↓
-requires_approval?
-  ├── YES → Routes to Approval Queue (Human-in-the-loop — See Path C)
-  └── NO  → continue below
-  ↓
-Execution Engine (n8n / LangGraph) → Calendar Executor → `site_visit.scheduled`
-  ↓
-WhatsApp AI generates confirmation → WhatsApp Executor sends via Twilio
-  ↓
-Publish event: `whatsapp.sent` → Event Bus → SSE → AI Timeline UI
+WhatsApp → API Gateway → whatsapp.received → CEO → WhatsApp AI
+  → Context (Postgres, FAISS, Memory, Neo4j)
+  → Qualify? NO → clarify via AE→EE; YES → action request
+  → AE → EE → lead.qualified → async Neo4j + Memory + SSE
+  → CRM automation → Predictive score → Sales NBA
+  → requires_approval? YES → Path C; NO → schedule visit → whatsapp.sent
 
+PATH B — Multi-turn: each message re-enters Path A with memory.
 
-PATH B — Multi-turn conversation (Info gathered over several messages)
-────────────────────────────────────────────────────────────
-Each new WhatsApp message triggers `whatsapp.received` and re-enters Path A.
-  ↓
-Context Fetch pulls "Short-Term Memory" (previous questions asked) and
-"Company Memory" (previously extracted intent).
-  ↓
-WhatsApp AI realizes it already has [Location] and only asks for [Budget].
-  ↓
-Loop continues until qualification criteria are met → joins Path A at "Action Request".
+PATH C — HITL: AE pause → manager approve/reject → resume/reject → result event.
 
+PATH D — Fail → retry → fallback → DLQ → dlq_replay.
 
-PATH C — Action needs human approval (Maitri's Automation Engine)
-────────────────────────────────────────────────────────────
-Sales AI suggests action flagged `requires_approval = true` (e.g., 10% Discount Offer)
-  ↓
-LangGraph / n8n workflow pauses → Sends notification to Manager (Dashboard / WhatsApp)
-  ↓
-Manager Decision:
-  ├── REJECTED → Action logged to Company Memory ("Manager denied discount"), flow resumes.
-  └── APPROVED → Execution Engine resumes → generates proposal → sends to client.
-  ↓
-Publish result event → Event Bus → Fan-out to Neo4j, Memory, and SSE Dashboard.
-
-
-PATH D — Execution Fails (Disaster Recovery)
-────────────────────────────────────────────────────────────
-Execution Engine attempts API call (HubSpot, Twilio, Meta) → Fails
-  ↓
-Native Retry with exponential backoff (e.g., 3 attempts)
-  ↓
-Retry limit reached?
-  ├── NO  → Retry again
-  └── YES → Fallback logic (e.g., send via Email instead)
-             ↓
-        Still failed? → Escalate → Write to Dead Letter Queue (dlq_events)
-             ↓
-        `python dlq_replay.py` safely recovers data when API comes back online.
-
-
-PATH E — Scheduled / Background Work (Proactive Engine)
-────────────────────────────────────────────────────────────
-APScheduler (Cron-based, operating outside the real-time Event Bus)
-  ↓
-Every 60s: `follow_up.py` checks Postgres `FollowUpState`
-  ├── Trigger found → generates AI payload → sends message → logs `followup.sent` to Event Bus
-  └── No trigger → sleeps
-  ↓
-Midnight: Triggers AI Market Intelligence (Layer 10) and Daily Rollups.
+PATH E — APScheduler follow-ups + midnight intel/rollups.
 ```

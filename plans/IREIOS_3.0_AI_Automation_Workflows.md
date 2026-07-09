@@ -1,723 +1,313 @@
-# IREIOS 3.0 --- AI Automation Workflows
+# IREIOS 3.0 — AI Automation Workflows
+
+Per-agent and per-workflow **behavior** only.
+
+| This doc owns | Does not own |
+|---|---|
+| Intents, context, decisions, action types, published events per workflow | System layers / Path A–E topology → `IREIOS_3.0_Architecture_Diagrams.md` |
+| | File trees, phases, migration → `plans/IREIOS_3.0_IMPLEMENTATION_PLAN.md` |
+
+**Universal pattern (all workflows):**
+
+```text
+Trigger event → CEO routes → Agent/Workflow
+  → fetch_context → analyze → decide (action_request)
+  → Automation Engine (validate · template · HITL if needed)
+  → Execution Engine (executor)
+  → result event → Event Bus → Memory · KG · Dashboard · next agents
+```
+
+Event names must match the **Architecture Diagrams event catalog**.
+
+---
 
 ## 1. WhatsApp AI Workflow
 
-Handles inbound WhatsApp conversations, lead qualification, FAQs,
-brochure and floor-plan sharing, site-visit requests, reminders,
-follow-ups, and human escalation.
+**Role:** Inbound WhatsApp (and website chat via same agent path): qualification, FAQ, brochure, floor plan, site visit, reminders handoff, escalation.
 
-### Mermaid Diagram
+| | |
+|---|---|
+| **Inputs** | `whatsapp.received`, `chat.received` |
+| **Context** | Lead, session messages, FollowUpState, FAISS RAG, Memory, Neo4j lead/project links |
+| **Outputs (actions)** | `send_whatsapp`, `send_whatsapp`+media, `update_crm` / lead fields, `schedule_visit`, `escalate_to_human` |
+| **Publishes** | Via EE: `whatsapp.sent`, `brochure.sent`, `floorplan.sent`, `site_visit.scheduled`; agent side: `whatsapp.response.generated`, `lead.qualified` when criteria met |
 
-``` mermaid
+### Flow
+
+```mermaid
 flowchart TD
- W1[Incoming WhatsApp Message] --> W2[API Gateway: Validate + Resolve Tenant]
- W2 --> W3[Publish whatsapp.received] --> W4[Event Bus] --> W5[WhatsApp AI]
- W5 --> W6[Fetch Lead + Conversation + Memory + Graph Context]
- W6 --> W7[Pre-Checks: Opt-Out, Guardrail, Human Handoff]
- W7 --> W8[Intent Detection] --> W9{Detected Intent?}
- W9 -->|FAQ| FAQ[FAQ Request] --> RAG[RAG / Knowledge Retrieval]
- W9 -->|Brochure| BRO[Brochure Request] --> DOC[Document Lookup]
- W9 -->|Floor Plan| FP[Floor Plan Request] --> DOC
- W9 -->|Qualification| Q[Lead Qualification] --> EXT[Extract Budget, Location, BHK, Intent]
- W9 -->|Site Visit| SV[Site Visit Request] --> VC[Check Visit Requirements]
- W9 -->|Other| GEN[General Conversation]
- RAG --> LLM[LLM Response Generation]
- DOC --> LLM
- EXT --> LLM
- VC --> LLM
- GEN --> LLM
- LLM --> DEC[WhatsApp AI Decision] --> A{Action Required?}
- A -->|Reply| SEND[send_whatsapp]
- A -->|Document| MEDIA[send_whatsapp + media_url]
- A -->|Lead Update| CRM[update_crm]
- A -->|Visit| VISIT[schedule_visit]
- A -->|Human| ESC[escalate_to_human]
- SEND --> AE[Automation Engine]
- MEDIA --> AE
- CRM --> AE
- VISIT --> AE
- ESC --> AE
- AE --> EE[Execution Engine]
- EE --> WX[WhatsApp Executor]
- EE --> CX[CRM Executor]
- EE --> CAL[Calendar Executor]
- EE --> NX[Notification Executor]
- WX --> RES[Publish Result Event]
- CX --> RES
- CAL --> RES
- NX --> RES
- RES --> EB[Event Bus]
- EB --> MEM[Company Memory]
- EB --> KG[Knowledge Graph]
- EB --> SCORE[Lead Scoring Handler]
- EB --> FU[Follow-Up Scheduler]
+  W1[whatsapp.received / chat.received] --> W2[CEO → WhatsApp AI]
+  W2 --> W3[fetch_context]
+  W3 --> W4[Pre-checks: opt-out · guardrail · human handoff]
+  W4 --> W5{Intent}
+  W5 -->|FAQ| RAG[RAG / property context]
+  W5 -->|Brochure| BRO[share_brochure tool]
+  W5 -->|Floor plan| FP[share_floor_plan tool]
+  W5 -->|Qualification| Q[Extract budget · location · BHK · intent]
+  W5 -->|Site visit| SV[Visit requirements]
+  W5 -->|Other| GEN[General reply]
+  RAG & BRO & FP & Q & SV & GEN --> LLM[LLM + tools]
+  LLM --> DEC[decide action_request]
+  DEC --> AE[Automation Engine]
+  AE --> EE[Execution Engine]
+  EE --> RES[Result events → Bus]
+  RES --> FAN[Memory · KG · Scoring · Follow-up · SSE]
 ```
 
-### Simple Arrow View
+### Intent rules (summary)
 
-``` text
-WhatsApp Message
-        ↓
-API Gateway
-        ↓
-whatsapp.received
-        ↓
-Event Bus
-        ↓
-WhatsApp AI
-        ↓
-Fetch Lead + Conversation Context
-        ↓
-Pre-Checks
-        ↓
-Intent Detection
-        ↓
- ┌──────────┬──────────┬────────────┬──────────────┬─────────────┐
- ↓          ↓          ↓            ↓              ↓
-FAQ      Brochure   Floor Plan   Qualification   Site Visit
- ↓          ↓          ↓            ↓              ↓
-RAG     Doc Lookup  Doc Lookup   Extract Info   Visit Check
- └──────────┴──────────┴────────────┴──────────────┴─────────────┘
-                              ↓
-                       Generate Response
-                              ↓
-                         Agent Decision
-                              ↓
-                       Automation Engine
-                              ↓
-                       Execution Engine
-                              ↓
-       WhatsApp / CRM / Calendar / Escalation Executors
-                              ↓
-                         Result Event
-                              ↓
-                           Event Bus
-                              ↓
-            Memory + Graph + Scoring + Follow-Up
-```
+| Intent | Behavior |
+|---|---|
+| FAQ | Answer from RAG / property context; no document tool |
+| Brochure | Explicit brochure/catalog/PDF ask → `share_brochure` → media send |
+| Floor plan | Layout/map/dimensions ask → `share_floor_plan` → media send |
+| Qualification | Extract fields; if incomplete, one clarifying question; if complete → qualify path |
+| Site visit | Collect requirements → `schedule_visit` (HITL if policy requires) |
+| Escalation | Opt-out / human request / guardrail → `escalate_to_human` |
+
+### Multi-turn (Path B)
+
+Same workflow; memory skips known fields until qualification complete.
+
+---
 
 ## 2. Marketing AI Workflow
 
-Processes campaign events and scheduled reports. It combines Meta,
-Google Ads, CRM lead-quality, conversion, and graph context to generate
-campaign, audience, budget, and performance recommendations.
+**Role:** Campaign performance, audience/budget suggestions, reports.
 
-### Mermaid Diagram
+| | |
+|---|---|
+| **Inputs** | `campaign.completed`, `cron.weekly_report`, `market.alert.generated` (optional) |
+| **Context** | Meta/Google metrics, CRM lead quality, conversions, KG |
+| **Outputs** | `notify_admin`, ads API actions (when integrated), report publish |
+| **Publishes** | `marketing.report.generated`, `campaign.updated` |
+| **HITL** | Budget/campaign changes that spend money → `requires_approval` |
 
-``` mermaid
+```mermaid
 flowchart TD
- M1[Campaign Completed / Weekly Report Trigger] --> M2[Event Bus] --> M3[Marketing AI]
- M3 --> M4[Fetch Marketing Context]
- M4 --> META[Meta Campaign Data]
- M4 --> GOOGLE[Google Ads Data]
- M4 --> CRM[CRM Lead Quality]
- M4 --> CONV[Conversion Data]
- M4 --> KG[Knowledge Graph]
- META --> ANA[Campaign Performance Analysis]
- GOOGLE --> ANA
- CRM --> ANA
- CONV --> ANA
- KG --> ANA
- ANA --> MET[Calculate CTR, CPL, Lead Quality, Conversion]
- MET --> AUD[Audience Analysis] --> REC[Campaign Recommendation Engine]
- REC --> T{Recommendation Type?}
- T --> C[Campaign Suggestion]
- T --> A[Audience Suggestion]
- T --> B[Budget Recommendation]
- T --> R[Performance Report]
- C --> D[Marketing AI Decision]
- A --> D
- B --> D
- R --> D
- D --> AP{Approval Required?}
- AP -->|Yes| HITL[Human Approval Workflow] --> AE[Automation Engine]
- AP -->|No| AE
- AE --> EE[Execution Engine]
- EE --> API[Meta / Google Executor]
- EE --> NR[Notification / Report Executor]
- API --> EVT[Publish campaign.updated / marketing.report.generated]
- NR --> EVT
- EVT --> EB[Event Bus]
- EB --> MEM[Company Memory]
- EB --> DASH[Dashboard]
- EB --> GRAPH[Knowledge Graph]
+  M1[Campaign / weekly trigger] --> M2[CEO → Marketing AI]
+  M2 --> M3[Fetch Meta · Google · CRM · conversions · KG]
+  M3 --> M4[CTR · CPL · quality · conversion analysis]
+  M4 --> M5[Audience + budget + campaign recommendations]
+  M5 --> M6{requires_approval?}
+  M6 -->|Yes| HITL[HITL]
+  M6 -->|No| AE[Automation Engine]
+  HITL --> AE --> EE[Execution Engine]
+  EE --> EVT[campaign.updated / marketing.report.generated]
+  EVT --> FAN[Memory · Dashboard · KG]
 ```
 
-### Simple Arrow View
-
-``` text
-Campaign Event / Weekly Cron
-            ↓
-        Event Bus
-            ↓
-       Marketing AI
-            ↓
- Fetch Campaign + CRM Data
-            ↓
- Meta + Google + Lead Quality
-            ↓
- Campaign Performance Analysis
-            ↓
- Audience Analysis
-            ↓
- Recommendation Generation
-            ↓
- Campaign / Audience / Budget / Performance Report
-            ↓
- Marketing Decision
-            ↓
- Approval Required?
-       ↙          ↘
- Human Approval   Automation
-       └──────────→ Execution Engine
-                         ↓
-                Meta / Google Executor
-                         ↓
-                    Result Event
-                         ↓
-                    Event Bus
-                         ↓
-           Memory + Dashboard + Graph
-```
+---
 
 ## 3. Sales AI Workflow
 
-Reacts to scored leads and conversation updates. It detects objections,
-determines lead priority, and recommends the next best sales action.
+**Role:** Objections, priority, next-best-action, hot-lead awareness.
 
-### Mermaid Diagram
+| | |
+|---|---|
+| **Inputs** | `lead.scored`, `conversation.updated`, `lead.hot` |
+| **Context** | Lead profile, history, prior objections, score, site visits |
+| **Outputs** | `create_task`, `schedule_visit`, `send_whatsapp` (docs), `notify_agent` |
+| **Publishes** | Sales action result events; may set `requires_approval` (e.g. discount) |
+| **HITL** | High-risk commercial actions |
 
-``` mermaid
+```mermaid
 flowchart TD
- S1[lead.scored / conversation.updated] --> S2[Event Bus] --> S3[Sales AI]
- S3 --> S4[Fetch Sales Context]
- S4 --> LP[Lead Profile]
- S4 --> CH[Conversation History]
- S4 --> PO[Previous Objections]
- S4 --> LS[Lead Score]
- S4 --> VH[Site Visit History]
- LP --> ANA[Sales Analysis]
- CH --> ANA
- PO --> ANA
- LS --> ANA
- VH --> ANA
- ANA --> OD[Objection Detection] --> O{Objection Found?}
- O -->|Price| P[Price Objection]
- O -->|Location| L[Location Objection]
- O -->|Timeline| T[Timeline Objection]
- O -->|Trust| TR[Trust / Project Objection]
- O -->|No| PR[Lead Priority Analysis]
- P --> PR
- L --> PR
- T --> PR
- TR --> PR
- PR --> ST{Lead Priority?}
- ST -->|Hot| H[Hot Lead]
- ST -->|Warm| W[Warm Lead]
- ST -->|Cold| C[Cold Lead]
- H --> NBA[Next Best Action Engine]
- W --> NBA
- C --> NBA
- NBA --> ACT{Recommended Action}
- ACT --> CALL[Call Lead]
- ACT --> VISIT[Schedule Site Visit]
- ACT --> DOC[Send Brochure / Floor Plan]
- ACT --> FU[Follow-Up Later]
- ACT --> NEG[Human Negotiation]
- CALL --> DEC[Sales AI Decision]
- VISIT --> DEC
- DOC --> DEC
- FU --> DEC
- NEG --> DEC
- DEC --> AP{Requires Approval?}
- AP -->|Yes| HITL[Human Approval Workflow] --> AE[Automation Engine]
- AP -->|No| AE
- AE --> EE[Execution Engine]
- EE --> TASK[Task Executor]
- EE --> CAL[Calendar Executor]
- EE --> WA[WhatsApp Executor]
- EE --> NOT[Notification Executor]
- TASK --> EVT[Publish Sales Action Event]
- CAL --> EVT
- WA --> EVT
- NOT --> EVT
- EVT --> EB[Event Bus]
- EB --> CRM[CRM Automation]
- EB --> MEM[Company Memory]
- EB --> DASH[Dashboard]
+  S1[lead.scored / conversation.updated] --> S2[CEO → Sales AI]
+  S2 --> S3[Fetch sales context]
+  S3 --> S4[Objection detection]
+  S4 --> S5[Priority: hot / warm / cold]
+  S5 --> S6[Next best action]
+  S6 --> S7{requires_approval?}
+  S7 -->|Yes| HITL[HITL]
+  S7 -->|No| AE[Automation Engine]
+  HITL --> AE --> EE[Task · Calendar · WhatsApp · Notify]
+  EE --> FAN[CRM · Memory · Dashboard]
 ```
 
-### Simple Arrow View
+### Next-best-action examples
 
-``` text
-lead.scored / conversation.updated
-                  ↓
-              Event Bus
-                  ↓
-               Sales AI
-                  ↓
-       Fetch Complete Lead Context
-                  ↓
-          Objection Detection
-                  ↓
- Price / Location / Timeline / Trust
-                  ↓
-          Lead Priority Analysis
-                  ↓
-          Hot / Warm / Cold
-                  ↓
-          Next Best Action
-                  ↓
- Call / Site Visit / Send Docs / Follow-Up / Negotiation
-                  ↓
-            Sales Decision
-                  ↓
-          Approval Required?
-             ↙         ↘
-       Human Approval   Automation
-             └──────────→ Execution Engine
-                              ↓
-                 Task / Calendar / WhatsApp
-                              ↓
-                     Sales Action Event
-                              ↓
-                         Event Bus
-                              ↓
-                CRM + Memory + Dashboard
-```
+| Priority / signal | Action |
+|---|---|
+| Hot + engaged | Call task / site visit |
+| Price objection | Negotiation path or human task (HITL if discount) |
+| Warm | Brochure/floor plan or timed follow-up |
+| Cold | Low-touch follow-up later |
+
+---
 
 ## 4. Customer Success AI Workflow
 
-Automates payment reminders, document reminders, referral requests,
-review collection, and renewal reminders based on customer lifecycle
-events.
+**Role:** Lifecycle messaging after booking/payment.
 
-### Mermaid Diagram
+| | |
+|---|---|
+| **Inputs** | `payment.due`, `payment.received`, `document.pending`, `booking.confirmed`, `customer.onboarded`, `renewal.due` |
+| **Context** | Customer profile, payment/document status, booking history |
+| **Outputs** | `send_whatsapp`, `update_crm` |
+| **Publishes** | CS result events (e.g. reminder sent) |
 
-``` mermaid
+```mermaid
 flowchart TD
- T[Trigger Event] --> PD[payment.due]
- T --> DP[document.pending]
- T --> BC[booking.completed]
- T --> CO[customer.onboarded]
- T --> RD[renewal.due]
- PD --> EB[Event Bus]
- DP --> EB
- BC --> EB
- CO --> EB
- RD --> EB
- EB --> CS[Customer Success AI] --> FC[Fetch Customer Context]
- FC --> CP[Customer Profile]
- FC --> PS[Payment Status]
- FC --> DS[Document Status]
- FC --> BH[Booking History]
- FC --> CH[Conversation History]
- CP --> LA[Customer Lifecycle Analysis]
- PS --> LA
- DS --> LA
- BH --> LA
- CH --> LA
- LA --> RA{Required Action?}
- RA -->|Payment Due| PR[Payment Reminder]
- RA -->|Document Missing| DR[Document Reminder]
- RA -->|Successful Customer| RR[Referral Request]
- RA -->|Completed Journey| RC[Review Collection]
- RA -->|Renewal Due| REN[Renewal Reminder]
- PR --> MSG[Generate Personalized Message]
- DR --> MSG
- RR --> MSG
- RC --> MSG
- REN --> MSG
- MSG --> DEC[Customer Success Decision] --> AE[Automation Engine] --> EE[Execution Engine]
- EE --> WA[WhatsApp Executor]
- EE --> CRM[CRM Executor]
- WA --> EVT[Publish Customer Event]
- CRM --> EVT
- EVT --> BUS[Event Bus]
- BUS --> MEM[Company Memory]
- BUS --> CA[CRM Automation]
- BUS --> DASH[Dashboard]
+  T[Lifecycle event] --> CS[CEO → Customer Success AI]
+  CS --> FC[Fetch customer context]
+  FC --> LA{Action type}
+  LA -->|Payment| PR[Payment reminder]
+  LA -->|Document| DR[Document reminder]
+  LA -->|Success| RR[Referral request]
+  LA -->|Journey done| RC[Review collection]
+  LA -->|Renewal| REN[Renewal reminder]
+  PR & DR & RR & RC & REN --> MSG[Personalized message]
+  MSG --> AE[Automation Engine] --> EE[WhatsApp · CRM]
+  EE --> FAN[Memory · CRM · Dashboard]
 ```
 
-### Simple Arrow View
-
-``` text
-Payment / Document / Booking / Renewal Event
-                       ↓
-                   Event Bus
-                       ↓
-              Customer Success AI
-                       ↓
-             Fetch Customer Context
-                       ↓
-             Lifecycle State Analysis
-                       ↓
-               Required Action?
-                       ↓
- Payment / Document / Referral / Review / Renewal
-                       ↓
-          Generate Personalized Message
-                       ↓
-          Customer Success Decision
-                       ↓
-              Automation Engine
-                       ↓
-              Execution Engine
-                       ↓
-            WhatsApp + CRM Executor
-                       ↓
-                Customer Event
-                       ↓
-                   Event Bus
-                       ↓
-            Memory + CRM + Dashboard
-```
+---
 
 ## 5. CRM Automation Workflow
 
-A deterministic workflow for lead classification, auto-tagging, agent
-matching, routing, CRM task creation, synchronization, retry, and DLQ
-handling.
+**Role:** Deterministic classification, tags, agent match, routing, CRM sync (not LLM-first).
 
-### Mermaid Diagram
+| | |
+|---|---|
+| **Inputs** | `lead.created`, `lead.qualified`, `lead.scored` |
+| **Context** | Lead fields, score, budget alignment, location, agent availability |
+| **Outputs** | `update_crm`, `create_task`, assignment fields |
+| **Publishes** | `lead.crm_synced`, `lead.assigned` |
+| **Failure** | EE retry → DLQ (Path D) |
 
-``` mermaid
+```mermaid
 flowchart TD
- R1[lead.created / lead.qualified / lead.scored] --> R2[Event Bus] --> R3[CRM Automation]
- R3 --> R4[Fetch Lead Context]
- R4 --> LD[Lead Data]
- R4 --> LS[Lead Score]
- R4 --> BA[Budget Alignment]
- R4 --> LP[Location Preference]
- R4 --> AA[Agent Availability]
- LD --> LC[Lead Classification]
- LS --> LC
- BA --> LC
- LP --> LC
- LC --> ST{Lead Stage?}
- ST -->|High Score| HOT[Hot]
- ST -->|Medium Score| WARM[Warm]
- ST -->|Low Score| COLD[Cold]
- HOT --> TAG[Generate Auto Tags]
- WARM --> TAG
- COLD --> TAG
- TAG --> MATCH[Agent Matching]
- AA --> MATCH
- MATCH --> ROUTE[Lead Routing] --> TASK[Create CRM Tasks]
- TASK --> BUILD[Build CRM Update Action] --> AE[Automation Engine]
- AE --> EE[Execution Engine] --> CRM[CRM Executor] --> OK{Execution Success?}
- OK -->|Yes| EVT[Publish lead.crm_synced / lead.assigned]
- OK -->|No| RETRY[Retry] --> LIMIT{Retry Limit?}
- LIMIT -->|Retry| CRM
- LIMIT -->|Limit Reached| DLQ[DLQ]
- EVT --> EB[Event Bus]
- EB --> SALES[Sales AI]
- EB --> KG[Knowledge Graph]
- EB --> DASH[Dashboard]
+  R1[lead.created / qualified / scored] --> R2[CRM Automation]
+  R2 --> R3[Classify hot / warm / cold]
+  R3 --> R4[Auto tags]
+  R4 --> R5[match_best_agent · route]
+  R5 --> R6[Build CRM / task actions]
+  R6 --> AE[Automation Engine] --> EE[CRM Executor]
+  EE -->|ok| EVT[lead.crm_synced · lead.assigned]
+  EE -->|fail| DLQ[Retry · DLQ]
+  EVT --> FAN[Sales · KG · Dashboard]
 ```
 
-### Simple Arrow View
-
-``` text
-Lead Created / Qualified / Scored
-                 ↓
-             Event Bus
-                 ↓
-          CRM Automation
-                 ↓
-          Fetch Lead Context
-                 ↓
-        Lead Classification
-                 ↓
-          Hot / Warm / Cold
-                 ↓
-          Generate Auto Tags
-                 ↓
-            Agent Matching
-                 ↓
-             Lead Routing
-                 ↓
-          CRM Task Creation
-                 ↓
-        Build CRM Update Action
-                 ↓
-          Automation Engine
-                 ↓
-          Execution Engine
-                 ↓
-            CRM Executor
-                 ↓
-          Execution Successful?
-             ↙           ↘
-           YES            NO
-            ↓              ↓
- lead.crm_synced         Retry
- lead.assigned             ↓
-            ↓          Limit Reached
-        Event Bus            ↓
-            ↓               DLQ
- Sales AI + Graph + Dashboard
-```
+---
 
 ## 6. Competitor Monitoring Workflow
 
-A scheduled market-intelligence workflow that tracks competitor pricing,
-projects, offers, inventory, news, and infrastructure changes and
-generates prioritized alerts.
+**Role:** Scheduled market intelligence (Layer 10).
 
-### Mermaid Diagram
+| | |
+|---|---|
+| **Inputs** | APScheduler / cron (not bus-first) |
+| **Context** | Pricing, projects, offers, inventory, news, infrastructure snapshots |
+| **Outputs** | `notify_admin`, dashboard alert actions |
+| **Publishes** | `market.alert.generated` |
 
-``` mermaid
+```mermaid
 flowchart TD
- P1[APScheduler / Cron Trigger] --> P2[Competitor Monitoring Workflow] --> P3[Fetch Market Data]
- P3 --> PRICE[Competitor Pricing]
- P3 --> PROJ[New Projects]
- P3 --> OFFER[Offers / Discounts]
- P3 --> INV[Inventory Changes]
- P3 --> NEWS[Market News]
- P3 --> INFRA[Infrastructure Updates]
- PRICE --> N[Normalize Market Data]
- PROJ --> N
- OFFER --> N
- INV --> N
- NEWS --> N
- INFRA --> N
- N --> COMP[Compare With Previous Snapshot] --> CHANGE{Significant Change?}
- CHANGE -->|No| STORE[Store Snapshot]
- CHANGE -->|Pricing| PC[Pricing Change]
- CHANGE -->|Project| NP[New Competitor Project]
- CHANGE -->|Offer| NO[New Offer]
- CHANGE -->|Inventory| IS[Inventory Shift]
- CHANGE -->|News| IN[Important News]
- CHANGE -->|Infrastructure| II[Infrastructure Impact]
- PC --> MI[Generate Market Intelligence]
- NP --> MI
- NO --> MI
- IS --> MI
- IN --> MI
- II --> MI
- MI --> DEC[Competitor Decision / Alert] --> PRI{Alert Priority?}
- PRI -->|Critical| CR[Critical Alert]
- PRI -->|High| HP[High Priority]
- PRI -->|Low| INFO[Informational]
- CR --> AE[Automation Engine]
- HP --> AE
- INFO --> AE
- AE --> EE[Execution Engine]
- EE --> NOT[Notification Executor]
- EE --> DASHX[Dashboard Executor]
- NOT --> EVT[Publish market.alert.generated]
- DASHX --> EVT
- EVT --> EB[Event Bus]
- EB --> MA[Marketing AI]
- EB --> SA[Sales AI]
- EB --> KG[Knowledge Graph]
- EB --> MEM[Company Memory]
- EB --> DASH[Executive Dashboard]
+  P1[Cron] --> P2[Competitor Monitor]
+  P2 --> P3[Fetch + normalize market data]
+  P3 --> P4{Significant change?}
+  P4 -->|No| STORE[Store snapshot]
+  P4 -->|Yes| MI[Market intelligence + priority]
+  MI --> AE[Automation Engine] --> EE[Notify · Dashboard]
+  EE --> EVT[market.alert.generated]
+  EVT --> FAN[Marketing · Sales · KG · Memory · Dashboard]
 ```
 
-### Simple Arrow View
+---
 
-``` text
-APScheduler / Cron
-        ↓
-Competitor Monitoring
-        ↓
-Fetch Market Data
-        ↓
-Pricing / Projects / Offers / Inventory / News / Infrastructure
-        ↓
-Normalize Market Data
-        ↓
-Compare Previous Snapshot
-        ↓
-Significant Change?
-    ↙              ↘
-   NO              YES
-   ↓                ↓
-Store Snapshot   Detect Change Type
-                     ↓
-          Generate Market Intelligence
-                     ↓
-             Alert Priority Analysis
-                     ↓
-       Critical / High / Informational
-                     ↓
-             Automation Engine
-                     ↓
-             Execution Engine
-                     ↓
-          Notification + Dashboard
-                     ↓
-          market.alert.generated
-                     ↓
-                 Event Bus
-                     ↓
- Marketing AI + Sales AI + Graph + Memory
-```
+## 7. Follow-Up Scheduler Workflow
 
-## 7. Automation Engine Workflow
+**Role:** Time-based Day 0→1→3→7 style follow-ups (Path E). Polling is intentional.
 
-Receives agent decisions and workflow triggers, validates actions,
-selects LangGraph, n8n, or deterministic execution, manages human
-approval, and routes actions through retry, fallback, DLQ, and replay
-handling.
+| | |
+|---|---|
+| **Inputs** | APScheduler every ~60s; also `lead.created` / activity to arm state |
+| **Context** | `FollowUpState`, lead, quiet hours, intelligence payload builders |
+| **Outputs** | `send_whatsapp` via AE→EE (never direct Twilio) |
+| **Publishes** | `followup.sent` |
 
-### Mermaid Diagram
-
-``` mermaid
+```mermaid
 flowchart TD
- A1[Agent Decision / Workflow Trigger] --> A2[Automation Engine]
- A2 --> A3[Validate Action Request] --> A4[Load Workflow Template]
- A4 --> T{Workflow Type?}
- T -->|Stateful AI| LG[LangGraph Workflow]
- T -->|Integration Workflow| N8N[n8n Workflow]
- T -->|Deterministic| LIN[Linear Automation]
- LG --> PLAN[Build Execution Plan]
- N8N --> PLAN
- LIN --> PLAN
- PLAN --> AP{Requires Approval?}
- AP -->|Yes| PAUSE[Pause Workflow] --> NOT[Notify Manager] --> MD{Manager Decision}
- MD -->|Reject| REJ[Rejected] --> EB[Event Bus]
- MD -->|Approve| APP[Approved] --> EE[Execution Engine]
- AP -->|No| EE
- EE --> RES[Resolve Executor] --> EXEC[Execute Action] --> OK{Success?}
- OK -->|Yes| SUCCESS[Publish Success Event] --> EB
- OK -->|No| RETRY[Retry With Backoff] --> LIMIT{Retry Limit Reached?}
- LIMIT -->|No| AGAIN[Retry Action] --> EXEC
- LIMIT -->|Yes| FALL[Execute Fallback] --> FOK{Fallback Success?}
- FOK -->|Yes| FS[Publish Fallback Success] --> EB
- FOK -->|No| DLQ[Write DLQ Event] --> REPLAY[DLQ Replay] --> EXEC
- EB --> MEM[Company Memory]
- EB --> KG[Knowledge Graph]
- EB --> DASH[Dashboard]
- EB --> NEXT[Next Agent]
+  F1[APScheduler 60s] --> F2[Due FollowUpState?]
+  F2 -->|No| SLEEP[Sleep]
+  F2 -->|Yes| PAY[Build payload · quiet hours]
+  PAY --> AE[Automation Engine] --> EE[WhatsApp Executor]
+  EE --> EVT[followup.sent]
+  EVT --> FAN[Memory · Timeline]
 ```
 
-### Simple Arrow View
+---
 
-``` text
-Agent Decision / Trigger
-          ↓
-    Automation Engine
-          ↓
-   Validate Action Request
-          ↓
-    Load Workflow Template
-          ↓
- LangGraph / n8n / Linear Workflow
-          ↓
-    Build Execution Plan
-          ↓
-   Requires Approval?
-      ↙          ↘
-    YES           NO
-     ↓             ↓
-Pause + Notify     │
-     ↓             │
-Approve / Reject   │
-     └─────────────→ Execution Engine
-                          ↓
-                   Resolve Executor
-                          ↓
-                     Execute Action
-                          ↓
-                       Success?
-                     ↙         ↘
-                   YES          NO
-                    ↓            ↓
-             Success Event     Retry
-                                  ↓
-                          Retry Limit?
-                           ↙        ↘
-                          NO        YES
-                          ↓          ↓
-                       Retry      Fallback
-                                      ↓
-                              Fallback Success?
-                                 ↙        ↘
-                               YES         NO
-                                ↓           ↓
-                          Result Event     DLQ
-                                              ↓
-                                         DLQ Replay
-                                              ↓
-                                           Retry
-                          ↓
-                       Event Bus
-                          ↓
- Memory + Knowledge Graph + Dashboard + Next Agent
+## 8. Automation Engine Workflow (shared)
+
+**Role:** Layer 6 control plane for every action_request.
+
+| | |
+|---|---|
+| **Inputs** | Action requests from any agent/workflow |
+| **Does** | Validate → load template → LangGraph \| n8n \| linear → HITL gate → call EE → retry/fallback/DLQ |
+| **Publishes** | Success/failure/approval events; never skips EE for external I/O |
+
+```mermaid
+flowchart TD
+  A1[action_request] --> A2[Validate]
+  A2 --> A3{Template type}
+  A3 -->|Stateful AI| LG[LangGraph]
+  A3 -->|Integration| N8N[n8n]
+  A3 -->|Deterministic| LIN[Linear]
+  LG & N8N & LIN --> A4{requires_approval?}
+  A4 -->|Yes| PAUSE[Pause · notify manager]
+  PAUSE --> MD{Approve?}
+  MD -->|Reject| REJ[Memory + approval.resolved]
+  MD -->|Approve| EE[Execution Engine]
+  A4 -->|No| EE
+  EE --> OK{Success?}
+  OK -->|Yes| OKS[Success event]
+  OK -->|No| RETRY[Backoff retry]
+  RETRY --> LIM{Limit?}
+  LIM -->|No| EE
+  LIM -->|Yes| FB[Fallback]
+  FB --> FOK{Ok?}
+  FOK -->|Yes| OKS
+  FOK -->|No| DLQ[DLQ · replay later]
+  OKS & REJ --> BUS[Event Bus fan-out]
 ```
 
-## 8. Complete IREIOS AI Automation Arrow Flow
+---
 
-``` text
-                        EXTERNAL SOURCES
-                              ↓
-                         API GATEWAY
-                              ↓
-                           EVENT BUS
-                              ↓
-                     CEO AI ORCHESTRATOR
-                              ↓
-     ┌────────────────────────┼────────────────────────────┐
-     ↓                        ↓                            ↓
-WHATSAPP AI             MARKETING AI               COMPETITOR MONITOR
-     ↓                        ↓                            ↓
-Lead Qualification      Campaign Analysis           Market Monitoring
-FAQ / Documents         Audience Analysis           Price / Offer Changes
-Site Visit              Recommendations             Market Alerts
-     ↓                        ↓                            ↓
-     └──────────────→ EVENT BUS ←─────────────────────────┘
-                              ↓
-                       CRM AUTOMATION
-                              ↓
-                  Tag + Score + Route Lead
-                              ↓
-                         EVENT BUS
-                              ↓
-                     PREDICTIVE ENGINE
-                              ↓
-                         lead.scored
-                              ↓
-                           SALES AI
-                              ↓
-              Objection + Priority + Next Best Action
-                              ↓
-                         EVENT BUS
-                              ↓
-                      AUTOMATION ENGINE
-                              ↓
-             LangGraph / n8n / Workflow Templates
-                              ↓
-                    HUMAN APPROVAL CHECK
-                              ↓
-                       EXECUTION ENGINE
-                              ↓
-         ┌────────────────────┼───────────────────────┐
-         ↓                    ↓                       ↓
- WhatsApp Executor       CRM Executor          Calendar / Notification
-         └────────────────────┼───────────────────────┘
-                              ↓
-                       ACTION RESULT EVENT
-                              ↓
-                           EVENT BUS
-                              ↓
-       ┌──────────────────────┼──────────────────────────┐
-       ↓                      ↓                          ↓
-KNOWLEDGE GRAPH        COMPANY MEMORY             EXECUTIVE DASHBOARD
-       ↓                      ↓                          ↓
-       └──────────────────────┴──────────────────────────┘
-                              ↓
-                    CUSTOMER LIFECYCLE EVENTS
-                              ↓
-                    CUSTOMER SUCCESS AI
-                              ↓
- Payment / Document / Referral / Review / Renewal Automation
-                              ↓
-                      AUTOMATION ENGINE
-                              ↓
-                      EXECUTION ENGINE
-                              ↓
-                           EVENT BUS
-```
+## 9. Lead Scoring Handler (async)
+
+**Role:** Non-blocking ML after chat (keeps WA latency low).
+
+| | |
+|---|---|
+| **Inputs** | `whatsapp.response.generated` (and optionally `lead.qualified`) |
+| **Does** | `calculate_lead_score`, budget alignment, related intelligence |
+| **Publishes** | `lead.scored`; if threshold → `lead.hot` |
+
+Not a conversational agent; registered handler under CEO/bus.
+
+---
+
+## 10. Placeholder agents (Layer 2 remainder)
+
+Registered in CEO with `status=placeholder`. No business logic until planned.
+
+Examples of future plugs: Pricing AI, Negotiation AI (L7), Inventory AI, Legal/Docs AI, etc. Each only needs: subscription list, `BaseAgent` implementation, registry entry.
+
+---
+
+## 11. Workflow ↔ event index
+
+| Workflow | Primary inputs | Primary outputs / events |
+|---|---|---|
+| WhatsApp AI | `whatsapp.received`, `chat.received` | `whatsapp.sent`, `brochure.sent`, `floorplan.sent`, `lead.qualified`, `whatsapp.response.generated` |
+| Marketing AI | `campaign.completed`, cron | `marketing.report.generated`, `campaign.updated` |
+| Sales AI | `lead.scored`, `conversation.updated`, `lead.hot` | tasks, visits, notifications (+ HITL) |
+| Customer Success | payment/booking/lifecycle events | reminders, CRM updates |
+| CRM Automation | `lead.created`, `lead.qualified`, `lead.scored` | `lead.assigned`, `lead.crm_synced` |
+| Competitor Monitor | cron | `market.alert.generated` |
+| Follow-Up Scheduler | cron + lead activity | `followup.sent` |
+| Automation Engine | action_request | success/fail/approval events |
+| Lead Scoring | `whatsapp.response.generated` | `lead.scored`, `lead.hot` |

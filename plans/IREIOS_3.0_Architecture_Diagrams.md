@@ -4,8 +4,10 @@ Canonical **system architecture** for Imperion Real Estate Intelligence OS (Phas
 
 | This doc owns | Sibling docs own |
 |---|---|
-| Layers 1–11, components, Path A–E, event catalog, KG overview, tech map | **Workflows** → per-agent behavior (`plans/IREIOS_3.0_AI_Automation_Workflows.md`) |
-| | **Implementation** → phases, files, migration (`plans/IREIOS_3.0_IMPLEMENTATION_PLAN.md`) |
+| Layers 1–11, components, Path A–E, event catalog, KG overview, tech map | **Workflows** → `IREIOS_3.0_AI_Automation_Workflows.md` |
+| | **Implementation** → `IREIOS_3.0_IMPLEMENTATION_PLAN.md` |
+| | **Step-by-step** → `IREIOS_3.0_STEP_BY_STEP_EXPANSION.md` |
+| | **Execution order** → `UNIFIED_EXECUTION_ORDER.md` |
 
 Sources: Phase 3 direction assignment (PDF), multi-agent overview (JPEG), refined Path A–E design.
 

@@ -5,8 +5,9 @@ Atomic implementation tasks for expanding the current codebase into Phase 3.0.
 | This doc owns | Does not own |
 |---|---|
 | Ordered tasks: files, steps, tests, done criteria, rollback | Architecture diagrams → `IREIOS_3.0_Architecture_Diagrams.md` |
-| | Agent behavior detail → `plans/IREIOS_3.0_AI_Automation_Workflows.md` |
-| | Phase rationale / file tree overview → `plans/IREIOS_3.0_IMPLEMENTATION_PLAN.md` |
+| | Agent behavior detail → `IREIOS_3.0_AI_Automation_Workflows.md` |
+| | Phase rationale / file tree overview → `IREIOS_3.0_IMPLEMENTATION_PLAN.md` |
+| | Serial program order (bugs then expansion) → `UNIFIED_EXECUTION_ORDER.md` |
 
 **How to use**
 
@@ -379,12 +380,20 @@ python gate_dlq_drill.py
 ### Task 5.5 — Brochure & floor plan tools
 - **Edit:** `system_prompt.py`, WhatsAppAgent tools  
 - **Steps:**  
-  1. Apply FAQ/document rules from `FAQ_BROCHURE_FLOORPLAN_IMPLEMENTATION.md` (prompt + tools).  
-  2. Tools return conversational_reply + document metadata; `decide` builds `send_whatsapp` with `media_url` from config/map (document URL table or settings).  
-  3. Publish `brochure.sent` / `floorplan.sent` via EE map or agent post-publish.  
-  4. **Do not** use stub HTTP event bus from FAQ doc — use `EventBusClient`.  
-- **Test:** Tool selection when user asks “send brochure”; missing location asks first.  
-- **Done:** Media path through EE.  
+  1. **System prompt** — insert FAQ & document rules (before TOOL USE RULE):  
+     - FAQ (amenities, hospitals, maintenance, pricing): answer via RAG / property context; **do not** use document tools.  
+     - Brochure/catalog/PDF ask → `share_brochure` tool.  
+     - Floor plan/layout/map/dimensions ask → `share_floor_plan` tool.  
+     - If document requested but location/project missing → ask location first.  
+  2. **Tools** (register with Gemini alongside `extract_lead_info`):  
+     - `share_brochure(location, property_type, conversational_reply)`  
+     - `share_floor_plan(location, property_type, conversational_reply)`  
+  3. Expand property/RAG keyword set with brochure, floor plan, amenities-related terms as needed.  
+  4. **decide / EE:** build `send_whatsapp` with `message` + `media_url` from config/document map (not hardcoded dummy URLs in prod). **No** direct Twilio in the agent.  
+  5. On success publish `brochure.sent` / `floorplan.sent` via ExecutionEngine event map or bus after EE success.  
+  6. Use real `EventBusClient` only — never a stub HTTP mock event bus.  
+- **Test:** User asks “send brochure” with location → media action; without location → clarifying question; FAQ amenities → RAG path not document tool.  
+- **Done:** Media path through AE→EE; events published; no direct Twilio in agent.  
 - **Status:** `[ ]`
 
 ### Task 5.6 — decide → AE + async scoring event
@@ -646,8 +655,7 @@ python gate_dlq_drill.py
 - **Done:** Checklist matches PDF deliverables.  
 - **Status:** `[ ]`
 
-### Task 10.5 — Final gate
-- **Commands:**
+### Task 10.5 — Final gate (commands)
 
 ```text
 python gate_isolation_test.py
@@ -656,8 +664,55 @@ python task3_runner.py
 # health + graph health + SSE smoke
 ```
 
-- **Done:** MVP sign-off.  
+- **Done:** Commands green; then complete **Program final gate (G2)** below.  
 - **Status:** `[ ]`
+
+---
+
+## Program final gate (G2)
+
+Used by `UNIFIED_EXECUTION_ORDER.md` Gate **G2**. Mark complete only when **all** items pass.
+
+### Architecture & cutover
+
+- [ ] Expansion Phases 1–10 exit gates are all done (or explicitly `[-]` with reason)
+- [ ] Runtime path is `Event → CEO → Agent/Workflow → AE → EE → Event` for new work
+- [ ] `FEATURE_WHATSAPP_V3` default documented for production; rollback `false` still works until dual-path removed
+- [ ] Follow-up on `FOLLOWUP_ENGINE=v3` (or intentional legacy only with written reason)
+- [ ] CEO registry lists active agents (WhatsApp, Sales, Marketing, CS, CRM automation, Competitor, scoring handler) and Layer-2 placeholders
+- [ ] Production code does not import decommissioned monolith paths (`process_chat` / direct `crm_sync` / direct `follow_up` Twilio) except documented rollback flag
+
+### Data, graph, memory
+
+- [ ] Neo4j schema migrated; `GET /api/v1/graph/health` ok
+- [ ] Graph lead-context query works for a known lead (tenant-scoped)
+- [ ] Async graph writers do not block chat path
+- [ ] Memory decision/action write + retrieve smoke ok
+
+### APIs & realtime
+
+- [ ] Prediction routes: auth required, tenant-scoped; lead-score returns real scoring for known lead
+- [ ] SSE: authenticated stream receives a published test event
+- [ ] Approve/reject APIs work for a pending HITL action (if HITL used in demo)
+
+### Quality gates (commands)
+
+- [ ] `python gate_isolation_test.py`
+- [ ] `python gate_dlq_drill.py` (+ replay path as applicable)
+- [ ] `python task3_runner.py` (v3 path when flag on)
+- [ ] App `/health` (or equivalent) ok
+- [ ] Graph health + SSE smoke ok
+
+### Evidence (Task 10.4)
+
+- [ ] OpenAPI / API list exported
+- [ ] Graph schema export attached
+- [ ] Test logs retained (task3, isolation, DLQ)
+- [ ] Architecture + workflow + implementation links in evidence pack
+- [ ] Integration notes (Neo4j, n8n, Twilio, flags)
+- [ ] Deployment steps documented
+
+**G2 status:** `[ ]`
 
 ---
 
@@ -720,6 +775,8 @@ python task3_runner.py
 
 ## Immediate next action
 
-Start **Task 0.2** then **Task 1.1** (package skeletons). Do not skip Phase 1 tests before Phase 2.
+**Do not start this plan until** `UNIFIED_EXECUTION_ORDER.md` Gate **G1** is complete (all bug-audit phases first).
+
+After G1: Expansion Task **0.2**, then **1.1**. Do not skip phase exit gates.
 
 When implementing with an AI coding agent, paste a single task block (e.g. Task 1.2 only) and require its Test + Done criteria before the next task.

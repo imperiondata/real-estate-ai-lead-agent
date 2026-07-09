@@ -70,7 +70,7 @@
 | **16** | Expansion | Phase 8 (Tasks 8.1–8.5) | Prediction APIs + Marketing/CS/Competitor | Expansion Phase 8 exit gate | `[ ]` |
 | **17** | Expansion | Phase 9 (Tasks 9.1–9.8) | Frontend wire to real APIs/SSE | Expansion Phase 9 exit gate | `[ ]` |
 | **18** | Expansion | Phase 10 (Tasks 10.1–10.5) | Placeholders, decommission, evidence | Expansion Phase 10 final gate | `[ ]` |
-| **G2** | Gate | **Program complete** | MVP close | Evidence pack + full gates (isolation, DLQ, task3, health/graph/SSE) | `[ ]` |
+| **G2** | Gate | **Program complete** | MVP close | Expansion plan **Program final gate (G2)** checklist + Task 10.4–10.5 | `[ ]` |
 
 **Expansion Task 0.1** (doc freeze) is already done; do not re-open it as a blocking step.
 
@@ -166,11 +166,11 @@ Before **any** expansion work:
 
 Implement using `plans/IREIOS_3.0_STEP_BY_STEP_EXPANSION.md` only. Within each phase, follow task numbers in order (e.g. 1.1 before 1.2).
 
-Supporting architecture (read-only reference, not alternate queues):
+Supporting architecture (read-only reference, not alternate queues) — all under `plans/`:
 
 - `IREIOS_3.0_Architecture_Diagrams.md`
-- `plans/IREIOS_3.0_AI_Automation_Workflows.md`
-- `plans/IREIOS_3.0_IMPLEMENTATION_PLAN.md`
+- `IREIOS_3.0_AI_Automation_Workflows.md`
+- `IREIOS_3.0_IMPLEMENTATION_PLAN.md`
 
 ### Step 8 — Expansion Phase 0
 
@@ -221,9 +221,9 @@ Supporting architecture (read-only reference, not alternate queues):
 
 ### Gate G2 — Program complete
 
-- Expansion Phase 10 final gate green.  
-- Evidence pack matches assignment deliverables.  
-- Isolation, DLQ, task3, health/graph/SSE smoke as listed in expansion plan.
+Complete the checklist **Program final gate (G2)** in `IREIOS_3.0_STEP_BY_STEP_EXPANSION.md` (architecture/cutover, graph/memory, APIs/SSE, quality commands, evidence pack).  
+
+That section is the expansion equivalent of bug-audit §13. Do not mark G2 done until every G2 checkbox is green.
 
 ---
 

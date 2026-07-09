@@ -5,7 +5,9 @@ Migration and build plan for expanding the current monolith into the Phase 3.0 a
 | This doc owns | Does not own |
 |---|---|
 | Phases, file tree, migration mapping, tests, risks, decommission | System diagrams / event catalog → `IREIOS_3.0_Architecture_Diagrams.md` |
-| | Agent intent trees / workflow Mermaid → `plans/IREIOS_3.0_AI_Automation_Workflows.md` |
+| | Agent intent trees / workflow Mermaid → `IREIOS_3.0_AI_Automation_Workflows.md` |
+| | Atomic tasks → `IREIOS_3.0_STEP_BY_STEP_EXPANSION.md` |
+| | Serial program order → `UNIFIED_EXECUTION_ORDER.md` |
 
 **Status:** Doc-synced (architecture decisions frozen)  
 **Codebase baseline:** FastAPI monolith — `agent.py`, `main.py`, `follow_up.py`, `crm_sync.py`, `app/intelligence/*`, Next.js command-center (mostly mocks)
@@ -376,7 +378,8 @@ Pin versions in `requirements.txt` when implementing phases.
 
 ## 11. Next artifact after this plan
 
-`plans/IREIOS_3.0_STEP_BY_STEP_EXPANSION.md` — atomic tasks (one change → test → next), written only after this plan and sibling docs are approved as final.
+`IREIOS_3.0_STEP_BY_STEP_EXPANSION.md` — atomic tasks (one change → test → next).  
+`UNIFIED_EXECUTION_ORDER.md` — serial order vs bug-audit plan.
 
 ---
 

@@ -5,7 +5,7 @@ Per-agent and per-workflow **behavior** only.
 | This doc owns | Does not own |
 |---|---|
 | Intents, context, decisions, action types, published events per workflow | System layers / Path A–E topology → `IREIOS_3.0_Architecture_Diagrams.md` |
-| | File trees, phases, migration → `plans/IREIOS_3.0_IMPLEMENTATION_PLAN.md` |
+| | File trees, phases, migration → `IREIOS_3.0_IMPLEMENTATION_PLAN.md` |
 
 **Universal pattern (all workflows):**
 

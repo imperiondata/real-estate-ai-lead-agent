@@ -52,17 +52,18 @@ python gate_dlq_drill.py
 - **Files:** none required  
 - **Steps:**  
   1. Create git branch e.g. `feature/ireios-3.0`.  
-  2. Ensure `.env` has existing keys; leave room for `NEO4J_URI`, `NEO4J_USER`, `NEO4J_PASSWORD`, `N8N_BASE_URL`, `N8N_API_KEY`, `FEATURE_WHATSAPP_V3` later.  
-  3. Note `TEST_MODE` behavior for Twilio.  
-- **Test:** App still boots: `uvicorn main:app` (or project start command).  
-- **Done:** Clean branch; app starts.  
+  2. Ensure `.env` has existing keys; leave room for `NEO4J_URI`, `NEO4J_USER`, `NEO4J_PASSWORD`, `N8N_BASE_URL`, `N8N_API_KEY`, `FEATURE_WHATSAPP_V3`, `EVENT_STREAM_KEY`, `EVENT_CONSUMER_GROUP` later.  
+  3. Confirm Redis is available (bus depends on Redis Streams from Day 1).  
+  4. Note `TEST_MODE` behavior for Twilio.  
+- **Test:** App still boots: `uvicorn main:app` (or project start command); Redis ping ok.  
+- **Done:** Clean branch; app starts; Redis reachable.  
 - **Status:** `[ ]`
 
 ---
 
-## Phase 1 — Event Bus, CEO, BaseAgent, EE skeleton
+## Phase 1 — Redis Streams Event Bus, CEO, BaseAgent, EE skeleton
 
-**Exit gate:** publish → CEO → handler works; EE dispatches known action; unknown action fails; forced failure can write DLQ; app lifespan starts/stops bus without breaking existing routes.
+**Exit gate:** publish via **Redis Streams** → CEO → handler works after consumer restart; EE dispatches known action; unknown action fails; forced failure can write DLQ; lifespan starts/stops bus without breaking existing routes.
 
 ### Task 1.1 — Package skeletons
 - **Create:**
@@ -80,16 +81,24 @@ python gate_dlq_drill.py
 - **Rollback:** Delete new packages.  
 - **Status:** `[ ]`
 
-### Task 1.2 — Event Bus client
+### Task 1.2 — Event Bus client (Redis Streams — Day 1)
 - **Create:** `app/clients/event_bus_client.py`  
 - **Steps:**  
-  1. Implement class/module with: `start()`, `async stop()`, `subscribe(event_type, handler)`, `async publish(event_type, tenant_id, entity_id, payload, source="system")`.  
-  2. Build event envelope (uuid event_id + correlation_id, UTC timestamp).  
-  3. Background `_processing_loop` with `asyncio.Queue`; `asyncio.gather(..., return_exceptions=True)` for handlers.  
-  4. Log every publish at INFO (no PII dump of full message body in production if avoidable; entity_id ok).  
-  5. `start()` is idempotent; `stop()` cancels processing task safely.  
-- **Test:** Standalone script or pytest: subscribe mock → publish → assert handler called once with correct `event_type` and `tenant_id`.  
-- **Done:** Unit test green; no dependency on FastAPI.  
+  1. Implement: `start()`, `async stop()`, `subscribe(event_type, handler)`, `async publish(event_type, tenant_id, entity_id, payload, source="system")`.  
+  2. Build event envelope (uuid `event_id` + `correlation_id`, UTC timestamp, `tenant_id`, `entity_id`, `event_type`, `source`, `payload`) per Architecture Diagrams §4.  
+  3. **Transport = Redis Streams only** (no production `asyncio.Queue` bus):  
+     - `publish` → Redis `XADD` (single stream e.g. `ireios:events` or documented multi-stream scheme)  
+     - In-app handlers via consumer group + `XREADGROUP` / `XACK`  
+     - Background consumer loop(s); `return_exceptions=True` per handler  
+  4. Config: Redis URL (existing), `EVENT_STREAM_KEY`, `EVENT_CONSUMER_GROUP`, consumer name (instance id).  
+  5. Log every publish at INFO (entity_id ok; avoid full PII bodies).  
+  6. `start()` idempotent; `stop()` cancels consumers safely and does not leave dangling group readers without shutdown.  
+  7. Document n8n subscription path (same stream or bridge) for Maitri automation.  
+- **Test:**  
+  - Publish → subscribed handler receives event.  
+  - **Durability:** publish → stop process/consumer → restart consumer → message still processable or already acked correctly (no silent drop of unacked).  
+  - Redis down → publish fails loudly (logged/error), does not pretend success.  
+- **Done:** Streams-backed bus green with Redis; **no** in-memory-only production path.  
 - **Status:** `[ ]`
 
 ### Task 1.3 — Agent registry
@@ -164,8 +173,46 @@ python gate_dlq_drill.py
 - **Status:** `[ ]`
 
 ### Task 1.8 — Phase 1 exit gate
-- **Steps:** Re-run isolation + DLQ drill if env allows; smoke all critical routes manually once.  
-- **Done:** Checklist: bus, CEO, BaseAgent, EE skeleton, lifespan.  
+- **Steps:** Re-run isolation + DLQ drill if env allows; smoke critical routes; confirm Redis Streams consumer logs healthy.  
+- **Done:** Checklist: Streams bus, CEO, BaseAgent, EE skeleton, lifespan.  
+- **Status:** `[ ]`
+
+---
+
+## Phase 1b — Early API envelopes + SSE (frontend unblock)
+
+**Exit gate:** Authenticated SSE stream and timeline/envelope REST are live with **stable shapes**; stub events publishable; FE can set mocks off and receive data.
+
+### Task 1b.1 — SSE stream endpoint
+- **Edit:** `main.py` (or `app/api/events.py` mounted)  
+- **Steps:**  
+  1. `GET /api/v1/events/stream` — tenant auth (API key or JWT as existing patterns).  
+  2. Bridge Redis Streams (or a bus-fed per-tenant fan-out) to SSE (`text/event-stream`).  
+  3. Heartbeat comments every N seconds.  
+  4. Event JSON matches Architecture envelope fields.  
+- **Test:** Auth required; `curl -N` with credentials receives heartbeat.  
+- **Done:** Route in OpenAPI; unauthorized rejected.  
+- **Status:** `[ ]`
+
+### Task 1b.2 — Timeline / KPI envelope stubs
+- **Steps:**  
+  1. `GET /api/v1/leads/{id}/timeline` (tenant-scoped) — returns list of envelope-shaped events (may be empty or stub).  
+  2. Optional REST pulse/KPI endpoint if dashboard needs non-SSE bootstrap.  
+  3. Stub rows use `"source": "stub"` until real producers exist.  
+- **Test:** Other tenant cannot read lead timeline; response schema stable.  
+- **Done:** FE can bind types against live JSON.  
+- **Status:** `[ ]`
+
+### Task 1b.3 — Stub event publisher
+- **Steps:**  
+  1. Admin or dev-only endpoint / CLI: publish sample events (`lead.created`, `whatsapp.sent`, pulse) via `EventBusClient.publish`.  
+  2. Document for Mayank: how to fire a demo event and see it on SSE.  
+- **Test:** Publish stub → SSE client receives within a few seconds.  
+- **Done:** End-to-end stub path works without WhatsApp/LLM.  
+- **Status:** `[ ]`
+
+### Task 1b.4 — Phase 1b exit gate
+- **Done:** SSE + timeline (or equivalent) + stub publisher green; contract frozen for FE.  
 - **Status:** `[ ]`
 
 ---
@@ -228,8 +275,9 @@ python gate_dlq_drill.py
   1. Config: `N8N_BASE_URL`, `N8N_API_KEY` in `config.py` / settings.  
   2. `async trigger_workflow(workflow_id, payload) -> dict` via httpx.  
   3. If URL missing: return `{"status":"error","error":"n8n_not_configured"}` (no crash).  
+  4. Document that n8n can also **consume Redis Streams** (same bus as Phase 1) for event-driven workflows — not only outbound HTTP triggers.  
 - **Test:** Mock httpx response.  
-- **Done:** Client exists; safe when unconfigured.  
+- **Done:** Client exists; safe when unconfigured; Streams subscription path documented.  
 - **Status:** `[ ]`
 
 ### Task 2.6 — Approve/reject API
@@ -563,58 +611,50 @@ python gate_dlq_drill.py
 
 ---
 
-## Phase 9 — Frontend wire (backend contracts + Mayank UI)
+## Phase 9 — Frontend cutover (Mayank UI)
 
-**Exit gate:** MVP pages no longer depend on mock SSE/chat for happy path; backend SSE + graph + chat APIs stable.
+**Exit gate:** MVP pages use live backend (not mocks); SSE/timeline contracts from **Phase 1b** are fed by **real** producers where available.
 
-### Task 9.1 — Backend SSE stream
-- **Edit:** `main.py`  
-- **Steps:**  
-  1. `GET /api/v1/events/stream` (SSE) authenticated by tenant.  
-  2. Bridge: EventBus handlers for dashboard-relevant events push to per-tenant queues.  
-  3. Heartbeat comments every N seconds.  
-- **Test:** `curl -N` stream; publish test event → client receives JSON.  
-- **Done:** Envelope matches FE expectations (document fields).  
+**Note:** SSE stream + envelope routes already exist (Phase 1b). Do not re-create them; upgrade producers and finish FE wiring.
+
+### Task 9.1 — Backend: replace stub producers for dashboard events
+- **Steps:** Ensure live bus events (WA, lead, follow-up, approvals) reach SSE; reduce reliance on `source: "stub"`.  
+- **Test:** Real agent/action path appears on stream.  
 - **Status:** `[ ]`
 
 ### Task 9.2 — Backend executive chat API (optional thin)
-- **Steps:** `POST /api/v1/executive/chat` → CEO/agent channel or WhatsAppAgent-like with admin context; stream or JSON reply.  
+- **Steps:** `POST /api/v1/executive/chat` → CEO/agent channel; stream or JSON reply.  
 - **Test:** Auth required; tenant scoped.  
 - **Status:** `[ ]`
 
 ### Task 9.3 — FE: API client config
 - **Owner:** Mayank (coordinate)  
 - **Files:** `frontend/src/lib/api/*`  
-- **Steps:** Base URL + API key/JWT from env; remove hard mock-only paths behind `NEXT_PUBLIC_USE_MOCKS=false`.  
+- **Steps:** Base URL + API key/JWT from env; `NEXT_PUBLIC_USE_MOCKS=false`.  
 - **Done:** Flag switches mock vs real.  
 - **Status:** `[ ]`
 
 ### Task 9.4 — FE: Replace MockSSEService
 - **Files:** `frontend/src/lib/api/mockService.ts`, dashboard-mvp page  
-- **Steps:** Real EventSource/fetch stream to `/api/v1/events/stream`.  
-- **Done:** KPI/alert pulse from backend test publish.  
+- **Steps:** EventSource/fetch to `/api/v1/events/stream` (available since 1b).  
+- **Done:** KPI/alert pulse from backend.  
 - **Status:** `[ ]`
 
 ### Task 9.5 — FE: AI chat real stream
 - **Files:** `mockChatService.ts`, ai-chat page  
-- **Steps:** Call executive chat or token stream API; tool-call UI can map graph tool names from real events.  
+- **Steps:** Call executive chat or stream API.  
 - **Status:** `[ ]`
 
 ### Task 9.6 — FE: Knowledge Graph + Digital Twin data
-- **Steps:** Fetch `/api/v1/graph/...` for viz; twin uses graph snapshot + recent events.  
+- **Steps:** Fetch `/api/v1/graph/...`; twin uses graph + recent events.  
 - **Status:** `[ ]`
 
 ### Task 9.7 — FE: Sales Copilot timeline
-- **Steps:** Timeline from events API or lead-scoped event list endpoint (add `GET /api/v1/leads/{id}/timeline` if needed — **backend task** if missing).  
-- **If missing endpoint:** do Task 9.7b backend first.  
-- **Status:** `[ ]`
-
-### Task 9.7b — Backend lead timeline API (if needed)
-- **Steps:** Query EventLog + bus projections + memory actions for lead/session.  
+- **Steps:** Use Phase 1b timeline API + live EventLog/memory when available.  
 - **Status:** `[ ]`
 
 ### Task 9.8 — Phase 9 exit gate
-- **Done:** Demo script: inbound WA (or chat) → dashboard SSE update → graph node → timeline entry.  
+- **Done:** Demo: inbound WA (or chat) → dashboard SSE → graph node → timeline entry; mocks off.  
 - **Status:** `[ ]`
 
 ---
@@ -675,8 +715,10 @@ Used by `UNIFIED_EXECUTION_ORDER.md` Gate **G2**. Mark complete only when **all*
 
 ### Architecture & cutover
 
-- [ ] Expansion Phases 1–10 exit gates are all done (or explicitly `[-]` with reason)
+- [ ] Expansion Phases 1–10 exit gates are all done (or explicitly `[-]` with reason), including **Phase 1b**
+- [ ] Event Bus is **Redis Streams** (not in-process Queue) in production path
 - [ ] Runtime path is `Event → CEO → Agent/Workflow → AE → EE → Event` for new work
+- [ ] SSE/API contracts shipped in Phase 1b; Phase 9 cutover completed
 - [ ] `FEATURE_WHATSAPP_V3` default documented for production; rollback `false` still works until dual-path removed
 - [ ] Follow-up on `FOLLOWUP_ENGINE=v3` (or intentional legacy only with written reason)
 - [ ] CEO registry lists active agents (WhatsApp, Sales, Marketing, CS, CRM automation, Competitor, scoring handler) and Layer-2 placeholders
@@ -718,14 +760,14 @@ Used by `UNIFIED_EXECUTION_ORDER.md` Gate **G2**. Mark complete only when **all*
 
 ## Parallelism cheat sheet
 
-| Can start early | Depends on |
+**Program scheduling** is serial per `UNIFIED_EXECUTION_ORDER.md` (bugs complete before expansion). Within expansion, do not reorder phases without updating that doc.
+
+| Note | Depends on |
 |---|---|
-| 7.1 Neo4j docker | Nothing (after 0.2) |
-| 7.2 schema | 7.1 |
-| 9.1 SSE design | Phase 1 bus |
-| 2.4/2.5 scaffolds | Phase 1 |
-| FE 9.3 env work | Backend URL known |
-| Must not parallel with cutover | 5.7–5.8, 4.4, 10.2–10.3 |
+| Phase 1b FE unblock | Phase 1 Streams bus |
+| FE 9.x cutover | Phase 1b contracts live (stubs then real) |
+| Neo4j 7.x | After bus; after G1 bugs |
+| Must not skip dual-path cutovers | 5.7–5.8, 4.4, 10.2–10.3 |
 
 ---
 
@@ -733,7 +775,8 @@ Used by `UNIFIED_EXECUTION_ORDER.md` Gate **G2**. Mark complete only when **all*
 
 | After tasks | Commit message example |
 |---|---|
-| 1.1–1.8 | `feat(ireios): event bus, CEO orchestrator, EE skeleton` |
+| 1.1–1.8 | `feat(ireios): redis streams event bus, CEO, EE skeleton` |
+| 1b.x | `feat(ireios): early SSE and API envelopes for frontend` |
 | 2.x | `feat(ireios): automation engine and HITL approvals` |
 | 3.x | `feat(ireios): whatsapp and CRM executors` |
 | 4.x | `feat(ireios): follow-up scheduler via execution engine` |

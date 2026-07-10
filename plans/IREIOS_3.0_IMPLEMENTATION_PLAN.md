@@ -21,7 +21,9 @@ Migration and build plan for expanding the current monolith into the Phase 3.0 a
 5. Neo4j + Graph APIs live in this repo (backend).  
 6. Frontend: wire existing mocks to real APIs/SSE (Mayank UI; backend owns contracts).  
 7. Full agent logic for planned agents only; remaining “15” are CEO placeholders.  
-8. Brochure/floor plan folded into WhatsApp agent phase (supersedes standalone FAQ doc patterns that used a stub HTTP bus).
+8. Brochure/floor plan folded into WhatsApp agent phase (supersedes standalone FAQ doc patterns that used a stub HTTP bus).  
+9. **Event Bus = Redis Streams from Day 1** — no in-process `asyncio.Queue` as the production bus (vetoed: crash data-loss + n8n needs an external broker).  
+10. **API envelopes + SSE streams ship early** (Phase 1b, right after bus) with stub/dummy payloads allowed so FE can unmock immediately; Phase 9 is FE cutover to live producers, not first endpoint creation.
 
 **Runtime rule:** `Event → CEO → Agent/Workflow → Automation Engine → Execution Engine → Event`
 
@@ -35,7 +37,7 @@ Migration and build plan for expanding the current monolith into the Phase 3.0 a
 |---|---|
 | `process_chat()` does session, LLM, RAG, tools, scoring, matching | WhatsApp Agent + async scoring handler |
 | Direct Twilio / HubSpot calls | Execution Engine executors |
-| No bus | Event Bus + CEO routing |
+| No bus | Event Bus (**Redis Streams**) + CEO routing |
 | No HITL workflow engine | Automation Engine + LangGraph/n8n + approval queue |
 | No Neo4j | Knowledge Graph module + async writers |
 | FE MockSSE / mock chat | Real SSE + REST from backend |
@@ -50,7 +52,7 @@ Dual-path rule: **do not decommission** `agent.py` / `crm_sync.py` / `follow_up.
 ```text
 app/
 ├── clients/
-│   ├── event_bus_client.py      # pub/sub
+│   ├── event_bus_client.py      # Redis Streams pub/sub (Day 1)
 │   └── graph_client.py          # agent-facing KG access
 ├── orchestrator/
 │   ├── ceo_orchestrator.py      # registry, route, queue, health
@@ -107,7 +109,8 @@ frontend/               # Mayank: wire mocks (Phase 9)
 | Phase | Goal | Exit criteria |
 |---|---|---|
 | **0** | Docs frozen | Three docs + event catalog agreed |
-| **1** | Event Bus + CEO + BaseAgent + EE skeleton + DLQ hook | Unit tests: publish→CEO→handler; dispatch unknown action fails cleanly |
+| **1** | **Redis Streams** Event Bus + CEO + BaseAgent + EE skeleton + DLQ hook | Publish survives process restart; CEO handler runs; EE/DLQ unit tests |
+| **1b** | **API envelopes + SSE early** (stub producers OK) | Authenticated SSE + timeline/KPI envelope routes live; FE can drop mocks |
 | **2** | Automation Engine + HITL + LangGraph/n8n hooks | Approval pause/resume test; retry policy test |
 | **3** | WhatsApp + CRM executors | TEST_MODE send; HubSpot retry preserved |
 | **4** | Follow-up via AE→EE | State machine parity with old `follow_up.py` |
@@ -115,7 +118,7 @@ frontend/               # Mayank: wire mocks (Phase 9)
 | **6** | CRM automation + Sales AI | Tags/assign/NBA/objections/hot path |
 | **7** | Neo4j + Graph APIs + Memory APIs + event writers | Schema versioned; lead context query; async write on `lead.qualified` |
 | **8** | Prediction APIs + Marketing + CS + Competitor | REST prediction surface; cron intel alert |
-| **9** | FE wire mocks → real SSE/APIs | Dashboard/timeline/KG/twin/copilot/chat use backend |
+| **9** | FE cutover: mocks → **live** SSE/APIs | Dashboard/timeline/KG/twin/copilot/chat use real producers (not first endpoint creation) |
 | **10** | Placeholders registered; decommission monolith; evidence pack | Gates green; dual-path removed |
 
 Milestone mapping (assignment targets; adjust if schedule already slipped):
@@ -137,21 +140,27 @@ Milestone mapping (assignment targets; adjust if schedule already slipped):
 - Event catalog locked (see Architecture Diagrams §4).  
 - No product code required beyond optional checklist file.
 
-### Phase 1 — Infrastructure: Bus, CEO, BaseAgent, EE skeleton
+### Phase 1 — Infrastructure: Redis Streams bus, CEO, BaseAgent, EE skeleton
 
 **Create:**
 
-- `app/clients/event_bus_client.py` — `subscribe`, `publish`, `start`/`stop` (asyncio.Queue).  
+- `app/clients/event_bus_client.py` — **Redis Streams** (not asyncio.Queue):  
+  - `publish` → `XADD` with full event envelope  
+  - consumer group(s) for CEO/in-app handlers (`XREADGROUP` / ack)  
+  - `start`/`stop` consumer loops in lifespan  
+  - stream key(s) documented (e.g. `ireios:events` or per-type streams — pick one scheme and stick to it)  
+  - env: existing Redis URL; optional `EVENT_STREAM_KEY`, `EVENT_CONSUMER_GROUP`  
 - `app/orchestrator/agent_registry.py` — register agent id, subscriptions, active|placeholder, health.  
-- `app/orchestrator/ceo_orchestrator.py` — on event: lookup subscribers → enqueue/run handlers; health probes.  
-- `app/agents/base_agent.py` — `process_event` → `fetch_context` → `analyze` → `decide` → submit action_request to **Automation Engine** (Phase 2 may still no-op forward to EE).  
+- `app/orchestrator/ceo_orchestrator.py` — on event: lookup subscribers → run handlers; health probes.  
+- `app/agents/base_agent.py` — lifecycle → submit to Automation Engine (Phase 1 stub forwards to EE).  
 - `app/execution_engine/base_executor.py`, `execution_engine.py` — register + `dispatch`; on error write `DLQEvent`.  
-- Lifespan in `main.py`: start bus, start CEO subscriptions (empty or health-only).
+- Lifespan: bus consumers + CEO bootstrap.  
+- **n8n:** document how external automation reads the same stream(s) or a documented bridge (no pure in-memory bus).
 
 **Interfaces (minimal):**
 
 ```python
-# Event publish
+# Event publish (Redis Streams)
 await EventBusClient.publish(event_type, tenant_id, entity_id, payload, source=...)
 
 # CEO
@@ -169,7 +178,26 @@ class BaseAgent(ABC):
 await ExecutionEngine.dispatch(action_request) -> dict  # status success|error
 ```
 
-**Tests:** mock handler receives published event; EE missing executor → error; DLQ row on forced failure.
+**Tests:** handler receives published event after restart (durable); EE missing executor → error; DLQ row on forced failure. Redis required for bus tests (docker-compose redis).
+
+### Phase 1b — Early API envelopes + SSE (FE unblock)
+
+**Goal:** Mayank can hot-swap frontend mocks **immediately** after Phase 1. Endpoints use Architecture §4 envelope shapes even if producers are stubs.
+
+**Create / mount in `main.py`:**
+
+- `GET /api/v1/events/stream` — tenant-auth SSE; bridge from Redis Streams (or fan-out queue fed by bus consumer) to connected clients.  
+- `GET /api/v1/leads/{id}/timeline` (or equivalent) — list-shaped events for copilot; may return stub rows with `source: "stub"`.  
+- Optional thin KPI/pulse JSON if dashboard needs REST in addition to SSE.  
+- Stub publisher (cron or admin endpoint) that `XADD`s sample `lead.created` / `whatsapp.sent` / pulse events for FE demos.
+
+**Rules:**
+
+- Stable field names from day one; do not rename later without versioning.  
+- Stub payloads clearly marked; swap to real producers in Phases 3–8 without changing FE contract.  
+- Auth + tenant isolation required (same as production).
+
+**Exit:** `curl -N` SSE receives a published test event; FE can point `NEXT_PUBLIC_USE_MOCKS=false` at these routes.
 
 ### Phase 2 — Automation Engine + HITL + LangGraph/n8n
 
@@ -264,14 +292,16 @@ await ExecutionEngine.dispatch(action_request) -> dict  # status success|error
 
 **Tests:** each prediction route authenticated + tenant-scoped; competitor publishes `market.alert.generated`.
 
-### Phase 9 — Frontend wire (Mayank UI / backend contracts)
+### Phase 9 — Frontend cutover (Mayank UI)
 
-Backend delivers:
+**Backend already delivered in Phase 1b** (SSE + envelopes). Phase 9 is **not** first creation of those routes.
 
-- SSE endpoint(s) for KPI + timeline events.  
-- Graph query APIs stable.  
-- Chat/orchestrator API for executive AI chat.  
-- Prediction + analytics REST already used by dashboard.
+Backend polish for cutover:
+
+- Graph query APIs stable (Phase 7).  
+- Chat/orchestrator API for executive AI chat (if not earlier).  
+- Prediction + analytics REST (Phase 8).  
+- Replace stub producers with live bus events for dashboard/timeline.
 
 Frontend (Mayank): replace `MockSSEService`, `simulateSSEStream`, mock graph/forecast with real clients. Pages: dashboard-mvp, digital-twin, knowledge-graph, ai-chat, sales-copilot, command-center.
 
@@ -301,7 +331,7 @@ Frontend (Mayank): replace `MockSSEService`, `simulateSSEStream`, mock graph/for
 | `main.py` scheduler | call new workflows | 4/8 |
 | `EventLog` / tracking | Memory action + bus (keep EventLog as needed) | 1–7 |
 | `DLQEvent` / `dlq_replay.py` | EE/AE failure path (keep replay) | 1–2 |
-| FE mocks | real SSE/API | 9 |
+| FE mocks | SSE/API stubs (1b) then live producers (9) | 1b / 9 |
 
 ---
 
@@ -315,7 +345,7 @@ Frontend (Mayank): replace `MockSSEService`, `simulateSSEStream`, mock graph/for
 | Approvals | `POST` approve/reject → HITL resume |
 | Graph | Mount `knowledge_graph` routes |
 | Memory / predictions | Mount routers |
-| SSE | `/api/v1/events/stream` (or similar) tenant-scoped |
+| SSE | `/api/v1/events/stream` tenant-scoped — **Phase 1b** (stubs OK) |
 | Health | Include bus, Neo4j, CEO agent health |
 
 ---
@@ -324,14 +354,16 @@ Frontend (Mayank): replace `MockSSEService`, `simulateSSEStream`, mock graph/for
 
 | Gate | Command / method | When |
 |---|---|---|
-| Unit bus/CEO/EE/AE | pytest or lightweight async tests | 1–2 |
+| Unit bus/CEO/EE/AE | pytest + Redis Streams publish/consume | 1–2 |
+| Bus durability | publish → restart consumer → message still deliverable / acked correctly | 1 |
+| SSE + envelope stubs | curl stream + auth tenant | 1b |
 | Executor TEST_MODE | unit | 3 |
 | Follow-up transitions | integration | 4 |
 | Conversation suite | `python task3_runner.py` | 5+ |
 | Tenant isolation | `python gate_isolation_test.py` | every phase touching data |
 | DLQ | `python gate_dlq_drill.py` + `dlq_replay.py` | 2–3+ |
 | Graph | schema + query integration | 7 |
-| FE contract | manual/API check SSE + one page wire | 9 |
+| FE cutover | mocks off; live producers | 9 |
 
 **Rule:** Until a slice cutover, existing tests must pass on the **old** path. New path gets additive tests first.
 
@@ -342,13 +374,13 @@ Frontend (Mayank): replace `MockSSEService`, `simulateSSEStream`, mock graph/for
 | Risk | Mitigation |
 |---|---|
 | WhatsApp extraction regresses LLM quality | Dual-path + task3 before cutover |
-| In-process bus loses events on crash | Accept for single worker; Redis Streams when multi-worker |
+| Redis/Streams outage blocks bus | Health check; fail publish loud; DLQ for downstream; document Redis HA |
 | HITL deadlocks workflows | Timeouts + expire pending approvals + Memory log |
 | Neo4j latency on chat | Async writers only; agents read with timeouts/fallback to Postgres |
-| n8n/LangGraph ops complexity | Start LangGraph in-process; n8n for external integrations; feature-flag |
+| n8n/LangGraph ops complexity | LangGraph in-app; n8n reads Redis Streams / webhook bridge |
 | Circular agent↔EE waits | One-way: agents → AE → EE → events only |
-| FE blocked on backend | Ship SSE + graph stubs early with real envelope shapes |
-| Scope vs 25 Jul | MVP = planned agents + CEO + bus + AE/EE + HITL + WA + KG core + FE wire; placeholders for rest |
+| FE blocked on backend | **Phase 1b** SSE + envelope stubs (PR review requirement) |
+| Scope vs 25 Jul | MVP = planned agents + CEO + Streams bus + AE/EE + HITL + WA + KG core + FE wire; placeholders for rest |
 
 ---
 
@@ -356,11 +388,12 @@ Frontend (Mayank): replace `MockSSEService`, `simulateSSEStream`, mock graph/for
 
 | Package / service | Purpose |
 |---|---|
+| **Redis** (existing) + Streams API | **Event Bus Day 1** |
 | `neo4j` (Python driver) | Graph |
 | `langgraph` (+ langchain core as required) | Stateful AE |
-| n8n (service) | Integration workflows |
+| n8n (service) | Integration workflows (subscribe via Streams/bridge) |
 | Neo4j (Docker/service) | Graph DB |
-| Existing: redis, twilio, httpx, tenacity, google genai | unchanged roles |
+| Existing: redis, twilio, httpx, tenacity, google genai | redis now also bus backbone |
 
 Pin versions in `requirements.txt` when implementing phases.
 
@@ -372,7 +405,8 @@ Pin versions in `requirements.txt` when implementing phases.
 - Deep Negotiation AI (L7) beyond placeholder + hook.  
 - Full self-learning (L8) automation — incremental hooks only.  
 - Frontend visual redesign.  
-- Kafka (Redis Streams is the scale path).
+- Kafka (not required; **Redis Streams is the Day-1 bus**).  
+- In-process `asyncio.Queue` as the production Event Bus (explicitly vetoed).
 
 ---
 
@@ -390,4 +424,6 @@ Pin versions in `requirements.txt` when implementing phases.
 3. **Postgres SoT, Neo4j relationships** — dual store with async projection.  
 4. **Follow-ups stay on APScheduler** — time-based by nature; they only change *how* they send (AE→EE).  
 5. **Brochure/floorplan in Phase 5** — same Event Bus as everything else; no separate mock HTTP bus.  
-6. **Backend owns Neo4j in this repo**; Mayank consumes Graph/SSE APIs only for UI.
+6. **Backend owns Neo4j in this repo**; Mayank consumes Graph/SSE APIs only for UI.  
+7. **Redis Streams Event Bus from Day 1** — durable, multi-consumer, n8n-friendly.  
+8. **SSE/API contracts early (Phase 1b)** — stubs first, live producers later; Phase 9 is FE cutover.

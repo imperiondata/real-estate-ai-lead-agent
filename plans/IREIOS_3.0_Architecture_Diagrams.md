@@ -121,7 +121,7 @@ No silent side effects: external writes go through **Execution Engine** and publ
 | Component | Role | Tech (target) |
 |---|---|---|
 | API Gateway | Auth, RBAC, tenant, webhooks, public/prediction APIs | FastAPI `main.py` |
-| Event Bus | Pub/sub nervous system | In-process asyncio → Redis Streams later |
+| Event Bus | Pub/sub nervous system (durable) | **Redis Streams from Day 1** (consumer groups; n8n-subscribable) |
 | CEO Orchestrator | Registry, route by event/policy, task queue, health, agent comms | Python `app/orchestrator` |
 | Agents (L2) | Stateless: fetch context → analyze → decide (action request) | `app/agents` |
 | Workflows | Deterministic automations (CRM tags, follow-up poll, competitor cron) | `app/workflows` |
@@ -467,7 +467,7 @@ Mayank owns UI. Backend owns:
 | Sales Copilot | Lead context + NBA + timeline |
 | Executive AI Chat | CEO / orchestrated agent channel (SSE or chat API) |
 
-Wire existing mocks to these contracts; no architecture redesign required in this doc.
+**Early delivery (expansion Phase 1b):** SSE + REST envelopes ship with **stable shapes** as soon as Redis Streams bus is up. Dummy/stub producers (`source: "stub"`) are allowed so frontend can replace mocks immediately; real producers fill the same contracts in later phases. No architecture redesign required in this doc.
 
 ---
 
@@ -479,7 +479,7 @@ Wire existing mocks to these contracts; no architecture redesign required in thi
 | OLTP | Postgres |
 | Vectors / RAG | FAISS + embeddings (existing `rag.py`) |
 | Graph | Neo4j |
-| Event Bus | In-process asyncio first; Redis Streams when multi-worker |
+| Event Bus | **Redis Streams from Day 1** (existing Redis; consumer groups for CEO/handlers; n8n can subscribe) |
 | Workflow AI state | LangGraph |
 | Integration workflows | n8n |
 | Cron | APScheduler |

@@ -42,8 +42,8 @@
 |---|---|
 | **All bug phases before any expansion** | Expansion Phase 4–6 ports `follow_up.py`, `agent.py`, assignment, CRM, notifications. Fixing first avoids copying broken behavior into new modules. |
 | **Bug 0 → 1 → 2 → 3 → 4 → 5 → 6** | Matches bug plan criticality (safety → assignment → FSM → concurrency → polish → CRM → structural). |
-| **Expansion 0 → 10 unchanged** | Matches expansion plan dependencies (bus → AE → executors → follow-up → WhatsApp agent → rest). |
-| **No interleaving** | Explicit program rule: one queue, one order. |
+| **Expansion 0 → 1 → 1b → 2…10** | Bus (Redis Streams) first; **API/SSE stubs next (1b)** so FE is unblocked; then AE, agents, graph, FE cutover (9). |
+| **No interleaving bugs with expansion** | Explicit program rule: finish Block 1 before Block 2. Within expansion, order is serial. |
 
 ---
 
@@ -59,17 +59,18 @@
 | **6** | Bug | Phase 5 (P5.1–P5.3) | CRM sync completeness | CRM reflects post-qualification fields; no false success on empty identity | `[ ]` |
 | **7** | Bug | Phase 6 (P6.1–P6.6) | Structural backlog | Structural items done or explicitly deferred in this table as `[-]` | `[ ]` |
 | **G1** | Gate | **Block 1 complete** | Monolith stable | **Bug master regression checklist** (§13 of bug plan) all green | `[ ]` |
-| **8** | Expansion | Phase 0 Task 0.2 | Branch / env hygiene | App boots; env ready for later Neo4j/n8n flags | `[ ]` |
-| **9** | Expansion | Phase 1 (Tasks 1.1–1.8) | Event Bus, CEO, BaseAgent, EE skeleton | Expansion Phase 1 exit gate | `[ ]` |
-| **10** | Expansion | Phase 2 (Tasks 2.1–2.7) | Automation Engine, HITL, LangGraph/n8n hooks | Expansion Phase 2 exit gate | `[ ]` |
-| **11** | Expansion | Phase 3 (Tasks 3.1–3.4) | WhatsApp & CRM executors | Expansion Phase 3 exit gate | `[ ]` |
-| **12** | Expansion | Phase 4 (Tasks 4.1–4.5) | Follow-up scheduler via AE→EE | Expansion Phase 4 exit gate | `[ ]` |
-| **13** | Expansion | Phase 5 (Tasks 5.1–5.9) | WhatsApp Agent, brochure/floorplan, scoring | Expansion Phase 5 exit gate (`task3_runner`, isolation) | `[ ]` |
-| **14** | Expansion | Phase 6 (Tasks 6.1–6.4) | CRM automation + Sales AI | Expansion Phase 6 exit gate | `[ ]` |
-| **15** | Expansion | Phase 7 (Tasks 7.1–7.7) | Neo4j KG + Memory | Expansion Phase 7 exit gate | `[ ]` |
-| **16** | Expansion | Phase 8 (Tasks 8.1–8.5) | Prediction APIs + Marketing/CS/Competitor | Expansion Phase 8 exit gate | `[ ]` |
-| **17** | Expansion | Phase 9 (Tasks 9.1–9.8) | Frontend wire to real APIs/SSE | Expansion Phase 9 exit gate | `[ ]` |
-| **18** | Expansion | Phase 10 (Tasks 10.1–10.5) | Placeholders, decommission, evidence | Expansion Phase 10 final gate | `[ ]` |
+| **8** | Expansion | Phase 0 Task 0.2 | Branch / env hygiene + Redis available | App boots; Redis reachable | `[ ]` |
+| **9** | Expansion | Phase 1 (Tasks 1.1–1.8) | **Redis Streams** bus, CEO, BaseAgent, EE skeleton | Expansion Phase 1 exit gate (durable publish) | `[ ]` |
+| **10** | Expansion | Phase 1b (Tasks 1b.1–1b.4) | **Early SSE + API envelopes** (stub producers OK) | Expansion Phase 1b exit gate — **FE unblocked** | `[ ]` |
+| **11** | Expansion | Phase 2 (Tasks 2.1–2.7) | Automation Engine, HITL, LangGraph/n8n hooks | Expansion Phase 2 exit gate | `[ ]` |
+| **12** | Expansion | Phase 3 (Tasks 3.1–3.4) | WhatsApp & CRM executors | Expansion Phase 3 exit gate | `[ ]` |
+| **13** | Expansion | Phase 4 (Tasks 4.1–4.5) | Follow-up scheduler via AE→EE | Expansion Phase 4 exit gate | `[ ]` |
+| **14** | Expansion | Phase 5 (Tasks 5.1–5.9) | WhatsApp Agent, brochure/floorplan, scoring | Expansion Phase 5 exit gate (`task3_runner`, isolation) | `[ ]` |
+| **15** | Expansion | Phase 6 (Tasks 6.1–6.4) | CRM automation + Sales AI | Expansion Phase 6 exit gate | `[ ]` |
+| **16** | Expansion | Phase 7 (Tasks 7.1–7.7) | Neo4j KG + Memory | Expansion Phase 7 exit gate | `[ ]` |
+| **17** | Expansion | Phase 8 (Tasks 8.1–8.5) | Prediction APIs + Marketing/CS/Competitor | Expansion Phase 8 exit gate | `[ ]` |
+| **18** | Expansion | Phase 9 (Tasks 9.1–9.8) | FE cutover to live SSE/APIs (contracts from 1b) | Expansion Phase 9 exit gate | `[ ]` |
+| **19** | Expansion | Phase 10 (Tasks 10.1–10.5) | Placeholders, decommission, evidence | Expansion Phase 10 final gate | `[ ]` |
 | **G2** | Gate | **Program complete** | MVP close | Expansion plan **Program final gate (G2)** checklist + Task 10.4–10.5 | `[ ]` |
 
 **Expansion Task 0.1** (doc freeze) is already done; do not re-open it as a blocking step.
@@ -179,43 +180,51 @@ Supporting architecture (read-only reference, not alternate queues) — all unde
 
 ### Step 9 — Expansion Phase 1
 
-- Tasks **1.1 → 1.8**: packages, Event Bus, registry, CEO, EE skeleton, BaseAgent, lifespan, exit gate.
+- Tasks **1.1 → 1.8**: packages, **Redis Streams** Event Bus, registry, CEO, EE skeleton, lifespan, exit gate.  
+- **Not allowed:** in-process `asyncio.Queue` as the production bus.
 
-### Step 10 — Expansion Phase 2
+### Step 10 — Expansion Phase 1b (FE unblock)
+
+- Tasks **1b.1 → 1b.4**: authenticated SSE, timeline/KPI envelopes, stub publisher.  
+- **Purpose:** Mayank can replace frontend mocks immediately with stable contracts; dummy/`source: stub` payloads OK.  
+- **Does not wait** for Phase 9.
+
+### Step 11 — Expansion Phase 2
 
 - Tasks **2.1 → 2.7**: Approval model, HITL, AutomationEngine, LangGraph/n8n scaffolds, approve APIs, exit gate.
 
-### Step 11 — Expansion Phase 3
+### Step 12 — Expansion Phase 3
 
 - Tasks **3.1 → 3.4**: WhatsAppExecutor, CRMExecutor, calendar/notification stubs, exit gate.
 
-### Step 12 — Expansion Phase 4
+### Step 13 — Expansion Phase 4
 
 - Tasks **4.1 → 4.5**: Follow-up port via AE→EE, shadow/legacy switch, arm state, cutover, exit gate.  
 - **Ports bug-fixed** `follow_up.py` behavior.
 
-### Step 13 — Expansion Phase 5
+### Step 14 — Expansion Phase 5
 
 - Tasks **5.1 → 5.9**: Feature flag, WhatsAppAgent, brochure/floorplan, scoring handler, v3 cutover gates.  
 - **Ports bug-fixed** `agent.py` / language / FSM behavior.
 
-### Step 14 — Expansion Phase 6
+### Step 15 — Expansion Phase 6
 
 - Tasks **6.1 → 6.4**: CRM automation + Sales AI (uses fixed assignment patterns).
 
-### Step 15 — Expansion Phase 7
+### Step 16 — Expansion Phase 7
 
 - Tasks **7.1 → 7.7**: Neo4j, Graph APIs, event writers, GraphClient, Memory.
 
-### Step 16 — Expansion Phase 8
+### Step 17 — Expansion Phase 8
 
 - Tasks **8.1 → 8.5**: Prediction APIs, Marketing, CS, Competitor monitor.
 
-### Step 17 — Expansion Phase 9
+### Step 18 — Expansion Phase 9
 
-- Tasks **9.1 → 9.8**: Backend SSE/contracts + FE wire (Mayank UI; backend owns APIs).
+- Tasks **9.1 → 9.8**: FE cutover to **live** producers on Phase 1b contracts (Mayank UI).  
+- **Not** first creation of SSE/API routes.
 
-### Step 18 — Expansion Phase 10
+### Step 19 — Expansion Phase 10
 
 - Tasks **10.1 → 10.5**: Placeholders, decommission dual paths, evidence pack, final gate.
 
@@ -249,9 +258,9 @@ After finishing a step, edit the master table Status column in this file in the 
 | Block | Rule |
 |---|---|
 | Bug Phase *X* | Complete all `PX.y` in ascending *y* as listed in the bug plan. |
-| Expansion Phase *X* | Complete all Tasks `X.y` in ascending *y* as listed in the expansion plan. |
+| Expansion Phase *X* | Complete all Tasks `X.y` in ascending *y* as listed in the expansion plan (including **1b**). |
 | Suggested PR slices in bug plan | Still serial; use them as commit boundaries, not parallel workstreams. |
-| Expansion “parallelism cheat sheet” | **Ignored for program scheduling.** All expansion work is serial after G1. Do not start Neo4j/FE early under that cheat sheet while earlier expansion phases are open. |
+| FE work after Phase 1b | Mayank may wire FE to stub SSE/APIs as soon as Step 10 exits; that is intended. Backend continues Steps 11–19 serially. |
 
 ---
 

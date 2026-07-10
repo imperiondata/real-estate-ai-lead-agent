@@ -266,6 +266,16 @@ After every bug-fix slice:
 
 ---
 
+### Hotfix — `is_fully_qualified` shadowing (post–Phase 1)
+
+**Bug:** Scoring path set `is_fully_qualified = bool(...)`, shadowing the helper. Re-arm later called `is_fully_qualified(lead)` → `TypeError: 'bool' object is not callable`. Webhook returned fake “connectivity issue” TwiML even after hot alert succeeded.
+
+**Fix:** Use `is_fully_qualified_row = is_fully_qualified(lead)` / `is_fully_qualified_now = is_fully_qualified(lead)`; never bind a bool to the function name.
+
+**Files:** `agent.py`, `tests/test_p0_safety.py`
+
+---
+
 ## Phase 2+ (not started)
 
 | ID | Status | Notes |

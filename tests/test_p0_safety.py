@@ -116,6 +116,15 @@ def test_is_fully_qualified():
     assert is_fully_qualified(None) is False
 
 
+def test_is_fully_qualified_stays_callable_after_bool_check():
+    """Regression: local bool must not shadow helper (connectivity fallback TypeError)."""
+    lead = _qualified_lead()
+    flag = is_fully_qualified(lead)
+    assert flag is True
+    assert callable(is_fully_qualified)
+    assert is_fully_qualified(lead) is True
+
+
 def test_terminal_when_fully_qualified():
     assert is_terminal_chat_state(_qualified_lead()) is True
 

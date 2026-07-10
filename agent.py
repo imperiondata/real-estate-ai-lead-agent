@@ -1007,13 +1007,12 @@ async def process_chat(session_id: str, user_message: str, db: DBSession, client
     # DB-aware score override: ML scoring only sees the current message text,
     # so it misses signals already committed to the lead row. Apply overrides here.
 
-    # --- CRITICAL FIX: Use strict 6-field qualification ---
-    is_fully_qualified = bool(
-        lead.visit_date and lead.phone and lead.name and lead.location and lead.budget and lead.property_type)
+    # Use helper — do not bind a bool named is_fully_qualified (shadows function → TypeError on re-arm)
+    is_fully_qualified_row = is_fully_qualified(lead)
     has_visit = bool(lead.visit_date)
     has_core = all([lead.location, lead.budget, lead.property_type, lead.intent])
 
-    if is_fully_qualified:
+    if is_fully_qualified_row:
         prob = max(prob, 88)
         lead.lead_temperature = "hot"
         lead.expected_closure_days = min(lead.expected_closure_days, 7)
@@ -1060,9 +1059,7 @@ async def process_chat(session_id: str, user_message: str, db: DBSession, client
         )
 
     # --- SYNCHRONIZE FUNNEL STAGE WITH EVENT LOGS (MOVED OUTSIDE AGENT ASSIGNMENT) ---
-    is_fully_qualified_now = bool(
-        lead.visit_date and lead.phone and lead.name and lead.location and lead.budget and lead.property_type
-    )
+    is_fully_qualified_now = is_fully_qualified(lead)
 
     if is_fully_qualified_now:
         if lead.funnel_stage not in ["Site Visit Done", "Closed Won"]:

@@ -13,6 +13,13 @@ from models import Lead, NotificationLog, Agent
 logger = logging.getLogger("notification_service")
 
 
+def terminal_status_after_failed_delivery_alert(current_status: str) -> str:
+    """P0.6: after ops is notified of a failed delivery, stop re-selecting the row."""
+    if current_status == "failed":
+        return "failed_alerted"
+    return current_status
+
+
 def send_fallback_email(agent_email: str, agent_name: str, lead: Lead, reason: str):
     """Sends an email fallback if Twilio WhatsApp dispatch fails."""
     try:
@@ -60,10 +67,42 @@ View in CRM: {dashboard_link}
         logger.error(f"Fallback email dispatch failed: {email_err}")
 
 
+def resolve_hot_alert_recipient(target_agent, admin_email: str = "") -> dict | None:
+    """
+    P0.2 / P0.3: Only an Agent (or manager) may receive hot-lead WhatsApp.
+    Never falls back to the lead's phone. Returns None if dispatch is unsafe.
+    """
+    if not target_agent:
+        return None
+    phone = (getattr(target_agent, "phone", None) or "").strip()
+    if not phone:
+        return None
+    return {
+        "phone": phone,
+        "name": getattr(target_agent, "name", None) or "Agent",
+        "email": getattr(target_agent, "email", None) or admin_email or "",
+    }
+
+
+def _record_failed_notification(db, lead: Lead, assigned_agent: str, reason: str):
+    """Persist a failed hot-lead attempt without WhatsApp to the customer."""
+    escalation_deadline = datetime.now(timezone.utc) + timedelta(minutes=10)
+    db.add(NotificationLog(
+        client_id=lead.client_id,
+        lead_id=lead.id,
+        assigned_agent=assigned_agent,
+        status="failed",
+        escalate_at=escalation_deadline,
+        twilio_message_sid=None,
+    ))
+    db.commit()
+
+
 async def trigger_hot_lead_notification(lead_id: int, reason: str = "High-intent behavior detected"):
     """
     Asynchronously fires a WhatsApp notification to the assigned agent.
     Guarantees idempotency (no duplicate spam).
+    Never sends hot-lead ops alerts to the lead's own phone (P0.2/P0.3).
     """
     with SessionLocal() as db:
         try:
@@ -81,7 +120,7 @@ async def trigger_hot_lead_notification(lead_id: int, reason: str = "High-intent
                 logger.info(f"Notification bypassed: Lead {lead.id} already has an active escalation state.")
                 return
 
-            # 2. RESOLVE AGENT VIA DATABASE
+            # 2. RESOLVE AGENT VIA DATABASE (never fall back to lead.phone)
             target_agent = None
             if lead.assigned_agent:
                 target_agent = db.query(Agent).filter(
@@ -95,10 +134,26 @@ async def trigger_hot_lead_notification(lead_id: int, reason: str = "High-intent
                     Agent.is_manager == True
                 ).first()
 
-            agent_phone = target_agent.phone if target_agent else lead.phone
-            agent_name = target_agent.name if target_agent else (lead.assigned_agent or "Unassigned")
-            # Safe fallback to Admin Email if agent email is missing
-            agent_email = target_agent.email if target_agent else settings.ADMIN_EMAIL
+            recipient = resolve_hot_alert_recipient(target_agent, settings.ADMIN_EMAIL)
+            if not recipient:
+                fail_label = (lead.assigned_agent or "Unassigned")
+                logger.error(
+                    f"CRITICAL: Hot lead {lead.id} has no agent/manager phone. "
+                    f"Refusing to notify lead phone. assigned_agent={lead.assigned_agent!r}"
+                )
+                if settings.ADMIN_EMAIL:
+                    send_fallback_email(
+                        settings.ADMIN_EMAIL,
+                        "Admin",
+                        lead,
+                        f"{reason} | No agent/manager available for WhatsApp dispatch.",
+                    )
+                _record_failed_notification(db, lead, fail_label, reason)
+                return
+
+            agent_phone = recipient["phone"]
+            agent_name = recipient["name"]
+            agent_email = recipient["email"]
 
             # 3. FORMAT THE MESSAGE
             dashboard_link = f"http://localhost:3000/crm?lead_id={lead.id}"
@@ -127,7 +182,6 @@ async def trigger_hot_lead_notification(lead_id: int, reason: str = "High-intent
                 base_url = settings.WEBHOOK_BASE_URL
                 status_callback_url = f"{base_url}/api/v1/webhook/twilio-status" if base_url else None
 
-                # --- FIX: 3 Retry Loop ---
                 for attempt in range(3):
                     try:
                         message = client.messages.create(
@@ -141,13 +195,12 @@ async def trigger_hot_lead_notification(lead_id: int, reason: str = "High-intent
                         twilio_success = True
                         logger.info(
                             f"WhatsApp Alert dispatched to {agent_name} | SID: {twilio_sid} | Attempt: {attempt + 1}")
-                        break  # Success, break out of the retry loop
+                        break
                     except Exception as e:
                         logger.warning(f"WhatsApp Alert attempt {attempt + 1} failed: {e}")
                         import asyncio
-                        await asyncio.sleep(1)  # Wait 1 second before retrying
+                        await asyncio.sleep(1)
 
-                # If all 3 attempts failed, trigger the email
                 if not twilio_success:
                     logger.error("All 3 Twilio attempts failed. Triggering Email Fallback.")
                     delivery_status = "failed"

@@ -11,12 +11,13 @@ import pytz
 from tenacity import retry, stop_after_attempt, wait_exponential
 from twilio.rest import Client
 
+from app.intelligence.agent_matcher import resolve_followup_agent_label
 from app.intelligence.followup_engine import generate_followup_sequence
 from app.intelligence.push_wait_engine import decide_push_vs_wait
 from config import settings, tenant_id_ctx
 from database import SessionLocal
 from metrics import BACKGROUND_FAILURE_COUNT, SCHEDULER_JOB_DURATION, SCHEDULER_JOB_FAILURES
-from models import Session, Message, Lead, FollowUpState, EventLog, DLQEvent
+from models import Session, Message, Lead, FollowUpState, EventLog, DLQEvent, Client
 
 logger = logging.getLogger("follow_up")
 logging.basicConfig(level=logging.INFO)
@@ -350,6 +351,13 @@ def check_and_send_followups():
                     if not clean_phone.startswith("+"):
                         clean_phone = f"+{clean_phone}"
 
+                # P0.5: never message opted-out leads (consent)
+                if lead and lead.whatsapp_opt_in is False:
+                    state.follow_up_status = "stopped"
+                    state.next_follow_up_at = None
+                    db.commit()
+                    continue
+
                 if session.status == "closed" or (lead and lead.visit_date):
                     state.follow_up_status = "stopped"
                     db.commit()
@@ -414,7 +422,10 @@ def check_and_send_followups():
                         "response_speed_score": 50, # Default or mocked
                         "inactive_lead": inactivity
                     }
-                    assigned_agent = {"assigned_agent": getattr(lead, "assigned_agent", "ABC Properties Team") or "ABC Properties Team"}
+                    # P1.9: never invent demo agency names
+                    client_row = db.query(Client).filter(Client.id == state.client_id).first()
+                    agent_label = resolve_followup_agent_label(lead, client_row)
+                    assigned_agent = {"assigned_agent": agent_label} if agent_label else None
 
                 try:
                     # DLQ TEST HOOK: set FOLLOW_UP_DLQ_TEST=true in .env (alongside TEST_MODE)

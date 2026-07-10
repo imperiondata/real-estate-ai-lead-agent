@@ -81,6 +81,8 @@
 
 Implement using `plans/BUG_AUDIT_AND_PHASED_FIX_PLAN.md` only. Within each phase, follow item IDs in numeric order (e.g. P0.1 before P0.2).
 
+**Shipped fixes narrative:** update `plans/BUG_FIXES_CHANGELOG.md` after every slice (with tests).
+
 ### Step 1 — Bug Phase 0 (Safety)
 
 | ID | Focus |

@@ -9,7 +9,7 @@ from google.genai import types
 from llm_client import client
 from sqlalchemy.orm import Session as DBSession
 
-from app.intelligence.agent_matcher import match_best_agent
+from app.intelligence.agent_matcher import ensure_lead_assignment, hot_threshold_notification_reason
 from app.intelligence.lead_scoring import calculate_lead_score
 from config import settings
 from crm_sync import sync_lead_to_crm
@@ -29,6 +29,79 @@ def is_hinglish(text: str) -> bool:
     hinglish_keywords = {"kya", "hai", "hain", "mujhe", "mein", "me", "chahiye", "tha", "bas", "nahi", "ha", "haan", "kab", "ka", "ki", "ko", "kar", "karna"}
     words = set(text.lower().replace("?", "").replace(".", "").replace(",", "").split())
     return bool(words.intersection(hinglish_keywords))
+
+
+CLOSING_PHRASES = [
+    "thanks", "thank you", "goodbye", "ok thanks", "perfect thanks", "done",
+    "great thanks", "thanks a lot", "stop", "unsubscribe",
+]
+OPT_OUT_PHRASES = ["dont message", "stop messaging", "dont contact", "please stop"]
+
+
+def clean_user_message(user_message: str) -> str:
+    """Lowercase, strip, strip punctuation for closing/opt-out matching."""
+    msg_lower = user_message.lower().strip()
+    return msg_lower.translate(str.maketrans("", "", string.punctuation))
+
+
+def has_goodbye_token(msg_clean: str) -> bool:
+    """True only for whole-word bye/goodbye — not substrings like buyer/maybe."""
+    tokens = msg_clean.split()
+    return "bye" in tokens or "goodbye" in tokens
+
+
+def is_opt_out_message(msg_clean: str) -> bool:
+    return any(phrase in msg_clean for phrase in OPT_OUT_PHRASES)
+
+
+def is_closing_message(msg_clean: str) -> bool:
+    """Whether the user is ending the conversation (session should close)."""
+    if any(msg_clean == p for p in CLOSING_PHRASES):
+        return True
+    if msg_clean.startswith("stop"):
+        return True
+    if has_goodbye_token(msg_clean):
+        return True
+    if is_opt_out_message(msg_clean):
+        return True
+    if msg_clean.endswith(" thanks"):
+        return True
+    return False
+
+
+def is_fully_qualified(lead) -> bool:
+    """All six mandatory fields present (same gate as qualification close)."""
+    if not lead:
+        return False
+    return bool(
+        lead.visit_date and lead.phone and lead.name
+        and lead.location and lead.budget and lead.property_type
+    )
+
+
+def is_terminal_chat_state(lead) -> bool:
+    """
+    P0.4 / P0.5: Do not reopen session to active when opted out, fully qualified,
+    or handoff-closed. Polite thanks-only close (not terminal) may reopen.
+    """
+    if not lead:
+        return False
+    if lead.whatsapp_opt_in is False:
+        return True
+    if is_fully_qualified(lead):
+        return True
+    if getattr(lead, "funnel_stage", None) == "Human Handoff":
+        return True
+    return False
+
+
+def should_rearm_day0(session, lead) -> bool:
+    """Whether Day 0 follow-up may be re-armed after this turn."""
+    if is_terminal_chat_state(lead):
+        return False
+    if session is not None and getattr(session, "status", None) == "closed":
+        return False
+    return True
 
 
 # 2. Lightweight Guardrail & Tracking Helpers
@@ -295,35 +368,41 @@ async def process_chat(session_id: str, user_message: str, db: DBSession, client
     db.commit()
 
     # Detect if user is naturally closing the conversation
-    msg_lower = user_message.lower().strip()
-    # Remove punctuation
-    msg_clean = msg_lower.translate(str.maketrans('', '', string.punctuation))
-    closing_phrases = ["thanks", "thank you", "goodbye", "ok thanks", "perfect thanks", "done", "great thanks", "thanks a lot", "stop", "unsubscribe"]
-
+    msg_clean = clean_user_message(user_message)
     logger.info(f"DEBUG_MSG_CLEAN: '{msg_clean}' (original: '{user_message}')")
 
-    # --- FIX: Support explicit opt-out phrases to stop follow-ups ---
-    opt_out_phrases = ["dont message", "stop messaging", "dont contact", "please stop"]
-    is_opt_out = any(phrase in msg_clean.lower() for phrase in opt_out_phrases)
+    is_opt_out = is_opt_out_message(msg_clean)
 
-    if any(msg_clean == p for p in closing_phrases) or msg_clean.startswith(
-            "stop") or "bye" in msg_clean or is_opt_out or msg_clean.endswith(" thanks"):
+    if is_closing_message(msg_clean):
         session.status = "closed"
-        # --- ADD THESE 3 LINES TO SYNC THE FOLLOW-UP TABLE ---
         if f_state:
             f_state.follow_up_status = "stopped"
             f_state.next_follow_up_at = None
-        # -----------------------------------------------------
 
-        # --- NEW: HONOR OPT-OUT PREFERENCE ---
         if is_opt_out or msg_clean.startswith("stop") or "unsubscribe" in msg_clean:
             lead.whatsapp_opt_in = False
-        # -------------------------------------
 
         logger.info(f"Session {session_id} marked as CLOSED (user concluded conversation).")
-    else:
+    elif not is_terminal_chat_state(lead):
+        # P0.4: never force active over qualified / opt-out / handoff terminal state
         session.status = "active"
+    # else: leave session.status unchanged (stay closed when terminal)
     db.commit()
+
+    # P0.5: opted-out users get a short ack; do not re-arm or run full pipeline
+    if lead.whatsapp_opt_in is False:
+        opt_out_reply = (
+            "You're unsubscribed from automated messages. "
+            "We won't send further follow-ups. Reply if you need a human agent."
+        )
+        db.add(Message(session_id=session_id, client_id=client_id, role="user", content=user_message))
+        db.add(Message(session_id=session_id, client_id=client_id, role="assistant", content=opt_out_reply))
+        if f_state:
+            f_state.follow_up_status = "stopped"
+            f_state.next_follow_up_at = None
+        session.status = "closed"
+        db.commit()
+        return opt_out_reply
 
     # Save the new user message to the Message table
     db.add(Message(session_id=session_id, client_id=client_id, role="user", content=user_message))
@@ -455,23 +534,30 @@ async def process_chat(session_id: str, user_message: str, db: DBSession, client
     # -----------------------------------
     handoff_phrases = ["human", "agent", "real person", "call me", "speak to someone", "customer service"]
     if any(phrase in msg_clean for phrase in handoff_phrases):
-        # 1. Force the lead to HOT and update Funnel Stage
+        # P1.5: assign before notify so hot alert can reach a real agent
+        previous_agent = lead.assigned_agent
+        assigned = ensure_lead_assignment(
+            db, lead, client_id, user_message or msg_clean, force=False
+        )
+        if assigned and previous_agent != assigned:
+            db.add(EventLog(
+                session_id=session_id,
+                client_id=client_id,
+                event_type="audit",
+                action_type=f"assigned_to_{assigned.replace(' ', '_').lower()}",
+                agent_type="System",
+            ))
+
         lead.lead_temperature = "hot"
         lead.funnel_stage = "Human Handoff"
-
-        # 2. Close the session so the AI stops talking
         session.status = "closed"
         if f_state:
             f_state.follow_up_status = "stopped"
             f_state.next_follow_up_at = None
 
-        # 3. Save to DB
         db.commit()
 
-        # 4. Alert Backend & Frontend
         logger.info(f"🚨 HUMAN HANDOFF TRIGGERED: Lead {lead.phone} requested an agent!")
-
-        # --> TRIGGER NOTIFICATION (Fire & Forget) <--
         asyncio.create_task(
             trigger_hot_lead_notification(lead.id, "Explicit human agent requested.")
         )
@@ -937,16 +1023,7 @@ async def process_chat(session_id: str, user_message: str, db: DBSession, client
 
     lead.conversion_probability = prob
 
-    # Ensure lead_temperature and score are completely aligned with the final probability
     if prob >= 82:
-        logger.info(f"🔔 HUMAN HANDOFF NOTIFICATION: Lead {lead.phone} has crossed HOT threshold! Immediate agent action required.")
-
-        # --> TRIGGER NOTIFICATION (Fire & Forget) -- only if session not already closed by explicit handoff <--
-        if session.status != "closed":
-            asyncio.create_task(
-                trigger_hot_lead_notification(lead.id, "Explicit human agent requested.")
-            )
-
         lead.score = "High"
         lead.lead_temperature = "hot"
     elif prob >= 45:
@@ -956,28 +1033,31 @@ async def process_chat(session_id: str, user_message: str, db: DBSession, client
         lead.score = "Low"
         lead.lead_temperature = "cold"
 
-    # 2. Match Best Agent
-    agent_data = match_best_agent(
-        db=db,
-        client_id=client_id,
-        location=lead.location,
-        query=history_text
+    # P1.1 / P1.2 / P1.4: assign (sticky if claimed) → commit → then hot notify
+    previous_agent = lead.assigned_agent
+    assigned = ensure_lead_assignment(
+        db, lead, client_id, history_text or user_message or "", force=False
     )
+    if assigned and previous_agent != assigned:
+        db.add(EventLog(
+            session_id=session_id,
+            client_id=client_id,
+            event_type="audit",
+            action_type=f"assigned_to_{assigned.replace(' ', '_').lower()}",
+            agent_type="System",
+        ))
+    db.commit()
 
-    if agent_data.get("assigned_agent"):
-        previous_agent = lead.assigned_agent
-        lead.assigned_agent = agent_data["assigned_agent"]
-
-        # --- AUDIT TRAIL FOR ASSIGNMENT CHANGES ---
-        if previous_agent != lead.assigned_agent:
-            db.add(EventLog(
-                session_id=session_id,
-                client_id=client_id,
-                event_type="audit",
-                action_type=f"assigned_to_{lead.assigned_agent.replace(' ', '_').lower()}",
-                agent_type="System"
-            ))
-        db.commit()
+    if prob >= 82 and session.status != "closed":
+        logger.info(
+            f"🔔 HOT THRESHOLD: Lead {lead.phone} conversion_probability={prob}; notifying after assignment."
+        )
+        asyncio.create_task(
+            trigger_hot_lead_notification(
+                lead.id,
+                hot_threshold_notification_reason(prob),
+            )
+        )
 
     # --- SYNCHRONIZE FUNNEL STAGE WITH EVENT LOGS (MOVED OUTSIDE AGENT ASSIGNMENT) ---
     is_fully_qualified_now = bool(
@@ -1029,25 +1109,22 @@ async def process_chat(session_id: str, user_message: str, db: DBSession, client
     asyncio.create_task(
         log_event_async(session_id, "message_sent", latency_ms=total_latency_ms, agent_type="AI", client_id=client_id))
 
-    # Re-arm Day 0 follow-up scheduler
+    # Re-arm Day 0 follow-up scheduler (P0.4/P0.5: never re-arm when terminal)
     if f_state:
         from datetime import timedelta
         f_state.last_ai_reply_timestamp = datetime.now(timezone.utc)
 
-        # Check qualification again to be safe
-        is_fully_qualified_now = bool(
-            lead and lead.visit_date and lead.phone and lead.name and lead.location and lead.budget and lead.property_type)
-
-        if session.status != "closed":
-            if not is_fully_qualified_now:  # <--- FIX: Keep followups ACTIVE until the lead is 100% complete
-                f_state.follow_up_stage = "Day 0"
-                f_state.follow_up_status = "active"
-                # TEST MODE: compress Day 0 to 1 minute. Production: 30 minutes.
-                day0_delay = timedelta(minutes=1) if settings.FOLLOW_UP_TEST_MODE else timedelta(minutes=30)
-                f_state.next_follow_up_at = datetime.now(timezone.utc) + day0_delay
-            else:
-                f_state.follow_up_status = "completed"
-                f_state.next_follow_up_at = None
+        if should_rearm_day0(session, lead):
+            f_state.follow_up_stage = "Day 0"
+            f_state.follow_up_status = "active"
+            day0_delay = timedelta(minutes=1) if settings.FOLLOW_UP_TEST_MODE else timedelta(minutes=30)
+            f_state.next_follow_up_at = datetime.now(timezone.utc) + day0_delay
+        elif is_fully_qualified(lead):
+            f_state.follow_up_status = "completed"
+            f_state.next_follow_up_at = None
+        elif lead and lead.whatsapp_opt_in is False:
+            f_state.follow_up_status = "stopped"
+            f_state.next_follow_up_at = None
         db.commit()
 
     # Return the text response isolated from tool calls

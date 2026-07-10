@@ -185,16 +185,19 @@ def escalation_cron_job():
 
                 log.status = "escalated_30m"
 
-            # --- NOTIFICATION DELIVERY FAILURE HANDLER ---
+            # --- NOTIFICATION DELIVERY FAILURE HANDLER (P0.6: alert once) ---
             failed_notifs = db.query(NotificationLog).filter(
                 NotificationLog.status == "failed",
                 NotificationLog.sent_at <= now - timedelta(minutes=5)
             ).all()
+            from notification_service import terminal_status_after_failed_delivery_alert
+
             for log in failed_notifs:
                 tenant_id_ctx.set(f"Client_{log.client_id}")
                 logger.error(f"⚠️ NOTIFICATION DELIVERY FAILED: Lead {log.lead_id}, agent {log.assigned_agent}")
                 send_critical_alert("Notification Delivery Failure",
                     f"Lead {log.lead_id} failed to deliver to {log.assigned_agent}.")
+                log.status = terminal_status_after_failed_delivery_alert(log.status)
 
             db.commit()
         except Exception as e:
@@ -532,13 +535,24 @@ async def portals_webhook(payload: dict, current_client: models.Client = Depends
         raise HTTPException(status_code=400, detail=str(e))
 
 
+class AcknowledgeNotificationBody(BaseModel):
+    """P1.11: optional agent binding when claiming (avoids freezing null assignee)."""
+    agent_name: Optional[str] = None
+    agent_id: Optional[int] = None
+
+
 @app.post("/api/v1/notifications/acknowledge")
-def acknowledge_notification(lead_id: int, current_client: models.Client = Depends(auth.get_current_client),
-                             db: DBSession = Depends(get_db)):
+def acknowledge_notification(
+        lead_id: int,
+        body: Optional[AcknowledgeNotificationBody] = None,
+        current_client: models.Client = Depends(auth.get_current_client),
+        db: DBSession = Depends(get_db),
+):
     """Allows human agents to clear the Priority Alert from the dashboard and claim the lead."""
-    from models import NotificationLog, Lead
-    
-    # 1. Clear the Escalation Timer
+    from models import NotificationLog, Lead, Agent
+
+    body = body or AcknowledgeNotificationBody()
+
     log = db.query(NotificationLog).filter(
         NotificationLog.lead_id == lead_id,
         NotificationLog.client_id == current_client.id,
@@ -548,11 +562,27 @@ def acknowledge_notification(lead_id: int, current_client: models.Client = Depen
     if log:
         log.status = "acknowledged"
 
-    # 2. Mark the Lead as Claimed so the Frontend button stays hidden permanently
     lead = db.query(Lead).filter(Lead.id == lead_id, Lead.client_id == current_client.id).first()
-    if lead and lead.conversion_status != "claimed":
-        lead.conversion_status = "claimed"
-        
+    if lead:
+        if lead.conversion_status != "claimed":
+            lead.conversion_status = "claimed"
+
+        # P1.11: bind assignee on claim when client provides agent identity
+        if body.agent_id is not None:
+            agent = db.query(Agent).filter(
+                Agent.id == body.agent_id,
+                Agent.client_id == current_client.id,
+            ).first()
+            if agent:
+                lead.assigned_agent = agent.name
+        elif body.agent_name:
+            agent = db.query(Agent).filter(
+                Agent.client_id == current_client.id,
+                Agent.name == body.agent_name,
+            ).first()
+            if agent:
+                lead.assigned_agent = agent.name
+
     db.commit()
     return {"status": "success", "message": "Lead successfully claimed and alert acknowledged."}
 

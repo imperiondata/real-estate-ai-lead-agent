@@ -138,6 +138,9 @@ export default function KanbanBoard({ initialLeads }: { initialLeads: Lead[] }) 
                       <p className="text-xs text-slate-500 dark:text-zinc-400 line-clamp-1">
                         {lead.intent ? `${lead.intent} · ${lead.budget || 'Open Budget'}` : 'Exploring options'}
                       </p>
+                      <p className="text-[10px] text-slate-500 dark:text-zinc-500 line-clamp-1">
+                        Agent: {lead.assigned_agent || 'Unassigned'}
+                      </p>
                       {lead.budget_alignment_status && lead.budget_alignment_status !== 'unknown' && (
                         <span className="inline-flex self-start px-2 py-0.5 rounded-full text-[9px] font-medium bg-slate-100 dark:bg-zinc-800 text-slate-500 dark:text-zinc-400 border border-slate-200 dark:border-zinc-700 capitalize">
                           {lead.budget_alignment_status} Match

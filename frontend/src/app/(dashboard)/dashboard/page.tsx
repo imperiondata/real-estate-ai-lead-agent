@@ -50,9 +50,9 @@ export default async function DashboardPage(props: Props) {
   const isSalesAgent = role === 'Sales Agent'
   const isAgencyPartner = role === 'Agency Partner'
 
+  // P1.13: until real agent auth exists, show all tenant leads (no Jane Doe mock filter)
   if (isSalesAgent) {
-    // Sales Agents only see leads assigned to them (mocked here as 'Jane Doe' or a subset)
-    leads = leads.filter(l => l.assigned_agent === 'Jane Doe' || (l.id % 2 === 0))
+    // Intentionally no mock subset filter — full tenant list for client login
   }
 
   // --- Apply Global Filters ---

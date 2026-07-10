@@ -121,12 +121,13 @@ export default function LeadsTable({ initialLeads }: { initialLeads: Lead[] }) {
                   <div className="flex items-center gap-1">Probability <ArrowUpDown className="w-3 h-3" /></div>
                 </th>
                 <th className="px-6 py-4 text-xs font-medium text-slate-500 dark:text-zinc-400 uppercase tracking-wider">Stage</th>
+                <th className="px-6 py-4 text-xs font-medium text-slate-500 dark:text-zinc-400 uppercase tracking-wider">Assignee</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100 dark:divide-zinc-800/50">
               {filteredAndSortedLeads.length === 0 ? (
                 <tr>
-                  <td colSpan={5} className="px-6 py-12 text-center text-sm text-slate-500 dark:text-zinc-500">
+                  <td colSpan={6} className="px-6 py-12 text-center text-sm text-slate-500 dark:text-zinc-500">
                     No leads found matching criteria.
                   </td>
                 </tr>
@@ -171,6 +172,11 @@ export default function LeadsTable({ initialLeads }: { initialLeads: Lead[] }) {
                   <td className="px-6 py-4 whitespace-nowrap">
                     <span className="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium bg-slate-100 dark:bg-zinc-800 text-slate-700 dark:text-zinc-300 border border-slate-200 dark:border-zinc-700">
                       {lead.funnel_stage}
+                    </span>
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap">
+                    <span className="text-sm text-slate-700 dark:text-zinc-300">
+                      {lead.assigned_agent || 'Unassigned'}
                     </span>
                   </td>
                 </tr>

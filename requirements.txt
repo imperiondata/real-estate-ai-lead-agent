@@ -24,3 +24,4 @@ pydantic-settings
 stripe
 scikit-learn
 pytz
+pytest

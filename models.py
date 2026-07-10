@@ -218,7 +218,8 @@ class NotificationLog(Base):
     correlation_id = Column(String, default=lambda: str(uuid.uuid4()), unique=True, index=True, nullable=False)
     assigned_agent = Column(String, nullable=True)
 
-    # Statuses: pending_ack, acknowledged, escalated_10m, escalated_30m, failed
+    # Statuses: pending_ack, acknowledged, escalated_10m, escalated_30m,
+    # failed (delivery failed, awaiting one ops alert), failed_alerted (ops notified — terminal)
     status = Column(String, default="pending_ack")
 
     # --- NEW: Twilio Tracking Columns ---

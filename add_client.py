@@ -18,11 +18,6 @@ def is_valid_email(email: str) -> bool:
     pattern = r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$'
     return bool(re.match(pattern, email))
 
-def is_valid_email(email: str) -> bool:
-    """Uses a standard RFC 5322 regex pattern to validate email formatting."""
-    pattern = r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$'
-    return bool(re.match(pattern, email))
-
 def create_client(company_name: str = None, email: str = None):
     """
     Interactive CLI tool to provision a real SaaS Client in production.

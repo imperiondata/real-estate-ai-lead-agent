@@ -19,6 +19,11 @@ else:
         pool_recycle=1800
     )
 
+if not settings.DATABASE_URL:
+    raise RuntimeError("DATABASE_URL is not set.")
+if "sqlite" in settings.DATABASE_URL and settings.IS_PRODUCTION:
+    raise RuntimeError("SQLite is not supported in production.")
+
 # Standard session factory
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 

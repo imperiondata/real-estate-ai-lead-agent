@@ -6,7 +6,7 @@ import Link from 'next/link'
 import { acknowledgeLeadAlert } from '../crm/actions'
 
 export default function PriorityAlertCard({ lead }: { lead: any }) {
-  const [isClaimed, setIsClaimed] = useState(false)
+  const [isClaimed, setIsClaimed] = useState(lead.conversion_status === 'claimed')
   const [isPending, setIsPending] = useState(false)
 
   const handleClaim = async (e: React.MouseEvent) => {

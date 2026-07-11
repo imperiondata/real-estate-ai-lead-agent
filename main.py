@@ -185,6 +185,17 @@ def escalation_cron_job():
 
                 log.status = "escalated_30m"
 
+            # --- NOTIFICATION DELIVERY FAILURE HANDLER ---
+            failed_notifs = db.query(NotificationLog).filter(
+                NotificationLog.status == "failed",
+                NotificationLog.sent_at <= now - timedelta(minutes=5)
+            ).all()
+            for log in failed_notifs:
+                tenant_id_ctx.set(f"Client_{log.client_id}")
+                logger.error(f"⚠️ NOTIFICATION DELIVERY FAILED: Lead {log.lead_id}, agent {log.assigned_agent}")
+                send_critical_alert("Notification Delivery Failure",
+                    f"Lead {log.lead_id} failed to deliver to {log.assigned_agent}.")
+
             db.commit()
         except Exception as e:
             logger.error(f"Escalation job failed: {e}")
@@ -212,7 +223,7 @@ app = FastAPI(
 )
 
 # TLS Enforcement (Redirect HTTP to HTTPS)
-if os.getenv("RENDER") or os.getenv("PRODUCTION"):
+if settings.IS_PRODUCTION or os.getenv("RENDER"):
     app.add_middleware(HTTPSRedirectMiddleware)
 
 # CORS configuration to allow local Dashboard frontend to access API
@@ -220,7 +231,7 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=[
         "http://localhost:3000",
-        "https://real-estate-ai-lead-agent-5q20tzn22.vercel.app" # Your actual Vercel domain from layout.tsx
+        os.getenv("FRONTEND_URL", "https://real-estate-ai-lead-agent-5q20tzn22.vercel.app")
     ],
     allow_credentials=True,
     allow_methods=["*"],
@@ -390,7 +401,8 @@ async def background_process_and_push(session_id: str, Body: str, client_id: int
                     target_endpoint="twilio_outbound",
                     payload=payload_dlq,
                     error_trace=str(fallback_err),
-                    status="pending"
+                    status="pending",
+                    client_id=client_id
                 )
                 db.add(dlq_entry)
                 db.commit()
@@ -523,9 +535,10 @@ async def portals_webhook(payload: dict, current_client: models.Client = Depends
 @app.post("/api/v1/notifications/acknowledge")
 def acknowledge_notification(lead_id: int, current_client: models.Client = Depends(auth.get_current_client),
                              db: DBSession = Depends(get_db)):
-    """Allows human agents to clear the Priority Alert from the dashboard."""
-    from models import NotificationLog
-    # Strict tenant isolation
+    """Allows human agents to clear the Priority Alert from the dashboard and claim the lead."""
+    from models import NotificationLog, Lead
+    
+    # 1. Clear the Escalation Timer
     log = db.query(NotificationLog).filter(
         NotificationLog.lead_id == lead_id,
         NotificationLog.client_id == current_client.id,
@@ -534,9 +547,14 @@ def acknowledge_notification(lead_id: int, current_client: models.Client = Depen
 
     if log:
         log.status = "acknowledged"
-        db.commit()
-        return {"status": "success", "message": "Alert acknowledged and escalation canceled."}
-    return {"status": "ignored", "message": "No pending alerts found."}
+
+    # 2. Mark the Lead as Claimed so the Frontend button stays hidden permanently
+    lead = db.query(Lead).filter(Lead.id == lead_id, Lead.client_id == current_client.id).first()
+    if lead and lead.conversion_status != "claimed":
+        lead.conversion_status = "claimed"
+        
+    db.commit()
+    return {"status": "success", "message": "Lead successfully claimed and alert acknowledged."}
 
 @app.post("/api/v1/whatsapp")
 async def whatsapp_webhook(

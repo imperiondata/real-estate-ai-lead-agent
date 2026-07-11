@@ -112,9 +112,6 @@ async def trigger_hot_lead_notification(lead_id: int, reason: str = "High-intent
                 f"View Lead: {dashboard_link}"
             )
 
-            delivery_status = "pending_ack"
-            twilio_sid = None
-
             # 4. DISPATCH VIA TWILIO
             delivery_status = "pending_ack"
             twilio_sid = None

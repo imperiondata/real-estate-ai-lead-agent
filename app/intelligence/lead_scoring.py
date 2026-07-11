@@ -1,5 +1,7 @@
 # app/intelligence/lead_scoring.py
 
+import logging
+
 from app.intelligence.behavior_signals import (
     extract_behavior_signals
 )
@@ -12,13 +14,14 @@ from app.intelligence.inactivity_decay import (
 from app.intelligence.response_speed import (
     calculate_response_speed_score
 )
+logger = logging.getLogger(__name__)
+
 from app.intelligence.score_recalibration import (
     recalibrate_probability
 )
 from app.intelligence.urgency_detector import (
     detect_urgency
 )
-
 
 # ==========================================
 # MAIN LEAD SCORING
@@ -625,13 +628,7 @@ def calculate_lead_score(
         }
 
     except Exception as e:
-        import traceback
-        with open("lead_scoring_error.log", "w") as f:
-            f.write(traceback.format_exc())
-        print(
-            "LEAD SCORING ERROR:",
-            e
-        )
+        logger.error("Lead scoring failed", exc_info=True)
 
         return {
 

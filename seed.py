@@ -36,7 +36,7 @@ def seed_test_clients():
             manager_1 = models.Agent(
                 client_id=client_1.id,
                 name="System Admin",
-                phone="+919163962356",
+                phone="+918097781103",
                 email=client_1.email,
                 is_manager=True,
                 locations="Pune, Baner, Wakad",  # <-- ADD THESE METADATA FIELDS
@@ -53,7 +53,7 @@ def seed_test_clients():
             agent_1 = models.Agent(
                 client_id=client_1.id,
                 name="Sneha Patil",
-                phone="+919163962356",
+                phone="+918097781103",
                 email="sneha@revenueos.com",
                 is_manager=False,
                 locations="Wakad, Hinjewadi, Tathawade",  # <-- ADD THESE METADATA FIELDS
@@ -78,6 +78,42 @@ def seed_test_clients():
             print(f"✅ Created Client 2: {client_2_email}")
         else:
             print(f"[*] Client 2 already exists: {client_2_email}")
+
+        db.flush()  # <--- Forces DB to generate client_2.id
+
+        # --- SEED DEFAULT MANAGER FOR CLIENT 1 ---
+        manager_2 = db.query(models.Agent).filter_by(client_id=client_2.id, is_manager=True).first()
+        if not manager_2:
+            manager_2 = models.Agent(
+                client_id=client_2.id,
+                name="System Admin",
+                phone="+918097781103",
+                email=client_2.email,
+                is_manager=True,
+                locations="Pune, Baner, Wakad",  # <-- ADD THESE METADATA FIELDS
+                speciality="luxury",
+                deal_size="high",
+                lead_type="buyer"
+            )
+            db.add(manager_2)
+            print(f"✅ Created Default Manager for Client 2")
+
+        # --- SEED HIGH-INTENT LOCAL AGENT FOR CLIENT 1 (For testing direct routing) ---
+        agent_2 = db.query(models.Agent).filter_by(client_id=client_2.id, name="Sneha Patil").first()
+        if not agent_2:
+            agent_2 = models.Agent(
+                client_id=client_2.id,
+                name="Sneha Patil",
+                phone="+918097781103",
+                email="sneha@revenueos.com",
+                is_manager=False,
+                locations="Wakad, Hinjewadi, Tathawade",  # <-- ADD THESE METADATA FIELDS
+                speciality="mid_range",
+                deal_size="medium",
+                lead_type="buyer"
+            )
+            db.add(agent_2)
+            print(f"✅ Created Agent 2 (Sneha Patil) for Client 2")
 
         db.commit()
 

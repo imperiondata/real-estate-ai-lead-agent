@@ -5,7 +5,8 @@ import string
 import time
 from datetime import datetime, timezone
 
-import google.generativeai as genai
+from google.genai import types
+from llm_client import client
 from sqlalchemy.orm import Session as DBSession
 
 from app.intelligence.agent_matcher import match_best_agent
@@ -17,13 +18,18 @@ from notification_service import trigger_hot_lead_notification
 from rag import retrieve
 from system_prompt import REAL_ESTATE_SYSTEM_PROMPT
 
-# 1. Gemini Initialization
-genai.configure(api_key=settings.GEMINI_API_KEY)
 logger = logging.getLogger("agent")
 PUNE_AREAS = ["wakad", "hinjewadi", "baner", "kharadi", "kothrud", "hadapsar",
                   "ravet", "balewadi", "aundh", "pashan", "viman nagar", "magarpatta",
                   "kondhwa", "undri", "mundhwa", "punawale", "tathawade", "bavdhan",
                   "sinhagad road", "pune"]
+
+
+def is_hinglish(text: str) -> bool:
+    hinglish_keywords = {"kya", "hai", "hain", "mujhe", "mein", "me", "chahiye", "tha", "bas", "nahi", "ha", "haan", "kab", "ka", "ki", "ko", "kar", "karna"}
+    words = set(text.lower().replace("?", "").replace(".", "").replace(",", "").split())
+    return bool(words.intersection(hinglish_keywords))
+
 
 # 2. Lightweight Guardrail & Tracking Helpers
 async def log_event_async(session_id: str, action_type: str, latency_ms: int = 0, agent_type: str = "AI",
@@ -152,73 +158,59 @@ def normalize_lead_data(args: dict, existing_intent: str = None) -> dict:
 
 
 # 4. Structured Tool Calling Definition
-def extract_lead_info(
-        name: str = None,
-        phone: str = None,
-        budget: str = None,
-        location: str = None,
-        property_type: str = None,
-        intent: str = None,
-        score: str = None,
-        visit_date: str = None,
-        conversational_reply: str = None,
-        confidence_score: int = 100
-):
-    """
-    Saves the lead's property search details to the CRM database.
+extract_lead_tool = types.Tool(
+    function_declarations=[
+        types.FunctionDeclaration(
+            name="extract_lead_info",
+            description="""Saves the lead's property search details to the CRM database.
 
-    ⚠️  WHEN TO CALL THIS TOOL:
-    YOU MUST call this tool IMMEDIATELY the very first time the user provides ANY of these:
-    - Their name
-    - Their phone number
-    - Their budget (e.g. "80 lakhs", "25k per month", "1.2 crores")
-    - Their preferred location (e.g. "Baner", "Wakad", "Hinjewadi")
-    - Their property type preference (e.g. "2BHK", "3BHK", "Villa")
-    - Their intent (buy / rent / investment)
-    - A requested visit date or time
-    Do NOT wait to gather more information. Extract what you have immediately.
+⚠️ WHEN TO CALL THIS TOOL:
+YOU MUST call this tool IMMEDIATELY the very first time the user provides ANY of these:
+- Their name
+- Their phone number
+- Their budget (e.g. "80 lakhs", "25k per month", "1.2 crores")
+- Their preferred location (e.g. "Baner", "Wakad", "Hinjewadi")
+- Their property type preference (e.g. "2BHK", "3BHK", "Villa")
+- Their intent (buy / rent / investment)
+- A requested visit date or time
+Do NOT wait to gather more information. Extract what you have immediately.
 
-    ⛔ DO NOT CALL THIS TOOL for:
-    - General property questions ("What are prices in Baner?")
-    - Questions about amenities, connectivity, traffic, schools
-    - Acknowledgements ("Thanks", "Perfect", "Ok", "Got it")
-    - Greetings ("Hi", "Hello", "Hey")
-    - Any message that doesn't contain NEW personal search data
-    For those messages, respond naturally with text only.
+⛔ DO NOT CALL THIS TOOL for:
+- General property questions
+- Questions about amenities, connectivity, traffic, schools
+- Acknowledgements ("Thanks", "Perfect", "Ok", "Got it")
+- Greetings
+- Any message that doesn't contain NEW personal search data
+For those messages, respond naturally with text only.
 
-    Args:
-        name: The name of the client (VERY IMPORTANT to capture).
-        phone: The phone number of the client.
-        budget: The requested budget range (e.g., '80L', '20k', '1Cr').
-        location: The area they are looking in. If they mention multiple or add a new area to an existing search, return BOTH areas combined (e.g., 'Baner, Wakad').
-        property_type: The type of property they want (e.g., '1BHK', '2BHK', 'Villa'). MUST remain empty/None if the user has not explicitly stated a size. Do NOT guess or default to 2BHK.
-        intent: The goal (e.g., 'buy', 'rent', 'investment', 'browsing').
-        score: Your internal lead scoring evaluation (High, Medium, Low).
-        visit_date: The user's requested visit date/time (e.g., 'Tuesday 2pm', 'Saturday morning').
-        conversational_reply: Your natural, conversational response to the user's message. MUST NOT BE EMPTY.
-        confidence_score: Rate your confidence in the extracted data from 0 to 100. If the user is ambiguous, unsure, giving contradictory statements (e.g. changing locations or budgets), output a score below 75.
+INTENT-BASED BEHAVIOR:
+- HIGH: Be proactive. Offer a specific next step like shortlisting or a site visit.
+- MEDIUM: Provide data/description only. Answer and STOP.
+- LOW: Provide general info. Ask one clarifying question.
+- CRITICAL: For Medium/Low intent, you are FORBIDDEN from ending with "Would you like to see options?" or "Shall I help you buy?"
 
-    INTENT-BASED BEHAVIOR:
-    - HIGH: Be proactive. Offer a specific next step like shortlisting or a site visit.
-    - MEDIUM: Provide data/description only. Do NOT ask follow-up questions or offer next steps. Answer and STOP.
-    - LOW: Provide general info. Ask one clarifying question (e.g., buy vs. rent) to narrow the search.
-    - CRITICAL: For Medium/Low intent, you are FORBIDDEN from ending with "Would you like to see options?" or "Shall I help you buy?"
-
-    -----------------------------------
-    🔹 TOOL CALL RULE (CRITICAL):
-    - Whenever you call extract_lead_info, you MUST also write a conversational text reply in the SAME response.
-    - The text reply should naturally continue the conversation based on what the user said.
-    - NEVER return a function call without also including a text message.
-    - Do NOT mention data capture, fields, or databases in your text reply.
-    """
-    pass  # Schema definition only. Execution is handled in process_chat.
-
-
-# Initialize the generative model with the AI's system instruction and the extraction tool
-model = genai.GenerativeModel(
-    model_name=settings.GEMINI_MODEL,
-    system_instruction=REAL_ESTATE_SYSTEM_PROMPT,
-    tools=[extract_lead_info]
+🔹 TOOL CALL RULE (CRITICAL):
+- Whenever you call extract_lead_info, you MUST also write a conversational text reply in the SAME response.
+- The text reply should naturally continue the conversation based on what the user said.
+- NEVER return a function call without also including a text message.
+- Do NOT mention data capture, fields, or databases in your text reply.""",
+            parameters=types.Schema(
+                type="OBJECT",
+                properties={
+                    "name": types.Schema(type="STRING", description="The name of the client."),
+                    "phone": types.Schema(type="STRING", description="The phone number of the client."),
+                    "budget": types.Schema(type="STRING", description="The requested budget range. MUST remain empty if the user has not explicitly stated their own personal budget. NEVER extract or assume a budget based on RAG context."),
+                    "location": types.Schema(type="STRING", description="The area they are looking in. MUST remain empty if the user has not explicitly stated their preferred area."),
+                    "property_type": types.Schema(type="STRING", description="The type of property they want (e.g., '1BHK', '2BHK'). MUST remain empty if not explicitly stated."),
+                    "intent": types.Schema(type="STRING", description="The goal (buy / rent / investment)."),
+                    "score": types.Schema(type="STRING", description="Internal lead scoring (High, Medium, Low)."),
+                    "visit_date": types.Schema(type="STRING", description="Requested visit date/time."),
+                    "conversational_reply": types.Schema(type="STRING", description="Your natural response to the user's message. MUST NOT BE EMPTY."),
+                    "confidence_score": types.Schema(type="INTEGER", description="Rate confidence from 0 to 100. If ambiguous, output below 75.")
+                }
+            )
+        )
+    ]
 )
 
 
@@ -266,11 +258,6 @@ async def process_chat(session_id: str, user_message: str, db: DBSession, client
             lead.phone = raw_phone
 
     db.commit()
-
-    # --- SNAPSHOT STATE AT START OF TURN ---
-    was_fully_qualified_initial = bool(
-        lead.visit_date and lead.phone and lead.name and lead.location and lead.budget and lead.property_type
-    )
 
     from models import FollowUpState
     f_state = db.query(FollowUpState).filter(FollowUpState.session_id == session_id).first()
@@ -515,10 +502,14 @@ async def process_chat(session_id: str, user_message: str, db: DBSession, client
     # This loop merges them silently. In a clean conversation it is a no-op.
     sanitized_history = []
     for msg in formatted_history:
-        if sanitized_history and sanitized_history[-1]["role"] == msg["role"]:
-            sanitized_history[-1]["parts"][0] += " " + msg["parts"][0]
+        role = msg["role"]
+        text = msg["parts"][0]
+        if sanitized_history and sanitized_history[-1].role == role:
+            sanitized_history[-1].parts[0].text += " " + text
         else:
-            sanitized_history.append(msg)
+            sanitized_history.append(
+                types.Content(role=role, parts=[types.Part.from_text(text=text)])
+            )
     formatted_history = sanitized_history
 
     # Agent Memory Summarization Logic
@@ -608,7 +599,7 @@ async def process_chat(session_id: str, user_message: str, db: DBSession, client
             # Offload synchronous RAG/FAISS to thread to prevent blocking FastAPI event loop
             context_items, score = await asyncio.wait_for(
                 asyncio.to_thread(retrieve, rag_query),
-                timeout=2.0
+                timeout=3.5
             )
             rag_time = round((time.time() - rag_start) * 1000)
             logger.info(json.dumps({"event": "rag_retrieval", "latency_ms": rag_time, "success": True}))
@@ -632,7 +623,11 @@ async def process_chat(session_id: str, user_message: str, db: DBSession, client
         logger.info(f"RAG skipped (non-property query) for session={session_id}")
 
     # Start Gemini Chat with retrieved history
-    chat = model.start_chat(history=formatted_history)
+    chat = client.aio.chats.create(
+        model=settings.GEMINI_MODEL,
+        config={"system_instruction": REAL_ESTATE_SYSTEM_PROMPT, "tools": [extract_lead_tool]},
+        history=sanitized_history
+    )
 
     # 2c: Dynamic Name Interceptor (Concurrent, strict timeout)
     # If the user's name is unknown and they give a short response, dynamically extract it.
@@ -644,11 +639,11 @@ async def process_chat(session_id: str, user_message: str, db: DBSession, client
     if not settings.TEST_MODE and not lead.name and len(user_message.split()) <= 12:
         ignorable_short_words = ["hi", "hello", "hey", "ok", "okay", "thanks", "thank", "yes", "no", "sure", "bye"]
         if msg_clean not in ignorable_short_words:
-            name_model = genai.GenerativeModel(model_name=settings.GEMINI_MODEL)
             name_extraction_task = asyncio.create_task(
                 asyncio.wait_for(
-                    name_model.generate_content_async(
-                        f"Extract the person's name from this message. Return ONLY the extracted name, or 'NONE' if no name is present. Message: '{user_message}'"
+                    client.aio.models.generate_content(
+                        model=settings.GEMINI_MODEL,
+                        contents=f"Extract the person's name from this message. Return ONLY the extracted name, or 'NONE' if no name is present. Message: '{user_message}'"
                     ),
                     timeout=2.0
                 )
@@ -665,7 +660,7 @@ async def process_chat(session_id: str, user_message: str, db: DBSession, client
                 # return_exceptions=True prevents the 2s timeout from crashing the main chat.
                 # Added 6.0s strict timeout to prevent catastrophic 35s latency spikes.
                 results = await asyncio.gather(
-                    asyncio.wait_for(chat.send_message_async(user_message_for_llm), timeout=6.0),
+                    asyncio.wait_for(chat.send_message(user_message_for_llm), timeout=6.0),
                     name_extraction_task,
                     return_exceptions=True
                 )
@@ -686,7 +681,7 @@ async def process_chat(session_id: str, user_message: str, db: DBSession, client
                     except Exception as e:
                         logger.warning(f"Fast name extraction text parsing failed: {e}")
             else:
-                response = await asyncio.wait_for(chat.send_message_async(user_message_for_llm), timeout=6.0)
+                response = await asyncio.wait_for(chat.send_message(user_message_for_llm), timeout=6.0)
 
             llm_time = round((time.time() - llm_start) * 1000)
             logger.info(
@@ -736,120 +731,106 @@ async def process_chat(session_id: str, user_message: str, db: DBSession, client
     # 5. Database Commits & Tool Execution Handling
     # Detect if Gemini triggered the lead extraction tool
     fc = None
-    # We look inside the 'parts' of the response to find the function call
-    if response.candidates and response.candidates[0].content.parts:
-        for part in response.candidates[0].content.parts:
-            if part.function_call:
-                fc = part.function_call
-                if fc and fc.name == "extract_lead_info":
-                    # Extract and normalize arguments payload securely
-                    args = normalize_lead_data(dict(fc.args), existing_intent=lead.intent)
+    if response.function_calls:
+        for function_call in response.function_calls:
+            if function_call.name == "extract_lead_info":
+                fc = function_call
+                # Extract and normalize arguments payload securely
+                raw_args = fc.args if isinstance(fc.args, dict) else dict(fc.args)
+                args = normalize_lead_data(raw_args, existing_intent=lead.intent)
 
-                    # Snapshot which fields are GENUINELY NEW in this turn vs already known.
-                    # This prevents re-extracted old data from triggering the same template repeatedly.
-                    prev_budget = lead.budget
-                    prev_location = lead.location
-                    prev_intent = lead.intent
-                    prev_name = lead.name
-                    prev_visit_date = lead.visit_date
-                    prev_property_type = lead.property_type
-                    # --- FIX 5: Use distinct name for initial state tracking ---
-                    initial_was_fully_qualified = bool(lead.visit_date and lead.phone and lead.name and lead.location and lead.budget and lead.property_type)
+                # Snapshot which fields are GENUINELY NEW in this turn vs already known.
+                # This prevents re-extracted old data from triggering the same template repeatedly.
+                prev_budget = lead.budget
+                prev_location = lead.location
+                prev_intent = lead.intent
+                prev_name = lead.name
+                prev_visit_date = lead.visit_date
+                prev_property_type = lead.property_type
 
-                    # Update Lead table fields dynamically (using the in-memory lead object)
-                    # OPTIMIZATION: Only overwrite DB fields if Gemini passes a non-null, valid value.
-                    # This prevents incomplete tool calls from wiping out previously saved database state.
-                    if "name" in args and args["name"]: lead.name = args["name"]
-                    if "phone" in args and args["phone"]: lead.phone = args["phone"]
-                    if "budget" in args and args["budget"]: lead.budget = args["budget"]
-                    if "location" in args and args["location"]: lead.location = args["location"]
-                    if "property_type" in args and args["property_type"]: lead.property_type = args["property_type"]
-                    if "intent" in args and args["intent"]: lead.intent = args["intent"]
-                    if "score" in args and args["score"]: lead.score = args["score"]
-                    if "visit_date" in args and args["visit_date"]: lead.visit_date = args["visit_date"]
+                # Update Lead table fields dynamically (using the in-memory lead object)
+                # OPTIMIZATION: Only overwrite DB fields if Gemini passes a non-null, valid value.
+                # This prevents incomplete tool calls from wiping out previously saved database state.
+                if "name" in args and args["name"]: lead.name = args["name"]
+                if "phone" in args and args["phone"]: lead.phone = args["phone"]
+                if "budget" in args and args["budget"]: lead.budget = args["budget"]
+                if "location" in args and args["location"]: lead.location = args["location"]
+                if "property_type" in args and args["property_type"]: lead.property_type = args["property_type"]
+                if "intent" in args and args["intent"]: lead.intent = args["intent"]
+                if "score" in args and args["score"]: lead.score = args["score"]
+                if "visit_date" in args and args["visit_date"]: lead.visit_date = args["visit_date"]
 
-                    # --- FIX: Process Confidence Score & Manual Review ---
-                    if "confidence_score" in args:
-                        lead.confidence_score = args["confidence_score"]
-                        if args["confidence_score"] < 75:
-                            lead.requires_manual_review = True
-                            logger.info(f"⚠️ Low confidence ({lead.confidence_score}%). Flagged for manual review.")
-                    # -----------------------------------------------------
+                # --- FIX: Process Confidence Score & Manual Review ---
+                if "confidence_score" in args:
+                    lead.confidence_score = args["confidence_score"]
+                    if args["confidence_score"] < 75:
+                        lead.requires_manual_review = True
+                        logger.info(f"⚠️ Low confidence ({lead.confidence_score}%). Flagged for manual review.")
+                # -----------------------------------------------------
 
-                    db.commit()
+                db.commit()
 
-                    # Determine which fields are truly new this turn (value changed or was None before)
-                    new_fields = set()
-                    if "budget" in args and args["budget"] != prev_budget: new_fields.add("budget")
-                    if "location" in args and args["location"] != prev_location: new_fields.add("location")
-                    if "intent" in args and args["intent"] != prev_intent: new_fields.add("intent")
-                    if "name" in args and args["name"] != prev_name: new_fields.add("name")
-                    if "visit_date" in args and args["visit_date"] != prev_visit_date: new_fields.add("visit_date")
-                    if "property_type" in args and args["property_type"] != prev_property_type: new_fields.add(
-                        "property_type")
+                # Determine which fields are truly new this turn (value changed or was None before)
+                new_fields = set()
+                if "budget" in args and args["budget"] != prev_budget: new_fields.add("budget")
+                if "location" in args and args["location"] != prev_location: new_fields.add("location")
+                if "intent" in args and args["intent"] != prev_intent: new_fields.add("intent")
+                if "name" in args and args["name"] != prev_name: new_fields.add("name")
+                if "visit_date" in args and args["visit_date"] != prev_visit_date: new_fields.add("visit_date")
+                if "property_type" in args and args["property_type"] != prev_property_type: new_fields.add(
+                    "property_type")
 
-                    # Fire highly-asynchronous funnel events based on new data
-                    current_latency = round((time.time() - start_time) * 1000)
-                    if any(k in new_fields for k in ["budget", "location", "intent", "property_type"]):
-                        asyncio.create_task(
-                            log_event_async(session_id, "qualified", latency_ms=current_latency, client_id=client_id))
+                # Fire highly-asynchronous funnel events based on new data
+                current_latency = round((time.time() - start_time) * 1000)
+                if any(k in new_fields for k in ["budget", "location", "intent", "property_type"]):
+                    asyncio.create_task(
+                        log_event_async(session_id, "qualified", latency_ms=current_latency, client_id=client_id))
 
-                    if "visit_date" in new_fields:
-                        asyncio.create_task(
-                            log_event_async(session_id, "appointment_booked", latency_ms=current_latency,
-                                            client_id=client_id))
+                if "visit_date" in new_fields:
+                    asyncio.create_task(
+                        log_event_async(session_id, "appointment_booked", latency_ms=current_latency,
+                                        client_id=client_id))
 
-                    # Extract Gemini's own conversational text from this same response.
-                    text_from_response = args.get("conversational_reply", None)
-                    if not text_from_response:
-                        for part in response.candidates[0].content.parts:
-                            if hasattr(part, 'text') and part.text and part.text.strip():
-                                text_from_response = part.text.strip()
-                                break
+                # Extract Gemini's own conversational text from this same response.
+                text_from_response = args.get("conversational_reply", None)
+                if not text_from_response and response.text:
+                    text_from_response = response.text.strip()
 
-                    # --- FIX 5: Use transition tracking logic ---
-                    is_now_fully_qualified = bool(
-                        lead and lead.visit_date and lead.phone and lead.name and lead.location and lead.budget and lead.property_type)
-                    
-                    if is_now_fully_qualified and not initial_was_fully_qualified:
-                        logger.info(f"🏆 LEAD FULLY QUALIFIED: {lead.phone} | Session {session_id}")
-                        # You could trigger specific 'qualified' events here
-                    captured_fields = [k for k in
-                                       ["name", "phone", "budget", "location", "property_type", "intent", "visit_date"]
-                                       if k in args]
+                captured_fields = [k for k in
+                                   ["name", "phone", "budget", "location", "property_type", "intent", "visit_date"]
+                                   if k in args]
 
-                    # Use Gemini's text from the same response, or fall back safely.
-                    if text_from_response:
-                        local_reply = text_from_response
+                # Use Gemini's text from the same response, or fall back safely.
+                if text_from_response:
+                    local_reply = text_from_response
+                else:
+                    if "budget" in new_fields and "location" in new_fields:
+                        local_reply = f"Got it — budget of {lead.budget} for {lead.location} noted."
+                    elif "budget" in new_fields:
+                        loc_hint = f" for {lead.location}" if lead.location else ""
+                        local_reply = f"Got it — budget of {lead.budget} noted{loc_hint}."
+                    elif "location" in new_fields:
+                        local_reply = f"Noted — {lead.location} added to your search."
+                    elif "property_type" in new_fields:
+                        local_reply = f"Noted — {lead.property_type} it is."
+                    elif "intent" in new_fields and lead.intent and "visit" in lead.intent.lower():
+                        local_reply = "I'd be happy to arrange a site visit! What day or time works best for you?"
+                    elif "name" in new_fields:
+                        local_reply = f"Got it, {lead.name}. Thanks for sharing!"
                     else:
-                        if "budget" in new_fields and "location" in new_fields:
-                            local_reply = f"Got it — budget of {lead.budget} for {lead.location} noted."
-                        elif "budget" in new_fields:
-                            loc_hint = f" for {lead.location}" if lead.location else ""
-                            local_reply = f"Got it — budget of {lead.budget} noted{loc_hint}."
-                        elif "location" in new_fields:
-                            local_reply = f"Noted — {lead.location} added to your search."
-                        elif "property_type" in new_fields:
-                            local_reply = f"Noted — {lead.property_type} it is."
-                        elif "intent" in new_fields and lead.intent and "visit" in lead.intent.lower():
-                            local_reply = "I'd be happy to arrange a site visit! What day or time works best for you?"
-                        elif "name" in new_fields:
-                            local_reply = f"Got it, {lead.name}. Thanks for sharing!"
-                        else:
-                            local_reply = "Got it, noted."
+                        local_reply = "Got it, noted."
 
-                    logger.info(
-                        f"LEAD_EXTRACT | session={session_id} | fields={captured_fields} | new_fields={list(new_fields)}")
-                    final_text = local_reply
-                    extracted_early = True
-                    break
+                logger.info(
+                    f"LEAD_EXTRACT | session={session_id} | fields={captured_fields} | new_fields={list(new_fields)}")
+                final_text = local_reply
+                extracted_early = True
+                break
 
     # Safely get the final text (handling cases where only a tool call was returned)
     if 'extracted_early' not in locals():
         try:
-            if not response.candidates or not response.candidates[0].content.parts:
-                finish = response.candidates[0].finish_reason if response.candidates else 'None'
-                logger.warning(f"Empty response from Gemini. finish_reason: {finish}. Using smart local fallback.")
+            if not response.text and not response.function_calls:
+                logger.warning("Empty response from Gemini (no text, no function calls). Using smart local fallback.")
                 # Smart zero-latency local fallback — no second LLM call, no extra latency
                 msg_l = user_message.lower()
                 if any(k in msg_l for k in ["school", "hospital", "infrastructure", "connectivity", "transport"]):
@@ -866,7 +847,7 @@ async def process_chat(session_id: str, user_message: str, db: DBSession, client
                 final_text = response.text
         except ValueError:
             # If Gemini returned a function call but we somehow missed it, or if it returned no text
-            logger.warning(f"ValueError accessing response.text. Parts: {response.candidates[0].content.parts}")
+            logger.warning(f"ValueError accessing response.text.")
             final_text = "Got it. Let me know if you need anything else or want to schedule a visit."
 
     # ==========================================
@@ -895,22 +876,21 @@ async def process_chat(session_id: str, user_message: str, db: DBSession, client
         })
 
     # --- FIX 1: Calculate advanced lead score outside the loop or with proper check ---
-    if True: # Ensure it runs even if past_messages is empty
-        # 1. Calculate advanced lead score
-        # Map Gemini's database intent strings to the scoring engine's expected weights
-        _raw_intent = (lead.intent or "").lower()
-        if _raw_intent in ("buy", "invest", "investment"):
-            _scoring_intent = "high"
-        elif _raw_intent in ("rent", "lease", "buy/rent", "buy or rent"):
-            _scoring_intent = "medium"
-        else:
-            _scoring_intent = "low"
+    # 1. Calculate advanced lead score
+    # Map Gemini's database intent strings to the scoring engine's expected weights
+    _raw_intent = (lead.intent or "").lower()
+    if _raw_intent in ("buy", "invest", "investment"):
+        _scoring_intent = "high"
+    elif _raw_intent in ("rent", "lease", "buy/rent", "buy or rent"):
+        _scoring_intent = "medium"
+    else:
+        _scoring_intent = "low"
 
-        ml_score_data = calculate_lead_score(
-            query=user_message,
-            memory=memory_dicts,
-            intent=_scoring_intent
-        )
+    ml_score_data = calculate_lead_score(
+        query=user_message,
+        memory=memory_dicts,
+        intent=_scoring_intent
+    )
 
     lead.conversion_probability = ml_score_data.get("conversion_probability", 0)
     lead.lead_temperature = ml_score_data.get("lead_temperature", "cold")
@@ -961,10 +941,11 @@ async def process_chat(session_id: str, user_message: str, db: DBSession, client
     if prob >= 82:
         logger.info(f"🔔 HUMAN HANDOFF NOTIFICATION: Lead {lead.phone} has crossed HOT threshold! Immediate agent action required.")
 
-        # --> TRIGGER NOTIFICATION (Fire & Forget) <--
-        asyncio.create_task(
-            trigger_hot_lead_notification(lead.id, "Explicit human agent requested.")
-        )
+        # --> TRIGGER NOTIFICATION (Fire & Forget) -- only if session not already closed by explicit handoff <--
+        if session.status != "closed":
+            asyncio.create_task(
+                trigger_hot_lead_notification(lead.id, "Explicit human agent requested.")
+            )
 
         lead.score = "High"
         lead.lead_temperature = "hot"
@@ -996,36 +977,43 @@ async def process_chat(session_id: str, user_message: str, db: DBSession, client
                 action_type=f"assigned_to_{lead.assigned_agent.replace(' ', '_').lower()}",
                 agent_type="System"
             ))
+        db.commit()
 
-        # --- FIX: SYNCHRONIZE FUNNEL STAGE WITH EVENT LOGS ---
-        is_fully_qualified_now = bool(
-            lead.visit_date and lead.phone and lead.name and lead.location and lead.budget and lead.property_type
-        )
+    # --- SYNCHRONIZE FUNNEL STAGE WITH EVENT LOGS (MOVED OUTSIDE AGENT ASSIGNMENT) ---
+    is_fully_qualified_now = bool(
+        lead.visit_date and lead.phone and lead.name and lead.location and lead.budget and lead.property_type
+    )
 
-        if is_fully_qualified_now:
-            if lead.funnel_stage not in ["Site Visit Done", "Closed Won"]:
-                lead.funnel_stage = "Appointment Scheduled"
-        elif has_core:
-            if lead.funnel_stage == "New":
-                lead.funnel_stage = "Contacted"
+    if is_fully_qualified_now:
+        if lead.funnel_stage not in ["Site Visit Done", "Closed Won"]:
+            lead.funnel_stage = "Appointment Scheduled"
+    elif has_core:
+        if lead.funnel_stage == "New":
+            lead.funnel_stage = "Contacted"
 
-        if f_state:
-            lead.followup_stage = f_state.follow_up_stage
+    if f_state:
+        lead.followup_stage = f_state.follow_up_stage
 
-        # =================================================================
-        # UNIVERSAL QUALIFICATION OVERRIDE (Fires closing template safely)
-        # =================================================================
-        if is_fully_qualified_now and not was_fully_qualified_initial:
-            loc = lead.location
-            vdate = lead.visit_date
+    # =================================================================
+    # UNIVERSAL QUALIFICATION OVERRIDE (Fires closing template safely)
+    # =================================================================
+    if is_fully_qualified_now and session.status != "closed":
+        loc = lead.location
+        vdate = lead.visit_date
+
+        if is_hinglish(user_message):
+            final_text = f"Perfect! Aapka {loc} ka site visit {vdate} ke liye schedule ho gaya hai. Humari team jaldi hi confirmation ke liye aapse connect karegi. See you there! 🏡"
+        else:
             final_text = f"Fantastic! Everything is set for your visit to {loc} on {vdate}. Our team will be in touch to confirm. Looking forward to seeing you! 🏡"
 
-            session.status = "closed"
-            if f_state:
-                f_state.follow_up_status = "completed"
-                f_state.next_follow_up_at = None
+        session.status = "closed"
+        if f_state:
+            f_state.follow_up_status = "completed"
+            f_state.next_follow_up_at = None
 
-        db.commit()
+        logger.info(f"🏆 LEAD FULLY QUALIFIED: {lead.phone} | Session {session_id}")
+
+    db.commit()
 
     if lead.score == "High" and not lead.visit_date and session.status != "closed":
         # We rely on the LLM to naturally propose a visit if the context feels right.

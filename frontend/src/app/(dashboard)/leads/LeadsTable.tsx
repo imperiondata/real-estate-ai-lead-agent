@@ -50,8 +50,8 @@ export default function LeadsTable({ initialLeads }: { initialLeads: Lead[] }) {
         valA = a.name?.toLowerCase() || ''
         valB = b.name?.toLowerCase() || ''
       } else if (sortField === 'score') {
-        valA = a.engagement_score || 0
-        valB = b.engagement_score || 0
+        valA = a.conversion_probability || 0
+        valB = b.conversion_probability || 0
       } else if (sortField === 'probability') {
         valA = a.conversion_probability || 0
         valB = b.conversion_probability || 0

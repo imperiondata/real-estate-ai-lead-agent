@@ -6,6 +6,7 @@ import asyncio
 import httpx
 from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception_type
 
+from config import settings
 from database import SessionLocal
 from metrics import BACKGROUND_FAILURE_COUNT, INTEGRATION_FAILURES
 from models import Lead, DLQEvent
@@ -41,10 +42,13 @@ async def _push_to_hubspot(payload: dict) -> dict:
         "Content-Type": "application/json"
     }
 
-    # --- RESTORED DEMO SIMULATION BLOCK ---
-    # Since HubSpot is not part of your active local workflow, this block
-    # intercepts the call, returns a fake CRM ID, and sets status to success!
-    if CRM_API_URL == "https://api.hubapi.com/crm/v3/objects/contacts" and CRM_API_KEY == "demo-hubspot-key":
+    # --- PRODUCTION SAFETY CHECK ---
+    if settings.IS_PRODUCTION and CRM_API_KEY == "demo-hubspot-key":
+        raise RuntimeError("CRITICAL: Production HubSpot credentials not configured. Set CRM_API_URL and CRM_API_KEY.")
+    # --------------------------------------
+
+    # --- DEMO SIMULATION BLOCK (local dev only) ---
+    if not settings.IS_PRODUCTION and CRM_API_URL == "https://api.hubapi.com/crm/v3/objects/contacts" and CRM_API_KEY == "demo-hubspot-key":
         import uuid
         return {"id": str(uuid.uuid4())}
     # --------------------------------------
@@ -66,16 +70,19 @@ async def sync_lead_to_crm(lead_id: int):
     push to the CRM, and update the Lead table with the external CRM ID.
     """
 
-    # FIX: Wait 2 seconds to ensure agent.py has finished its main database commit!
-    # This prevents the race condition where agent.py overwrites the success status.
-    await asyncio.sleep(2)
-
     with SessionLocal() as db:
         try:
             lead = db.query(Lead).filter(Lead.id == lead_id).first()
             if not lead:
                 logger.error(f"CRM Sync failed: Lead ID {lead_id} not found.")
                 return
+
+            # Poll for agent.py to finish writing lead data
+            for attempt in range(10):
+                db.refresh(lead)
+                if lead.phone and lead.name:
+                    break
+                await asyncio.sleep(0.5)
 
             # Prepare HubSpot contact properties
             # HubSpot expects properties inside a 'properties' object
@@ -115,7 +122,8 @@ async def sync_lead_to_crm(lead_id: int):
                     target_endpoint="hubspot_crm",
                     payload=payload,
                     error_trace=str(e),
-                    status="pending"
+                    status="pending",
+                    client_id=lead.client_id
                 )
                 db.add(dlq_entry)
                 db.commit()

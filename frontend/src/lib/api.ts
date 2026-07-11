@@ -5,6 +5,15 @@ if (!BACKEND_URL) {
   throw new Error("CRITICAL: NEXT_PUBLIC_API_URL is not set in environment variables.");
 }
 
+async function authFetch(url: string, options?: RequestInit) {
+  const res = await fetch(url, options)
+  if (res.status === 401) {
+    const { redirect } = await import('next/navigation')
+    redirect('/login')
+  }
+  return res
+}
+
 export interface Lead {
   id: number
   session_id: string
@@ -57,7 +66,7 @@ export async function fetchLeads(): Promise<LeadsResponse | null> {
   if (!token) return null
 
   try {
-    const res = await fetch(`${BACKEND_URL}/api/v1/leads`, {
+    const res = await authFetch(`${BACKEND_URL}/api/v1/leads`, {
       method: 'GET',
       headers: {
         'Authorization': `Bearer ${token}`,
@@ -85,7 +94,7 @@ export async function fetchAnalytics(): Promise<AnalyticsResponse | null> {
   if (!token) return null
 
   try {
-    const res = await fetch(`${BACKEND_URL}/api/v1/analytics`, {
+    const res = await authFetch(`${BACKEND_URL}/api/v1/analytics`, {
       method: 'GET',
       headers: {
         'Authorization': `Bearer ${token}`,

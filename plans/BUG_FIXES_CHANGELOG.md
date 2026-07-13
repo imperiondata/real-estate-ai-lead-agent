@@ -384,4 +384,111 @@ After every bug-fix slice:
 
 ---
 
-*Phase 3+ tracked in `UNIFIED_EXECUTION_ORDER.md`.*
+## Phase 3 status
+
+| ID | Status | Summary | Tests |
+|---|---|---|---|
+| P3.1/P3.2 | **done** | Timeout path: background re-acquires lock, no double processing | `tests/test_p3_concurrency.py` |
+| P3.1 | **done** | Interim "Just checking..." dedup per MessageSid via Redis | same |
+| P3.3 | **done** | `is_background` parameter functional — skips duplicate user message inserts | same |
+| P3.4 | **done** | WebhookLog insert-first + IntegrityError for race-safe dedup | same |
+| P3.5 | **done** | SMS follow-up stop uses client-scoped session id | same |
+| P3.5-edge | **done** | FollowUpState stop moved inside Redis lock (both normal + degraded paths) | `tests/test_p3_concurrency.py` |
+
+---
+
+## Entries
+
+### P3.1/P3.2 — Timeout cancels work, releases lock, full reprocess
+
+**Bug:** `asyncio.wait_for` cancelled the in-flight `process_unified_lead` on 15s timeout. The `async with` lock block exited on return, releasing the lock. `background_process_and_push` ran the full pipeline again without the lock — duplicate user messages, double CRM sync, race corruption of lead fields.
+
+**Fix:** `background_process_and_push` now re-acquires `session_lock:{session_id}` (45s timeout) before calling `process_unified_lead`. The lock is released in a `finally` block. If another worker holds the lock, the background task skips with a warning log.
+
+**Files:** `main.py`
+
+**Tests:** `tests/test_p3_concurrency.py` — 3 tests: lock acquired, lock uses session_id, lock released in finally.
+
+---
+
+### P3.1 — Interim TwiML dedup
+
+**Bug:** Two Twilio retries for the same MessageSid could both hit the timeout path, sending duplicate "Just checking that for you..." interim messages to the user.
+
+**Fix:** Before sending the interim message, check a Redis key `interim_sent:{MessageSid}` (120s TTL). If the key already exists, return empty TwiML instead. Only the first timeout per MessageSid sends the interim message.
+
+**Files:** `main.py`
+
+**Tests:** `tests/test_p3_concurrency.py` — 2 tests: dedup key exists, checks before sending.
+
+---
+
+### P3.3 — Dead `is_background` parameter
+
+**Bug:** `process_chat(..., is_background=False)` accepted the flag but the body never read it. Background retries could not skip duplicate user message inserts — the background re-run added a second user message row for the same turn.
+
+**Fix:** Added `_has_recent_duplicate_message(db, session_id, content, minutes=5)` helper. Both user-message insert paths (opt-out and normal) now check: if `is_background=True` and the same message already exists for that session within 5 minutes, skip the insert. `db.commit()` still runs to update other state.
+
+**Files:** `agent.py`
+
+**Tests:** `tests/test_p3_concurrency.py` — 2 tests: `is_background` used in body, `_has_recent_duplicate_message` helper exists.
+
+---
+
+### P3.4 — Webhook MessageSid check-then-insert race
+
+**Bug:** WhatsApp and SMS duplicate protection used check-then-insert:
+```python
+existing = query(WebhookLog, sid)
+if existing: return
+insert(WebhookLog)
+```
+Two concurrent Twilio retries could both observe "missing" and both process. Lack of IntegrityError handling meant one request could 500.
+
+**Fix:** Replace with insert-first pattern — `db.add(...)` then `db.commit()`. On `IntegrityError` (primary key on `message_sid`), `db.rollback()` and return empty TwiML. Applied to both WhatsApp and SMS webhooks.
+
+**Files:** `main.py` (WhatsApp endpoint lines ~636-644, SMS endpoint lines ~741-749)
+
+**Tests:** `tests/test_p3_concurrency.py` — 4 tests: WhatsApp IntegrityError handled, rollback called, empty response, SMS also handles IntegrityError.
+
+---
+
+### P3.5 — SMS follow-up stop uses unscoped session id
+
+**Bug:** SMS handler used raw `From` (e.g. `+919163962356`) for FollowUpState lookup and Redis lock key. But `process_unified_lead` created FollowUpState under scoped id `{client_id}_{From}` (e.g. `1_+919163962356`). The lookup missed → follow-ups not stopped on SMS reply.
+
+**Fix:** SMS handler now constructs `scoped_session_id = f"{current_client.id}_{raw_from}"` and uses it consistently for: FollowUpState lookup, Redis lock key, and payload. The duplicate protection scope (WebhookLog by MessageSid) remains unchanged.
+
+**Files:** `main.py` (SMS handler lines ~751-781)
+
+**Tests:** `tests/test_p3_concurrency.py` — 3 tests: scoped_session_id constructed, FollowUpState lookup uses scoped_id, lock uses scoped_id.
+
+---
+
+### P3.5 edge case — FollowUpState stop race outside Redis lock
+
+**Bug:** The FollowUpState stop (query + `stopped` + commit) ran BEFORE the Redis session lock was acquired. Two concurrent SMS messages from the same sender (different MessageSids) could both hit the stop concurrently. While the write is idempotent, the processing path was inconsistent — conversation runs inside the lock but the follow-up stop ran outside it. Also, moving the stop strictly inside the lock would regress Redis-down behavior (the stop currently happens regardless of Redis, but a naive move would skip it in the degraded fallback path).
+
+**Fix:** Extracted `_stop_followups_for_session(db, scoped_session_id)` helper. The normal path calls it INSIDE `async with redis_client.lock(...)` for atomicity. The degraded fallback (Redis down / lock failure) also calls the helper best-effort at the start of the `except` block, preserving pre-fix behavior.
+
+**Files:** `main.py` new helper + restructured `incoming_sms_webhook`
+
+**Tests:** `tests/test_p3_concurrency.py` — `TestSMSSessionScopeStopInsideLock`: asserts first stop call occurs after lock begins, and stop call appears ≥2 times (locked + fallback paths).
+
+---
+
+### Optional follow-up (not implemented here): `SELECT FOR UPDATE` for Redis-down fallback
+
+The degraded fallback path (Redis unavailable) cannot use the session lock. To harden it against the rare concurrent-degraded race, add a DB-level row lock:
+
+```python
+follow_up_state = db.query(models.FollowUpState).filter(
+    models.FollowUpState.session_id == scoped_session_id
+).with_for_update().first()
+```
+
+This requires the query to be inside a transaction (the `db` session from FastAPI's `Depends(get_db)` is already transactional). Worth implementing if Redis-down scenarios are frequent — otherwise unnecessary complexity for a best-effort path.
+
+---
+
+*Phase 4+ tracked in `UNIFIED_EXECUTION_ORDER.md`.*

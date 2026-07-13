@@ -179,6 +179,24 @@ def finalize_turn(db, session, lead, f_state):
     db.commit()
 
 
+def _has_recent_duplicate_message(db: DBSession, session_id: str, content: str, minutes: int = 5) -> bool:
+    """P3.3: Check if the same user message was already saved recently for this session.
+
+    Used by the background path (is_background=True) to avoid inserting duplicate
+    user messages when the webhook timeout causes a re-run of process_chat.
+    """
+    if not content:
+        return False
+    cutoff = datetime.now(timezone.utc) - timedelta(minutes=minutes)
+    existing = db.query(Message).filter(
+        Message.session_id == session_id,
+        Message.role == "user",
+        Message.content == content,
+        Message.timestamp >= cutoff,
+    ).first()
+    return existing is not None
+
+
 _NAME_BLOCKLIST = frozenset({
     "bhk", "budget", "lakhs", "lakh", "crore", "cr",
     "tomorrow", "today", "yes", "no", "ok", "okay", "sure",
@@ -618,7 +636,9 @@ async def process_chat(session_id: str, user_message: str, db: DBSession, client
             "You're unsubscribed from automated messages. "
             "We won't send further follow-ups. Reply if you need a human agent."
         )
-        db.add(Message(session_id=session_id, client_id=client_id, role="user", content=user_message))
+        # P3.3: Background re-run should not insert duplicate messages
+        if not is_background or not _has_recent_duplicate_message(db, session_id, user_message):
+            db.add(Message(session_id=session_id, client_id=client_id, role="user", content=user_message))
         db.add(Message(session_id=session_id, client_id=client_id, role="assistant", content=opt_out_reply))
         if f_state:
             f_state.follow_up_status = "stopped"
@@ -628,8 +648,9 @@ async def process_chat(session_id: str, user_message: str, db: DBSession, client
         finalize_turn(db, session, lead, f_state)
         return opt_out_reply
 
-    # Save the new user message to the Message table
-    db.add(Message(session_id=session_id, client_id=client_id, role="user", content=user_message))
+    # P3.3: Background re-run should not insert duplicate user messages
+    if not is_background or not _has_recent_duplicate_message(db, session_id, user_message):
+        db.add(Message(session_id=session_id, client_id=client_id, role="user", content=user_message))
     db.commit()
 
     # PERFORMANCE: Instant-Reply Intercept

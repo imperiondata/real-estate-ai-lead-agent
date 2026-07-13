@@ -24,6 +24,7 @@ from fastapi.staticfiles import StaticFiles
 from prometheus_client import Counter, Histogram, generate_latest, CONTENT_TYPE_LATEST
 from pydantic import BaseModel, field_validator
 from sqlalchemy import func
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session as DBSession
 from twilio.request_validator import RequestValidator
 from twilio.rest import Client
@@ -357,58 +358,92 @@ async def background_process_and_push(session_id: str, Body: str, client_id: int
     """
     Executes if the LLM exceeds 15s timeout. Uses Twilio REST API to push the reply out-of-band.
     If the LLM still fails in the background, sends a graceful fallback so the user is never left with no response.
+
+    P3.1/P3.2: Re-acquires session lock before processing to prevent concurrent double-processing.
+    P3.3: Passes background=True so agent.py can skip duplicate user message inserts.
     """
-    # --- FIX 3: Use context manager to prevent session leak ---
-    with SessionLocal() as db:
-        try:
-            payload = LeadIngestionPayload(
-                session_id=session_id,
-                source="whatsapp",
-                message=Body,
-                whatsapp_opt_in=True
-            )
-            reply_text = await process_unified_lead(payload, db, client_id, background=True)
-            if settings.TWILIO_ACCOUNT_SID:
-                client = Client(settings.TWILIO_ACCOUNT_SID, settings.TWILIO_AUTH_TOKEN)
-                await asyncio.to_thread(
-                    client.messages.create,
-                    from_=settings.TWILIO_PHONE_NUMBER,
-                    body=reply_text,
-                    to=f"whatsapp:{session_id}"
-                )
-                logger.info(f"Background task pushed response to {session_id}")
-        except Exception as e:
-            logger.error(f"Background task failed for {session_id}: {e}")
-            # Always guarantee the user gets a response — send fallback via Twilio REST
+    # P3.1/P3.2: Re-acquire the session lock so only one background task processes at a time.
+    # Use a longer timeout (45s) since background processing may take longer than the 15s webhook window.
+    lock = redis_client.lock(f"session_lock:{session_id}", timeout=45.0, blocking_timeout=10.0)
+    lock_acquired = False
+    try:
+        lock_acquired = await lock.acquire()
+        if not lock_acquired:
+            logger.warning(f"BACKGROUND_LOCK | session={session_id} | another worker holds the lock; skipping duplicate background run")
+            return
+
+        # --- FIX 3: Use context manager to prevent session leak ---
+        with SessionLocal() as db:
             try:
+                payload = LeadIngestionPayload(
+                    session_id=session_id,
+                    source="whatsapp",
+                    message=Body,
+                    whatsapp_opt_in=True
+                )
+                reply_text = await process_unified_lead(payload, db, client_id, background=True)
                 if settings.TWILIO_ACCOUNT_SID:
-                    fallback_client = Client(settings.TWILIO_ACCOUNT_SID, settings.TWILIO_AUTH_TOKEN)
+                    client = Client(settings.TWILIO_ACCOUNT_SID, settings.TWILIO_AUTH_TOKEN)
                     await asyncio.to_thread(
-                        fallback_client.messages.create,
+                        client.messages.create,
                         from_=settings.TWILIO_PHONE_NUMBER,
-                        body="I'm experiencing a brief connectivity issue. Please try again in a moment, or reach our team directly at +91 9876543210.",
+                        body=reply_text,
                         to=f"whatsapp:{session_id}"
                     )
-                    logger.warning(f"FALLBACK | session={session_id} | reason=background_task_failure | detail=graceful_fallback_sent_via_twilio")
-            except Exception as fallback_err:
-                logger.error(f"FALLBACK push also failed for {session_id}: {fallback_err}")
-                # Phase 2 Hardening: Dead-Letter Queue integration for Twilio outbound
-                BACKGROUND_FAILURE_COUNT.labels(component="twilio").inc()
-                INTEGRATION_FAILURES.labels(integration="twilio").inc()
-                payload_dlq = {
-                    "session_id": session_id,
-                    "body": "I'm experiencing a brief connectivity issue. Please try again in a moment, or reach our team directly at +91 9876543210.",
-                    "to": f"whatsapp:{session_id}"
-                }
-                dlq_entry = models.DLQEvent(
-                    target_endpoint="twilio_outbound",
-                    payload=payload_dlq,
-                    error_trace=str(fallback_err),
-                    status="pending",
-                    client_id=client_id
-                )
-                db.add(dlq_entry)
-                db.commit()
+                    logger.info(f"Background task pushed response to {session_id}")
+            except Exception as e:
+                logger.error(f"Background task failed for {session_id}: {e}")
+                # Always guarantee the user gets a response — send fallback via Twilio REST
+                try:
+                    if settings.TWILIO_ACCOUNT_SID:
+                        fallback_client = Client(settings.TWILIO_ACCOUNT_SID, settings.TWILIO_AUTH_TOKEN)
+                        await asyncio.to_thread(
+                            fallback_client.messages.create,
+                            from_=settings.TWILIO_PHONE_NUMBER,
+                            body="I'm experiencing a brief connectivity issue. Please try again in a moment, or reach our team directly at +91 9876543210.",
+                            to=f"whatsapp:{session_id}"
+                        )
+                        logger.warning(f"FALLBACK | session={session_id} | reason=background_task_failure | detail=graceful_fallback_sent_via_twilio")
+                except Exception as fallback_err:
+                    logger.error(f"FALLBACK push also failed for {session_id}: {fallback_err}")
+                    # Phase 2 Hardening: Dead-Letter Queue integration for Twilio outbound
+                    BACKGROUND_FAILURE_COUNT.labels(component="twilio").inc()
+                    INTEGRATION_FAILURES.labels(integration="twilio").inc()
+                    payload_dlq = {
+                        "session_id": session_id,
+                        "body": "I'm experiencing a brief connectivity issue. Please try again in a moment, or reach our team directly at +91 9876543210.",
+                        "to": f"whatsapp:{session_id}"
+                    }
+                    dlq_entry = models.DLQEvent(
+                        target_endpoint="twilio_outbound",
+                        payload=payload_dlq,
+                        error_trace=str(fallback_err),
+                        status="pending",
+                        client_id=client_id
+                    )
+                    db.add(dlq_entry)
+                    db.commit()
+    finally:
+        if lock_acquired:
+            await lock.release()
+
+
+def _stop_followups_for_session(db: DBSession, scoped_session_id: str) -> bool:
+    """P3.5 edge case: idempotently stop follow-ups for a session.
+
+    Returns True if a FollowUpState row existed and was stopped.
+    Used in both normal (locked) and degraded (Redis-down) paths.
+    """
+    follow_up_state = db.query(models.FollowUpState).filter(
+        models.FollowUpState.session_id == scoped_session_id
+    ).first()
+    if follow_up_state:
+        follow_up_state.follow_up_status = "stopped"
+        follow_up_state.last_user_reply_timestamp = func.now()
+        db.commit()
+        logger.info(f"SMS Webhook: Follow ups stopped for {scoped_session_id}")
+    return follow_up_state is not None
+
 
 class LeadIngestionPayload(BaseModel):
     session_id: str
@@ -616,16 +651,15 @@ async def whatsapp_webhook(
 
     request_start = time.time()
     try:
-        # Task 1: Duplicate Message Protection
+        # Task 1: Duplicate Message Protection (P3.4: insert-first with IntegrityError)
         if MessageSid:
-            existing = db.query(models.WebhookLog).filter(models.WebhookLog.message_sid == MessageSid).first()
-            if existing:
-                logger.info(f"Duplicate message ignored: {MessageSid}")
+            try:
+                db.add(models.WebhookLog(message_sid=MessageSid))
+                db.commit()
+            except IntegrityError:
+                db.rollback()
+                logger.info(f"Duplicate message ignored (race): {MessageSid}")
                 return Response(content="<Response></Response>", media_type="application/xml")
-            
-            # Log the new message
-            db.add(models.WebhookLog(message_sid=MessageSid))
-            db.commit()
 
         session_id = From.replace("whatsapp:", "")
         client_id = current_client.id
@@ -657,9 +691,20 @@ async def whatsapp_webhook(
                 # Took too long — dispatch to background and return interim response
                 logger.info(f"TIMEOUT | session={session_id} | exceeded=15000ms | action=background_dispatch")
                 background_tasks.add_task(background_process_and_push, session_id, Body, client_id)
-                
+
+                # P3.1: Only send one interim "Just checking..." per MessageSid
+                interim_key = f"interim_sent:{MessageSid}" if MessageSid else None
+                send_interim = True
+                if interim_key:
+                    already_sent = await redis_client.get(interim_key)
+                    if already_sent:
+                        send_interim = False
+                    else:
+                        await redis_client.set(interim_key, "1", ex=120)
+
                 twiml = MessagingResponse()
-                twiml.message("Just checking that for you...")
+                if send_interim:
+                    twiml.message("Just checking that for you...")
                 return Response(content=str(twiml), media_type="application/xml")
     
     except Exception as e:
@@ -711,32 +756,27 @@ async def incoming_sms_webhook(
     """
     request_start = time.time()
     try:
-        # Task 1: Duplicate Message Protection (Idempotency)
+        # Task 1: Duplicate Message Protection (P3.4: insert-first with IntegrityError)
         if MessageSid:
-            existing = db.query(models.WebhookLog).filter(models.WebhookLog.message_sid == MessageSid).first()
-            if existing:
-                logger.info(f"Duplicate SMS message ignored: {MessageSid}")
+            try:
+                db.add(models.WebhookLog(message_sid=MessageSid))
+                db.commit()
+            except IntegrityError:
+                db.rollback()
+                logger.info(f"Duplicate SMS message ignored (race): {MessageSid}")
                 return Response(content="<Response></Response>", media_type="application/xml")
-            
-            db.add(models.WebhookLog(message_sid=MessageSid))
-            db.commit()
 
-        # Format number correctly if needed, Twilio standard SMS starts with '+', no "whatsapp:" prefix
-        session_id = From
-        
-        # Stop FollowUps
-        follow_up_state = db.query(models.FollowUpState).filter(models.FollowUpState.session_id == session_id).first()
-        if follow_up_state:
-            follow_up_state.follow_up_status = "stopped"
-            follow_up_state.last_user_reply_timestamp = func.now()
-            db.commit()
-            logger.info(f"SMS Webhook: Follow ups stopped for {session_id}")
+        # P3.5: Use client-scoped session id for FollowUpState lookup and lock
+        raw_from = From
+        scoped_session_id = f"{current_client.id}_{raw_from}"
 
-        # Process as normal Lead Interaction
+        # Process as normal Lead Interaction (lock serializes per-session)
         try:
-            async with redis_client.lock(f"session_lock:{session_id}", timeout=20.0, blocking_timeout=30.0):
+            async with redis_client.lock(f"session_lock:{scoped_session_id}", timeout=20.0, blocking_timeout=30.0):
+                # P3.5 edge case: stop FollowUps INSIDE the lock for atomicity
+                _stop_followups_for_session(db, scoped_session_id)
                 payload = LeadIngestionPayload(
-                    session_id=session_id,
+                    session_id=scoped_session_id,
                     source="sms",
                     message=Body,
                     whatsapp_opt_in=False
@@ -744,8 +784,10 @@ async def incoming_sms_webhook(
                 reply_text = await process_unified_lead(payload, db, client_id=current_client.id)
         except Exception as redis_err:
             logger.warning(f"Redis unavailable or lock failed, proceeding without lock: {redis_err}")
+            # Degraded path: best-effort stop (no lock available)
+            _stop_followups_for_session(db, scoped_session_id)
             payload = LeadIngestionPayload(
-                session_id=session_id,
+                session_id=scoped_session_id,
                 source="sms",
                 message=Body,
                 whatsapp_opt_in=False

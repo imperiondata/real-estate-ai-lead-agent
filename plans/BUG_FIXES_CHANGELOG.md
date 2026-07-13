@@ -491,4 +491,180 @@ This requires the query to be inside a transaction (the `db` session from FastAP
 
 ---
 
+## Phase 4 status
+
+| ID | Status | Summary | Tests |
+|---|---|---|---|
+| P4.1 | **done** | 30m escalation targets director; 10m manager; manager fallback + log | `tests/test_p4_notifications.py` |
+| P4.2 | **done** | Handoff upgrades over score alert (severity ranking) | `tests/test_p4_notifications.py` |
+| P4.3 | **done** | Follow-up send failure backoff (no per-tick spam) | `tests/test_p4_notifications.py` |
+
+---
+
+## Entries
+
+### P4.1 — 10m/30m escalation tiers (director vs manager)
+
+**Bug:** Both escalation tiers queried `Agent.is_manager == True`. The 30m branch's log text said "Director" but the code was identical to 10m — there was no second-line role, so a 30m critical alert went to the same manager as the 10m alert.
+
+**Fix:**
+- `models.py` `Agent` gained `is_director = Column(Boolean, default=False)`.
+- `migrate_db.py` adds the column (`ALTER TABLE agents ADD COLUMN IF NOT EXISTS is_director BOOLEAN DEFAULT FALSE;`).
+- `notification_service.py` gained `pick_escalation_agent(agents, tier)` (pure, unit-tested) + `resolve_escalation_recipient(db, client_id, tier)`. 30m prefers `is_director`; if none, falls back to the first manager and logs `P4.1 ESCALATION FALLBACK`. 10m uses a manager only.
+- `main.py` escalation cron: the 30m block now calls `resolve_escalation_recipient(db, log.client_id, "30m")` (helper imported into the cron scope). The 10m block is unchanged (manager).
+- `main.py` `AgentCreate` gained `is_director: bool = False` (flows through `model_dump()` into the ORM row — no change to `create_agent`).
+- `seed.py`: the default manager for both demo tenants is also `is_director=True`, so the 30m path has a recipient.
+- Frontend `settings/team/page.tsx`: `is_director` added to the `Agent` type, form state, a "Director (30m Escalation)" checkbox, and a rose "Director" badge.
+
+**Files:** `models.py`, `migrate_db.py`, `notification_service.py`, `main.py`, `seed.py`, `frontend/src/app/(dashboard)/settings/team/page.tsx`
+
+**Tests:** `tests/test_p4_notifications.py` — 7 tests: 10m returns manager / ignores director flag / none without manager; 30m prefers director / falls back to manager / none without either / director without manager flag.
+
+**Migration note:** run `python migrate_db.py` after deploy to add `is_director`.
+
+---
+
+### P4.2 — handoff alert upgrades an open score-threshold alert
+
+**Bug:** The idempotency guard in `trigger_hot_lead_notification` bypassed any new alert whenever an active `NotificationLog` existed. So if a score-threshold alert had already opened `pending_ack`, a later explicit human handoff for the same lead was silently dropped — the human line never learned the lead had escalated in urgency.
+
+**Fix:**
+- Added severity ranking to `notification_service.py`: constants `SEVERITY_SCORE_ALERT = 1` / `SEVERITY_HANDOFF = 2`, pure helpers `classify_reason_severity(reason)` and `should_upgrade_alert(existing_status, existing_severity, new_severity)`.
+- `NotificationLog` gained `reason` (String) and `severity` (Integer, default 1) columns (`models.py` + `migrate_db.py`).
+- `trigger_hot_lead_notification(lead_id, reason, severity=None)`: on an existing active alert it now upgrades instead of dropping when the new reason is strictly more severe — sends ONE "Hot Lead Alert — UPGRADED" message and updates `reason`/`severity` in place (no duplicate pending row). Equal/lower severity still bypasses; terminal statuses never upgrade. Upgrades are naturally bounded (once at handoff severity, an equal handoff won't re-upgrade).
+- Dispatch logic extracted into `_resolve_alert_recipient(db, lead)` and `_send_alert_whatsapp(...)` so the primary and upgrade paths share the same retry + email-fallback behavior (P0.2/P0.3 preserved).
+- Callers in `agent.py` pass explicit severity: handoff → `SEVERITY_HANDOFF`, score path → `SEVERITY_SCORE_ALERT`.
+
+**Files:** `notification_service.py`, `models.py`, `migrate_db.py`, `agent.py`
+
+**Tests:** `tests/test_p4_notifications.py` — handoff outranks score; handoff-variant classification; handoff upgrades open score alert; score does not upgrade open handoff; same severity no upgrade; terminal statuses never upgrade; missing severity treated as score.
+
+---
+
+### P4.3 — follow-up dispatch failures retried every scheduler tick
+
+**Bug:** When a follow-up send failed, `check_and_send_followups` wrote the event to the DLQ but never advanced `next_follow_up_at`. The row stayed `<= now`, so the 1-minute scheduler re-selected it every tick → repeated send attempts / spam risk during a Twilio outage.
+
+**Fix:**
+- Added pure `compute_send_failure_backoff(retry_count, max_retries=5, base_minutes=15, cap_minutes=240, test_mode=False)` in `follow_up.py` → returns `(next_delay, exhausted)`. Exponential 15→30→60→120→cap; `test_mode` collapses to 1 minute; `retry_count >= max_retries` → `(None, True)`.
+- `FollowUpState` gained `send_retry_count` (Integer, default 0) (`models.py` + `migrate_db.py`).
+- Exception handler now increments `send_retry_count`, writes the DLQ entry (unchanged, still available for replay), then either reschedules `next_follow_up_at = apply_quiet_hours(now + backoff)` or, once retries are exhausted, sets `follow_up_status="stopped"` + `next_follow_up_at=None` (permanent stop). Counter resets to 0 on a successful send.
+
+**Files:** `follow_up.py`, `models.py`, `migrate_db.py`
+
+**Tests:** `tests/test_p4_notifications.py` — exponential schedule; cap; exhaustion after max retries; test-mode collapse; first-retry delay.
+
+**Migration note:** run `python migrate_db.py` after deploy to add `notification_logs.reason`, `notification_logs.severity`, and `follow_up_states.send_retry_count`.
+
+---
+
+---
+
+### P5.1 — re-sync CRM after post-qualification field changes
+
+**Bug:** `sync_lead_to_crm` fired once at lead create (often with empty name/budget), and `agent.py` also re-called it after every `extract_lead_info` turn. Later `extract_lead_info` fills fields with **no** re-sync, so the CRM stayed at "Unknown"/empty forever; the per-turn re-sync also spammed the CRM.
+
+**Fix:**
+- `models.py` `Lead` gained `crm_resync_pending = Column(Boolean, default=False)` (also `migrate_db.py`).
+- `agent.py` no longer calls `sync_lead_to_crm` on every turn. Instead, at the end of `process_unified_lead` it calls `_flag_crm_resync_if_synced(db, lead, session)` which sets `crm_resync_pending = True` only when the lead already has an `external_crm_id` + `crm_sync_status == "success"` and the session is not closed.
+- `crm_sync.py` gained `crm_resync_job()` (interval, 5 min) that finds `external_crm_id IS NOT NULL AND crm_sync_status='success' AND crm_resync_pending=True`, re-pushes via `sync_lead_to_crm(lead.id, resync=True)`, and clears the flag (or keeps it set on failure for the next run). Registered in `main.py` scheduler.
+- `sync_lead_to_crm` is now a public wrapper that works from both async (fire-and-forget) and sync (APScheduler thread) contexts; core logic in `_sync_lead_to_crm_async`. Create-time sync still fires once (in `main.py` ingest + `agent.py` new-lead path) so the lead gets its `external_crm_id`.
+
+**Files:** `models.py`, `migrate_db.py`, `agent.py`, `crm_sync.py`, `main.py`
+
+**Tests:** `tests/test_p5_crm.py::test_resync_job_clears_pending_after_sync` (DB-backed: flags a synced lead, runs the job, asserts flag cleared + status success).
+
+---
+
+### P5.2 — incomplete CRM property map
+
+**Bug:** Payload only mapped firstname/phone/budget/lifecyclestage — omitted location, intent, property_type, visit_date, assignee, alignment, urgency, engagement, temperature.
+
+**Fix:**
+- `crm_sync.py` `build_crm_properties(lead, include_extended)` adds the extended map (`location`, `intent`, `property_type`, `visit_date`, `assignee`→`assigned_agent`, `budget_alignment_status`, `urgency_level`, `engagement_score`, `lead_temperature`); booleans normalized to strings.
+- Gated by `settings.CRM_SYNC_EXTENDED_PROPERTIES` (default True) in `config.py` — set False on portals lacking the custom properties.
+- `_push_to_hubspot` now handles a 4xx for an unknown custom property: parses the rejected property, drops it from the payload, and retries once (logs which property was rejected) instead of hard-failing the whole sync.
+
+**Files:** `crm_sync.py`, `config.py`
+
+**Tests:** `tests/test_p5_crm.py` — base always present; extended included when enabled; extended skipped when disabled; booleans not leaked; assignee maps from assigned_agent.
+
+---
+
+### P5.3 — success with empty identity
+
+**Bug:** Sync could succeed with `firstname: Unknown` and empty phone after the poll timeout, marking the lead "success" and never retrying.
+
+**Fix:**
+- `crm_sync.py` `decide_crm_status_after_poll(lead)` returns `"pending"` when both `phone` and `name` are still missing after the create-time poll (only on non-resync path), so the lead is retried on the next qualifying field update (P5.1). Returns `"success"` once any identity field exists.
+- Re-sync path (`resync=True`) skips the poll and clears `crm_resync_pending` on push (it already has an id).
+
+**Files:** `crm_sync.py`
+
+**Tests:** `tests/test_p5_crm.py` — pending when phone+name missing; success when phone present; success when name present.
+
+---
+
+---
+
+### P6.1 — persist feedback-loop success rates
+
+**Problem:** `app/intelligence/feedback_loop.py` stored win/loss stats in an in-process dict. On multi-worker deployments (or any restart) the learned `get_agent_success_rate` diverged / was lost, so assignment scoring never improved.
+
+**Fix:** Added `AgentLearning` table (`client_id`, `agent_name`, `wins`, `losses`) + `migrate_db.py`. `record_feedback` now durably persists each agent outcome via `_persist_agent_outcome` (best-effort; never breaks the caller). `get_agent_success_rate(agent_name, client_id=None)` reads the persisted rate as the primary source of truth, falling back to the in-process stats only when no DB row/id is available. `agent_matcher.match_best_agent` passes `client_id` through.
+
+**Files:** `models.py`, `migrate_db.py`, `app/intelligence/feedback_loop.py`, `app/intelligence/agent_matcher.py`
+
+**Tests:** covered by build/integration (persistence path is best-effort); `get_agent_success_rate` signature change is backward compatible.
+
+---
+
+### P6.2 — `assigned_agent` → FK to `agents.id` (DEFERRED)
+
+**Decision:** `[-]` deferred. Converting the string `Lead.assigned_agent` to a foreign key requires a data backfill and query rewrites across `main.py`, `agent.py`, `agent_matcher.py`, `notification_service.py`, `follow_up.py`, `dlq_replay.py` (all join/compare on agent *name*). Benefit is rename-safety only; the regression risk mid-program is high. Deferred to Expansion Phase 10's decommission window, where module boundaries are redrawn anyway.
+
+---
+
+### P6.3 — minimum match-score threshold
+
+**Problem:** `ensure_lead_assignment` always picked the top-scored agent, even when every agent scored terribly (totally unrelated lead).
+
+**Fix:** Added `config.MIN_MATCH_SCORE` (default 0). In `ensure_lead_assignment`, if the best match's `match_score` is below the threshold, the lead is left unassigned (for manual review) instead of forcing a poor routing.
+
+**Files:** `config.py`, `app/intelligence/agent_matcher.py` (added `logger`)
+
+**Tests:** `tests/test_p6_structure.py` — threshold blocks poor assignment; 0 allows normal assignment.
+
+---
+
+### P6.4 — AB follow-up stage timing vs strategy B day units
+
+**Problem:** `follow_up.py` state machine derived inter-stage delays from hardcoded fallback constants (24/72/168) that could drift from the ML `followups` sequence's actual `day` values (the "hour_map" vs "sequence days" mismatch).
+
+**Fix:** Added pure `next_followup_stage(followups, current_stage)` in `follow_up.py` that derives the next stage *and* the day-gap directly from the `followups` sequence. The scheduler now uses it (replacing the inline `if/elif` + hardcoded constants), so the scheduler and strategy B stay in lockstep. Test mode still collapses gaps to 1 minute.
+
+**Files:** `follow_up.py`
+
+**Tests:** `tests/test_p6_structure.py` — Day0→Day1 gap, Day3→Day7 gap, terminal returns None, short sequence stops.
+
+---
+
+### P6.5 — temperature badge casing
+
+**Problem:** Backend stores `lead_temperature` as lowercase (`hot`/`warm`/`cold`); the dashboard compares against `'Hot'`/`'Warm'`/`'Cold'`, so badges/highlighting silently never matched.
+
+**Fix:** Added `serialize_lead(lead)` in `main.py` that title-cases `lead_temperature` (`Hot`/`Warm`/`Cold`); `/api/v1/leads` now returns serialized dicts instead of raw ORM rows.
+
+**Files:** `main.py`
+
+**Tests:** `tests/test_p6_structure.py` — `serialize_lead` title-cases; empty temperature passes through.
+
+---
+
+### P6.6 — atomic workload updates
+
+**Status:** Already satisfied. `apply_workload_on_assignment` (P1.3) mutates the old/new `Agent.active_leads` within the caller's single transaction (no separate commit), and `ensure_lead_assignment` only calls it when the assignee actually changes. No change required.
+
+---
+
 *Phase 4+ tracked in `UNIFIED_EXECUTION_ORDER.md`.*

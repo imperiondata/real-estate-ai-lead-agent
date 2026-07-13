@@ -38,7 +38,7 @@ from app.intelligence.lead_scoring import calculate_lead_score
 from config import settings
 from crm_sync import sync_lead_to_crm
 from models import Session, Message, Lead, EventLog
-from notification_service import trigger_hot_lead_notification
+from notification_service import trigger_hot_lead_notification, SEVERITY_HANDOFF, SEVERITY_SCORE_ALERT
 from rag import retrieve
 from system_prompt import REAL_ESTATE_SYSTEM_PROMPT
 
@@ -360,6 +360,28 @@ def normalize_lead_data(args: dict, existing_intent: str = None) -> dict:
                 args["location"] = loc_lower.title()
         # ----------------------------------------------------------------------
 
+    # 4. Normalize Visit Date (e.g. "this saturday at 10am" -> "Saturday 10:00 AM")
+    if "visit_date" in args and args["visit_date"]:
+        vd = str(args["visit_date"]).strip()
+
+        def _normalize_time(match):
+            time_str = match.group(0)
+            m = re.match(r'(\d{1,2}:\d{2})\s*(am|pm|AM|PM)', time_str)
+            if m:
+                return f"{m.group(1)} {m.group(2).upper()}"
+            m = re.match(r'(\d{1,2})\s*(am|pm|AM|PM)', time_str)
+            if m:
+                return f"{m.group(1)}:00 {m.group(2).upper()}"
+            return time_str
+
+        vd = re.sub(r'\d{1,2}(?::\d{2})?\s*(?:am|pm|AM|PM)', _normalize_time, vd)
+        vd = re.sub(r'\b(this|next|on|at|the|around|approximately)\b', '', vd, flags=re.IGNORECASE)
+        vd = re.sub(r'\s+', ' ', vd).strip()
+        vd = vd.title()
+        vd = re.sub(r'\b(Am|Pm)\b', lambda m: m.group(1).upper(), vd)
+
+        args["visit_date"] = vd
+
     return args
 
 
@@ -562,7 +584,8 @@ async def process_chat(session_id: str, user_message: str, db: DBSession, client
         task1.add_done_callback(handle_task_result)
 
         # --- FIX: Trigger HubSpot CRM sync for organically created chats ---
-        task2 = asyncio.create_task(sync_lead_to_crm(lead.id))
+        # sync_lead_to_crm already returns a Task in an async context; do not re-wrap.
+        task2 = sync_lead_to_crm(lead.id)
         task2.add_done_callback(handle_task_result)
 
     # --- FIX: Extract raw phone number from the tenant-prefixed Session ID ---
@@ -807,7 +830,7 @@ async def process_chat(session_id: str, user_message: str, db: DBSession, client
 
         logger.info(f"🚨 HUMAN HANDOFF TRIGGERED: Lead {lead.phone} requested an agent!")
         asyncio.create_task(
-            trigger_hot_lead_notification(lead.id, "Explicit human agent requested.")
+            trigger_hot_lead_notification(lead.id, "Explicit human agent requested.", severity=SEVERITY_HANDOFF)
         )
 
         handoff_reply = "I completely understand. I have paused my automated responses and alerted our human team. An expert will review our chat and reach out to you shortly!"
@@ -1339,6 +1362,7 @@ async def process_chat(session_id: str, user_message: str, db: DBSession, client
             trigger_hot_lead_notification(
                 lead.id,
                 hot_threshold_notification_reason(prob),
+                severity=SEVERITY_SCORE_ALERT,
             )
         )
 
@@ -1377,6 +1401,11 @@ async def process_chat(session_id: str, user_message: str, db: DBSession, client
 
     db.commit()
 
+    # P5.1: if this lead was already synced to the CRM at create time, flag a
+    # debounced re-sync so post-qualification fields (budget/location/visit_date/
+    # assignee) are pushed without re-syncing on every single turn.
+    _flag_crm_resync_if_synced(db, lead, session)
+
     if lead.score == "High" and not lead.visit_date and session.status != "closed":
         # We rely on the LLM to naturally propose a visit if the context feels right.
         pass
@@ -1407,3 +1436,25 @@ async def process_chat(session_id: str, user_message: str, db: DBSession, client
 
     # Return the text response isolated from tool calls
     return final_text
+
+
+def _flag_crm_resync_if_synced(db, lead, session):
+    """
+    P5.1: mark a lead for a debounced CRM re-sync when it was already synced at
+    create time (has an external id) and isn't already flagged. The scheduled
+    `crm_resync_job` picks these up so post-qualification field changes reach
+    the CRM without re-pushing on every turn. Deliberately skips closed sessions
+    (no point re-syncing a concluded lead on every later message).
+    """
+    try:
+        if (
+            lead.external_crm_id
+            and lead.crm_sync_status == "success"
+            and not lead.crm_resync_pending
+            and session.status != "closed"
+        ):
+            lead.crm_resync_pending = True
+            db.commit()
+            logger.info(f"P5.1 CRM re-sync flagged for lead {lead.id}")
+    except Exception as e:
+        logger.warning(f"P5.1 failed to flag CRM re-sync for lead {lead.id}: {e}")

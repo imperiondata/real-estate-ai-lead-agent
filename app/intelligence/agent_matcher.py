@@ -1,9 +1,13 @@
+import logging
 from typing import Optional
 
 from sqlalchemy.orm import Session
 
+from config import settings
 from models import Agent, Lead
 from app.intelligence.feedback_loop import get_agent_success_rate
+
+logger = logging.getLogger("agent_matcher")
 
 # Classifier labels → accepted agent.speciality / lead_type values (P1.6)
 SPECIALITY_ALIASES = {
@@ -178,7 +182,7 @@ def match_best_agent(db: Session, client_id: int, location: str, query: str, *, 
 
         score += int((agent.conversion_rate or 30) / 5)
         try:
-            learned_rate = max(agent.conversion_rate or 30, get_agent_success_rate(agent.name))
+            learned_rate = max(agent.conversion_rate or 30, get_agent_success_rate(agent.name, client_id))
         except Exception:
             learned_rate = agent.conversion_rate or 30
 
@@ -246,6 +250,17 @@ def ensure_lead_assignment(
     )
     new_name = agent_data.get("assigned_agent")
     if not new_name:
+        return lead.assigned_agent
+
+    # P6.3: avoid assigning a totally unrelated first agent. If even the best
+    # match falls below the minimum score, leave the lead unassigned for manual
+    # review instead of forcing a poor routing.
+    match_score = agent_data.get("match_score", 0)
+    if match_score < settings.MIN_MATCH_SCORE:
+        logger.info(
+            f"P6.3: best agent '{new_name}' score {match_score} < MIN_MATCH_SCORE "
+            f"{settings.MIN_MATCH_SCORE}; leaving lead {getattr(lead, 'id', None)} unassigned."
+        )
         return lead.assigned_agent
 
     if previous != new_name:

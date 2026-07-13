@@ -39,6 +39,7 @@ def seed_test_clients():
                 phone="+918097781103",
                 email=client_1.email,
                 is_manager=True,
+                is_director=True,
                 locations="Pune, Baner, Wakad",  # <-- ADD THESE METADATA FIELDS
                 speciality="luxury",
                 deal_size="high",
@@ -90,6 +91,7 @@ def seed_test_clients():
                 phone="+918097781103",
                 email=client_2.email,
                 is_manager=True,
+                is_director=True,
                 locations="Pune, Baner, Wakad",  # <-- ADD THESE METADATA FIELDS
                 speciality="luxury",
                 deal_size="high",

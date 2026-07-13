@@ -97,6 +97,14 @@ High-signal, repo-specific facts an agent would likely miss without help.
 - `incoming_sms_webhook` does NOT use the raw `From` number as the session id. It builds `scoped_session_id = f"{current_client.id}_{raw_from}"` and uses it for the `FollowUpState` lookup, the Redis lock, and the `process_unified_lead` payload — keeping SMS follow-up state isolated per tenant.
 - `_stop_followups_for_session(db, scoped_session_id)` (`main.py:431`) stops follow-ups. It runs INSIDE the Redis lock (normal path) and again in the Redis-down fallback, so follow-ups are always stopped even if Redis is unavailable.
 
+## Notifications & Escalation
+
+- Hot-lead **10m** escalation targets an `Agent` where `is_manager == True`; **30m** critical escalation targets `is_director == True`, falling back to the first manager (with a `P4.1 ESCALATION FALLBACK` log) when no director exists for the tenant.
+- Resolution helper: `resolve_escalation_recipient(db, client_id, tier)` in `notification_service.py`; pure selection in `pick_escalation_agent(agents, tier)`.
+- `Agent.is_director` added via `migrate_db.py`; `/api/v1/agents` accepts `is_director` (flows through `AgentCreate`).
+- **Alert severity / upgrade (P4.2):** `trigger_hot_lead_notification(lead_id, reason, severity=None)` ranks reasons — `SEVERITY_HANDOFF (2)` > `SEVERITY_SCORE_ALERT (1)`. An open lower-severity alert is *upgraded* (one extra "UPGRADED" message + in-place `NotificationLog.reason/severity` update) instead of being dropped by the idempotency guard. Equal/lower severity or terminal status still bypasses. `NotificationLog` has `reason` + `severity` columns.
+- **Follow-up send backoff (P4.3):** `compute_send_failure_backoff(retry_count, ...)` in `follow_up.py` returns `(next_delay, exhausted)` (exp 15→30→60→120→cap 240m; test mode → 1m; ≥5 retries → stop). On dispatch failure the scheduler advances `next_follow_up_at` (via backoff) so it no longer retries every tick; `FollowUpState.send_retry_count` tracks attempts and resets on success.
+
 ---
 
 ## DLQ (Dead Letter Queue)
@@ -105,6 +113,20 @@ High-signal, repo-specific facts an agent would likely miss without help.
 - CRM sync: 5 retries (exponential backoff 2s→30s) via Tenacity, DLQ on permanent failure
 - Replay: `python dlq_replay.py` (processes all `pending` → `resolved`)
 - HubSpot sync is **demo-stubbed** (returns fake UUID) unless real `CRM_API_URL` + `CRM_API_KEY` configured
+
+## CRM Sync (P5)
+
+- `crm_sync.py`: create-time sync fires once (`sync_lead_to_crm`); later field changes are debounced, not per-turn.
+- **P5.1:** after a meaningful field change on an already-synced lead, `agent.py` sets `Lead.crm_resync_pending = True`; `crm_resync_job` (scheduler, every 5 min) re-pushes and clears the flag. Failed re-sync keeps the flag set for retry.
+- **P5.2:** extended property map (location, intent, property_type, visit_date, assignee, budget_alignment_status, urgency_level, engagement_score, lead_temperature) gated by `CRM_SYNC_EXTENDED_PROPERTIES` (default True). A 4xx for an unknown custom property drops that property and retries once.
+- **P5.3:** `decide_crm_status_after_poll` leaves `crm_sync_status = "pending"` (never "success") when both `phone` and `name` are still empty after the create-time poll, so the next field update re-syncs.
+
+## Feedback learning (P6.1)
+
+- Agent win/loss learning is **persisted** in the `agent_learning` table (client-scoped), not in-process memory, so multi-worker deployments converge. `record_feedback(... client_id=...)` persists; `get_agent_success_rate(name, client_id)` reads it first.
+- `config.MIN_MATCH_SCORE` (default 0): below this dynamic match score, `ensure_lead_assignment` leaves the lead unassigned rather than forcing a poor routing (P6.3).
+- `main.py` `serialize_lead` title-cases `lead_temperature` (`Hot`/`Warm`/`Cold`) so the dashboard's case-sensitive badge compares match the backend's lowercase storage (P6.5).
+- `follow_up.py` `next_followup_stage(followups, current_stage)` derives the next stage + day-gap from the ML `followups` sequence, keeping the scheduler aligned with strategy B (P6.4).
 
 ---
 

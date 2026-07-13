@@ -34,7 +34,7 @@ import auth
 import models
 from agent import process_chat
 from config import settings, tenant_id_ctx, request_id_ctx
-from crm_sync import sync_lead_to_crm
+from crm_sync import sync_lead_to_crm, crm_resync_job
 from database import engine, Base, get_db, SessionLocal
 from follow_up import check_and_send_followups
 from metrics import BACKGROUND_FAILURE_COUNT, INTEGRATION_FAILURES
@@ -123,6 +123,7 @@ def escalation_cron_job():
     from datetime import datetime, timezone, timedelta
     from twilio.rest import Client
     from config import settings, tenant_id_ctx
+    from notification_service import resolve_escalation_recipient
     import logging
 
     logger = logging.getLogger("escalation_engine")
@@ -169,7 +170,7 @@ def escalation_cron_job():
                 logger.error(
                     f"🚨 30M CRITICAL ESCALATION TRIGGERED: Lead {log.lead_id} still unacknowledged! Alerting Director.")
 
-                director = db.query(Agent).filter(Agent.client_id == log.client_id, Agent.is_manager == True).first()
+                director = resolve_escalation_recipient(db, log.client_id, "30m")
                 if director and settings.TWILIO_ACCOUNT_SID:
                     try:
                         client = Client(settings.TWILIO_ACCOUNT_SID, settings.TWILIO_AUTH_TOKEN)
@@ -209,6 +210,7 @@ scheduler.add_job(check_and_send_followups, "interval", minutes=1, id="follow_up
 scheduler.add_job(backup_postgres, "cron", hour=2, minute=0, id="nightly_backup")
 scheduler.add_job(daily_cleanup_job, "cron", hour=3, minute=0, id="nightly_cleanup")
 scheduler.add_job(escalation_cron_job, "interval", minutes=1, id="escalation_checker")
+scheduler.add_job(crm_resync_job, "interval", minutes=5, id="crm_resync")
 
 @asynccontextmanager
 async def lifespan(app):
@@ -515,7 +517,8 @@ async def process_unified_lead(payload: LeadIngestionPayload, db: DBSession, cli
         db.commit()
 
         # Launch the CRM Sync and protect it from Garbage Collection
-        task = asyncio.create_task(sync_lead_to_crm(lead.id))
+        # sync_lead_to_crm already returns a Task in an async context; do not re-wrap.
+        task = sync_lead_to_crm(lead.id)
         running_bg_tasks.add(task)
         task.add_done_callback(running_bg_tasks.discard)
     # --------------------------------------------------------
@@ -1032,6 +1035,7 @@ class AgentCreate(BaseModel):
     phone: str
     email: str
     is_manager: bool = False
+    is_director: bool = False
     locations: Optional[str] = None
     speciality: Optional[str] = None
     deal_size: Optional[str] = None
@@ -1084,12 +1088,25 @@ def get_leads(
         query = query.filter(models.Lead.assigned_agent.ilike(f"%{assigned_agent}%"))
         
     leads = query.all()
-    
+
     return {
         "status": "success",
         "total_returned": len(leads),
-        "leads": leads
+        "leads": [serialize_lead(lead) for lead in leads]
     }
+
+
+def serialize_lead(lead) -> dict:
+    """
+    P6.5: ORM row -> JSON-safe dict. Title-cases `lead_temperature` so the
+    dashboard (which compares against 'Hot'/'Warm'/'Cold') matches the backend's
+    lowercase storage ('hot'/'warm'/'cold').
+    """
+    data = {c.name: getattr(lead, c.name) for c in lead.__table__.columns}
+    temp = data.get("lead_temperature")
+    if isinstance(temp, str) and temp:
+        data["lead_temperature"] = temp[:1].upper() + temp[1:]
+    return data
 
 class LeadStageUpdate(BaseModel):
     stage: str

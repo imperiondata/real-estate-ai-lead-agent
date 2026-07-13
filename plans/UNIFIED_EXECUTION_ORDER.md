@@ -54,10 +54,10 @@
 | **1** | Bug | Phase 0 (P0.1–P0.6) | Safety hotfixes | Bug Phase 0 verification checklist | `[x]` |
 | **2** | Bug | Phase 1 (P1.1–P1.13) | Agent assignment | Bug Phase 1 verification checklist | `[x]` |
 | **3** | Bug | Phase 2 (P2.1–P2.6) | Chat/follow-up FSM, language, data quality | Bug Phase 2 verification checklist | `[x]` |
-| **4** | Bug | Phase 3 (P3.1–P3.5) | WhatsApp/webhook concurrency | Bug Phase 3 verification checklist | `[ ]` |
-| **5** | Bug | Phase 4 (P4.1–P4.3) | Notification / escalation polish | Items done; no infinite failed alerts; escalation roles as specified | `[ ]` |
-| **6** | Bug | Phase 5 (P5.1–P5.3) | CRM sync completeness | CRM reflects post-qualification fields; no false success on empty identity | `[ ]` |
-| **7** | Bug | Phase 6 (P6.1–P6.6) | Structural backlog | Structural items done or explicitly deferred in this table as `[-]` | `[ ]` |
+| **4** | Bug | Phase 3 (P3.1–P3.5) | WhatsApp/webhook concurrency | Bug Phase 3 verification checklist | `[x]` |
+| **5** | Bug | Phase 4 (P4.1–P4.3) | Notification / escalation polish | Items done; no infinite failed alerts; escalation roles as specified | `[x]` |
+| **6** | Bug | Phase 5 (P5.1–P5.3) | CRM sync completeness | CRM reflects post-qualification fields; no false success on empty identity | `[x]` |
+| **7** | Bug | Phase 6 (P6.1–P6.6) | Structural backlog | Structural items done or explicitly deferred in this table as `[-]` | `[x]` |
 | **G1** | Gate | **Block 1 complete** | Monolith stable | **Bug master regression checklist** (§13 of bug plan) all green | `[ ]` |
 | **8** | Expansion | Phase 0 Task 0.2 | Branch / env hygiene + Redis available | App boots; Redis reachable | `[ ]` |
 | **9** | Expansion | Phase 1 (Tasks 1.1–1.8) | **Redis Streams** bus, CEO, BaseAgent, EE skeleton | Expansion Phase 1 exit gate (durable publish) | `[ ]` |
@@ -126,18 +126,24 @@ Implement using `plans/BUG_AUDIT_AND_PHASED_FIX_PLAN.md` only. Within each phase
 
 ### Step 5 — Bug Phase 4 (Notification polish)
 
-| ID | Focus |
-|---|---|
-| P4.1 | 10m manager vs 30m director |
-| P4.2 | Handoff upgrades over score alert |
-| P4.3 | Follow-up send failure backoff |
+**Slice A (own PR):** P4.1 — 10m manager vs 30m director (model + migration + seed + backend cron + team UI). **Status: done.**
+
+**Slice B (own PR):** P4.2 + P4.3 — handoff-upgrade severity ranking + follow-up send-failure backoff (backend-only, one new test file). **Status: done.**
+
+| ID | Focus | Slice |
+|---|---|---|
+| P4.1 | 10m manager vs 30m director | A (done) |
+| P4.2 | Handoff upgrades over score alert | B (done) |
+| P4.3 | Follow-up send failure backoff | B (done) |
 
 **Exit:** All P4 items implemented and verified per bug plan.
 
 ### Step 6 — Bug Phase 5 (CRM quality)
 
+**Status: done.** P5.1 (debounced re-sync via `crm_resync_pending` + `crm_resync_job` scheduler, 5-min), P5.2 (extended property map gated by `CRM_SYNC_EXTENDED_PROPERTIES` + 4xx property-drop retry), P5.3 (`decide_crm_status_after_poll` leaves `pending` when identity still empty). Tests in `tests/test_p5_crm.py`.
+
 | ID | Focus |
-|---|---|
+| --- | --- |
 | P5.1 | Re-sync after meaningful field changes |
 | P5.2 | Expand CRM property map |
 | P5.3 | No success with empty identity |
@@ -146,9 +152,18 @@ Implement using `plans/BUG_AUDIT_AND_PHASED_FIX_PLAN.md` only. Within each phase
 
 ### Step 7 — Bug Phase 6 (Structural)
 
-| ID | Focus |
-|---|---|
-| P6.1–P6.6 | Feedback persist, assignee FK, min match score, AB timing, temperature casing, atomic workload |
+**Status: done** (P6.2 deferred). P6.1 (persisted agent learning), P6.3 (min match score), P6.4 (AB/day-gap derivation), P6.5 (temperature casing), P6.6 (atomic workload already single-transaction). Tests in `tests/test_p6_structure.py`.
+
+| ID | Focus | Status |
+| --- | --- | --- |
+| P6.1 | Persist feedback-loop success rates | done (AgentLearning table) |
+| P6.2 | `Lead.assigned_agent` → FK to `agents.id` | `[-]` deferred (high-risk blast radius; see note) |
+| P6.3 | Min match score threshold | done (`MIN_MATCH_SCORE`) |
+| P6.4 | AB follow-up stage timing vs strategy B day units | done (`next_followup_stage`) |
+| P6.5 | Temperature badge casing | done (`serialize_lead`) |
+| P6.6 | Atomic workload updates | done (already single-transaction) |
+
+**P6.2 deferral reason:** converting `assigned_agent` (string) to a real FK to `agents.id` requires a data backfill + query rewrites across `main.py`, `agent.py`, `agent_matcher.py`, `notification_service.py`, `follow_up.py`, `dlq_replay.py` (all join/compare on the agent *name*). Benefit is rename-safety only; risk is broad regression mid-program. Deferred to the Expansion Phase 10 decommission window where module boundaries are redrawn anyway.
 
 **Exit:** All P6 items done, or each skipped item listed as `[-]` with reason in this doc’s master table / notes.
 

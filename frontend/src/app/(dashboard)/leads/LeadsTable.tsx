@@ -62,7 +62,7 @@ export default function LeadsTable({ initialLeads }: { initialLeads: Lead[] }) {
       return 0
     })
 
-  const stages = ['All', 'New', 'Contacted', 'Qualified', 'Appointment Scheduled', 'Closed Won']
+  const stages = ['All', 'New', 'Contacted', 'Appointment Scheduled', 'Closed Won', 'Lost']
   const temps = ['All', 'Hot', 'Warm', 'Cold']
 
   return (

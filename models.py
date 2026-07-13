@@ -103,7 +103,7 @@ class Lead(Base):
     followup_stage = Column(String, default='new')
     best_performing_script = Column(Text, nullable=True)
 
-    funnel_stage = Column(String, default="New")
+    funnel_stage = Column(String, default="New")  # P2.4: canonical values in agent.FUNNEL_STAGES
     external_crm_id = Column(String, nullable=True)
     crm_sync_status = Column(String, default="pending")
 

@@ -22,7 +22,7 @@ from fastapi.security import OAuth2PasswordRequestForm
 from fastapi.security.api_key import APIKeyHeader
 from fastapi.staticfiles import StaticFiles
 from prometheus_client import Counter, Histogram, generate_latest, CONTENT_TYPE_LATEST
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
 from sqlalchemy import func
 from sqlalchemy.orm import Session as DBSession
 from twilio.request_validator import RequestValidator
@@ -784,12 +784,13 @@ async def get_pipeline_report(current_client: models.Client = Depends(auth.get_c
     contacted = stage_counts.get("Contacted", 0)
     scheduled = stage_counts.get("Appointment Scheduled", 0)
     closed = stage_counts.get("Closed Won", 0)
+    lost = stage_counts.get("Lost", 0)
     qualified = contacted + scheduled + closed
 
     return {
         "pipeline": {
             "total_leads": total_leads, "new": new_leads, "contacted": contacted,
-            "appointment_scheduled": scheduled, "closed_won": closed
+            "appointment_scheduled": scheduled, "closed_won": closed, "lost": lost
         },
         "rates": {
             "qualified_rate": round((qualified / total_leads * 100), 2) if total_leads else 0,
@@ -1050,6 +1051,15 @@ def get_leads(
 
 class LeadStageUpdate(BaseModel):
     stage: str
+
+    # P2.4: validate against canonical enum — reject "Human Handoff", "Qualified", etc.
+    @field_validator("stage")
+    @classmethod
+    def stage_must_be_valid(cls, v):
+        from agent import FUNNEL_STAGES
+        if v not in FUNNEL_STAGES:
+            raise ValueError(f"Invalid stage '{v}'. Allowed: {FUNNEL_STAGES}")
+        return v
 
 @app.patch("/api/v1/leads/{lead_id}/stage")
 def update_lead_stage(

@@ -106,7 +106,7 @@ export default async function DashboardPage(props: Props) {
   const warmCount = leads.filter(l => l.lead_temperature?.toLowerCase() === 'warm').length
 
   // Funnel Data & Conversion by Stage
-  const STAGES = ["New", "Contacted", "Qualified", "Appointment Scheduled", "Closed Won"]
+  const STAGES = ["New", "Contacted", "Appointment Scheduled", "Closed Won", "Lost"]
   const funnelData = STAGES.map(stage => ({
     name: stage,
     value: leads.filter(l => l.funnel_stage === stage).length

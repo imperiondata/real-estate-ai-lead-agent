@@ -351,7 +351,17 @@ def check_and_send_followups():
                     if not clean_phone.startswith("+"):
                         clean_phone = f"+{clean_phone}"
 
-                # P0.5: never message opted-out leads (consent)
+                # P0.5 / P2.2: Terminal-state guards for follow-up scheduler.
+                # These checks are defense-in-depth; agent.py's finalize_turn
+                # should have already set follow_up_status to stopped/completed
+                # for terminal leads. This scheduler double-checks to prevent
+                # any stale "active" row from firing after opt-out or qualify.
+                #
+                # Canonical terminal-state table (P2.2):
+                #   Opt-out     → whatsapp_opt_in=False → stopped
+                #   Full qualify→ visit_date set         → stopped (goal met)
+                #   Handoff     → session closed          → stopped
+                #   Claim       → no scheduler change     (sales FSM only)
                 if lead and lead.whatsapp_opt_in is False:
                     state.follow_up_status = "stopped"
                     state.next_follow_up_at = None

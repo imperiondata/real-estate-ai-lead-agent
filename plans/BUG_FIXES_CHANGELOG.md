@@ -296,12 +296,92 @@ After every bug-fix slice:
 
 ---
 
-## Phase 2+ (not started)
+## Phase 2 status
 
-| ID | Status | Notes |
-|---|---|---|
-| P2.x | pending | FSM / language |
-| P3.x | pending | Webhook concurrency |
-| … | pending | |
+| ID | Status | Summary | Tests |
+|---|---|---|---|
+| P2.1 | **done** | `finalize_turn` — early intercepts now re-arm Day 0 | `tests/test_p2_fsm_language.py` |
+| P2.2 | **done** | Terminal state docstrings (FSM table) | doc-only |
+| P2.3 | **done** | Name interceptor validation blocklist (`validate_extracted_name`) | `tests/test_p2_fsm_language.py` |
+| P2.4 | **done** | Funnel stage enum aligned to Kanban columns | `tests/test_p2_fsm_language.py` |
+| P2.5 | **done** | Two-FSM docstring (session.status vs conversion_status) | doc-only |
+| P2.6 | **done** | Language enforcement (detect + lock + guard) | `tests/test_p2_fsm_language.py` |
 
-Add new test modules as `tests/test_p2_*.py`, etc., when work starts.
+---
+
+## Entries
+
+### P2.1 — Early intercepts leave follow-up permanently stopped
+
+**Bug:** `follow_up_status = "stopped"` set for all non-qualified users at line 472. Re-arm block at end of `process_chat` only ran on the full LLM path. 4 early intercepts (instant reply, property intent, guardrail, fatal LLM fallback) returned before re-arm → Day 0 never scheduled.
+
+**Fix:** `finalize_turn(db, session, lead, f_state)` helper consolidates re-arm/terminal logic. Called at every exit point: instant reply, property intent, guardrail, handoff, fatal LLM fallback, opt-out, and normal path end. Replaces the inline re-arm block that was only reachable on the full LLM path.
+
+**Files:** `agent.py`
+
+**Tests:** `tests/test_p2_fsm_language.py` — 7 tests covering re-arm for open lead, no re-arm for qualified/opt-out/handoff/closed, None f_state safety, timestamp set.
+
+---
+
+### P2.2 — Terminal state documentation
+
+**Bug:** `closed` overloaded across 5+ events; reopen logic ad hoc; maintainers cannot tell which states are terminal without reading all of `agent.py`.
+
+**Fix:** Canonical FSM table added as module docstring at top of `agent.py` and expanded docstring on `is_terminal_chat_state`. Follow-up scheduler (`follow_up.py`) annotated with defense-in-depth terminal guards.
+
+**Files:** `agent.py`, `follow_up.py`
+
+---
+
+### P2.3 — Name interceptor can commit garbage
+
+**Bug:** Parallel Gemini name extraction saves "2BHK", "tomorrow", "Baner", "yes please" as `lead.name` with no validation.
+
+**Fix:** `validate_extracted_name` helper: 1–3 tokens, mostly alphabetic, blocklist (bhk variants, budget terms, affirmations, Pune areas). Wired into concurrent extraction commit path. Rejected names logged at debug.
+
+**Files:** `agent.py`
+
+**Tests:** `tests/test_p2_fsm_language.py` — 11 tests: reject 2bhk, tomorrow, area, budget, affirmation, long string, numeric; accept single/two-word/hyphenated names, empty/None.
+
+---
+
+### P2.5 — session.status vs conversion_status confusion
+
+**Bug:** Two independent FSMs (chat vs sales) documented nowhere in code; maintainers conflate them.
+
+**Fix:** Module-level docstring at top of `agent.py` explaining the two FSMs are intentionally independent. Full qualification closes chat but does NOT auto-claim.
+
+**Files:** `agent.py`
+
+---
+
+### P2.4 — Funnel stage enum diverges from frontend
+
+**Bug:** Backend writes `"Human Handoff"`, `"Site Visit Done"` which land in Kanban "Other". Frontend references `"Qualified"` which backend never sets. No shared enum; PATCH accepts any string.
+
+**Fix:** `FUNNEL_STAGES` constant in `agent.py` (`New`, `Contacted`, `Appointment Scheduled`, `Closed Won`, `Lost`). Handoff maps to `"Contacted"`. Dead `"Site Visit Done"` check removed. PATCH validated via `@field_validator`. Pipeline report includes `"Lost"`. Frontend removed phantom `"Qualified"` from filters/chart.
+
+**Files:** `agent.py`, `main.py`, `models.py`, `LeadsTable.tsx`, `dashboard/page.tsx`
+
+**Tests:** `tests/test_p2_fsm_language.py` — constant values, excludes removed values, PATCH validator rejects invalid stages.
+
+---
+
+### P2.6 — English user gets Hinglish reply (language match failure)
+
+**Bug:** Pure English opener (`"hi, need 2bhk in hinjewadi"`) gets Hinglish reply from Gemini. System prompt says "DEFAULT TO ENGLISH" but LLM ignores it for Pune/real-estate context. No runtime enforcement.
+
+**Fix (5-layer defense):**
+- **Layer A:** `detect_user_language(text)` → `"english"` | `"hinglish"` (default English)
+- **Layer B:** Language lock injected adjacent to user turn before LLM call ("LANGUAGE LOCK: Reply in English only...")
+- **Layer C:** `conversational_reply` schema description now requires language matching; hard rule added to system_prompt.py
+- **Layer D:** Output guard before DB save — if user=English and reply=Hinglish → swap safe English fallback
+- **Layer E:** 9 tests for detection, guard, and user-initiated Hinglish allowed
+
+**Files:** `agent.py`, `system_prompt.py`, `tests/test_p2_fsm_language.py`
+
+**Phase 2 COMPLETE.**
+
+---
+
+*Phase 3+ tracked in `UNIFIED_EXECUTION_ORDER.md`.*

@@ -1,10 +1,33 @@
+"""
+IREIOS Chat Orchestration (agent.py)
+
+Two separate FSMs govern lead lifecycle — they are intentionally independent:
+
+1. session.status (chat FSM): active → closed
+   Controls follow-up scheduling. Closed means no more automated messages.
+
+2. Lead.conversion_status (sales FSM): open → claimed
+   Controls assignment stickiness. Claimed means a human owns the lead.
+
+Full qualification closes the chat FSM but does NOT auto-claim the lead.
+Only an explicit dashboard claim sets conversion_status = "claimed".
+
+Canonical terminal-state table (P2.2):
+| Event                  | session.status | follow_up       | whatsapp_opt_in | conversion_status |
+|------------------------|----------------|-----------------|-----------------|-------------------|
+| Normal chat            | active         | stopped→rearm   | true            | open              |
+| Full qualify           | closed         | completed       | true            | open              |
+| Opt-out                | closed         | stopped         | false           | unchanged         |
+| Handoff                | closed         | stopped         | true            | open (stage=Contacted) |
+| Claim on dashboard     | unchanged      | unchanged       | unchanged       | claimed           |
+"""
 import asyncio
 import json
 import logging
 import re
 import string
 import time
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 from google.genai import types
 from llm_client import client
@@ -32,11 +55,28 @@ def is_hinglish(text: str) -> bool:
     return bool(words.intersection(hinglish_keywords))
 
 
+def detect_user_language(text: str) -> str:
+    """P2.6: Return 'hinglish' if user initiated Hindi/Hinglish, else 'english' (default).
+
+    Product rule: default is always English. Only switch to Hinglish when the
+    user explicitly uses Hindi/Hinglish keywords. Place names and '2BHK' in
+    Latin script are NOT Hinglish signals.
+    """
+    if is_hinglish(text):
+        return "hinglish"
+    return "english"
+
+
 CLOSING_PHRASES = [
     "thanks", "thank you", "goodbye", "ok thanks", "perfect thanks", "done",
     "great thanks", "thanks a lot", "stop", "unsubscribe",
 ]
 OPT_OUT_PHRASES = ["dont message", "stop messaging", "dont contact", "please stop"]
+
+# P2.4: Single source of truth for allowed funnel stages.
+# Backend writes only these values; frontend Kanban/filters must match.
+# "Closed Won" and "Lost" are manual/dashboard-only (backend never auto-sets them).
+FUNNEL_STAGES = ("New", "Contacted", "Appointment Scheduled", "Closed Won", "Lost")
 
 
 def clean_user_message(user_message: str) -> str:
@@ -82,8 +122,18 @@ def is_fully_qualified(lead) -> bool:
 
 def is_terminal_chat_state(lead) -> bool:
     """
-    P0.4 / P0.5: Do not reopen session to active when opted out, fully qualified,
-    or handoff-closed. Polite thanks-only close (not terminal) may reopen.
+    P0.4 / P0.5 / P2.2: Do not reopen session to active when opted out,
+    fully qualified, or handoff-closed. Polite thanks-only close (not
+    terminal) may reopen.
+
+    Terminal conditions (any = terminal):
+      - whatsapp_opt_in is False (opt-out)
+      - all six mandatory fields present (fully qualified)
+      - funnel_stage == "Human Handoff"
+
+    Non-terminal: session closed for polite thanks, "bye" without
+    full qualification, or session.status == "closed" alone does NOT
+    make a lead terminal for re-arm purposes.
     """
     if not lead:
         return False
@@ -101,6 +151,70 @@ def should_rearm_day0(session, lead) -> bool:
     if is_terminal_chat_state(lead):
         return False
     if session is not None and getattr(session, "status", None) == "closed":
+        return False
+    return True
+
+
+def finalize_turn(db, session, lead, f_state):
+    """P2.1: Consolidate re-arm / terminal logic — call at EVERY exit point.
+
+    Without this helper, early intercepts (instant reply, property intent,
+    guardrail, fatal LLM fallback) returned before the re-arm block at the
+    end of process_chat, so Day 0 was never scheduled for those paths.
+    """
+    if not f_state:
+        return
+    f_state.last_ai_reply_timestamp = datetime.now(timezone.utc)
+    if should_rearm_day0(session, lead):
+        day0_delay = timedelta(minutes=1) if settings.FOLLOW_UP_TEST_MODE else timedelta(minutes=30)
+        f_state.follow_up_stage = "Day 0"
+        f_state.follow_up_status = "active"
+        f_state.next_follow_up_at = datetime.now(timezone.utc) + day0_delay
+    elif is_fully_qualified(lead):
+        f_state.follow_up_status = "completed"
+        f_state.next_follow_up_at = None
+    elif lead and lead.whatsapp_opt_in is False:
+        f_state.follow_up_status = "stopped"
+        f_state.next_follow_up_at = None
+    db.commit()
+
+
+_NAME_BLOCKLIST = frozenset({
+    "bhk", "budget", "lakhs", "lakh", "crore", "cr",
+    "tomorrow", "today", "yes", "no", "ok", "okay", "sure",
+    "please", "hi", "hello", "hey", "buy", "rent", "flat",
+    "villa", "plot", "property", "project",
+} | set(PUNE_AREAS))
+
+# Strip digits/units and check core word (catches "2BHK" → "bhk", "3bhk" → "bhk")
+_BHK_PATTERN = re.compile(r"^\d*\s*(bhk|bhk\s*$)", re.IGNORECASE)
+
+
+def validate_extracted_name(name: str) -> bool:
+    """P2.3: Reject garbage from concurrent name extraction.
+
+    Rules: 1–3 tokens, mostly alphabetic, not a property keyword,
+    budget term, time word, affirmation, or Pune area name.
+    """
+    if not name or len(name) > 80:
+        return False
+    tokens = name.split()
+    if len(tokens) < 1 or len(tokens) > 3:
+        return False
+    # Mostly alphabetic (allow hyphens and spaces for real Indian names)
+    alpha_chars = sum(c.isalpha() or c in "- " for c in name)
+    if alpha_chars / max(len(name), 1) < 0.7:
+        return False
+    # Blocklist check (case-insensitive)
+    name_lower = name.lower()
+    if name_lower in _NAME_BLOCKLIST:
+        return False
+    # Also block if any single token is a blocklist word (e.g. "Priya Budget")
+    for t in tokens:
+        if t.lower() in _NAME_BLOCKLIST:
+            return False
+    # Block BHK variants: "2BHK", "3 BHK", "bhk" with optional leading digits
+    if _BHK_PATTERN.match(name.strip()):
         return False
     return True
 
@@ -387,7 +501,7 @@ INTENT-BASED BEHAVIOR:
                     "intent": types.Schema(type="STRING", description="The goal (buy / rent / investment)."),
                     "score": types.Schema(type="STRING", description="Internal lead scoring (High, Medium, Low)."),
                     "visit_date": types.Schema(type="STRING", description="Requested visit date/time."),
-                    "conversational_reply": types.Schema(type="STRING", description="Your natural response to the user's message. MUST NOT BE EMPTY."),
+                    "conversational_reply": types.Schema(type="STRING", description="Your natural response to the user's message. MUST match the user's language: English user → English only, Hinglish user → Hinglish. Do NOT use Hinglish words when the user writes English. MUST NOT BE EMPTY."),
                     "confidence_score": types.Schema(type="INTEGER", description="Rate confidence from 0 to 100. If ambiguous, output below 75.")
                 }
             )
@@ -511,6 +625,7 @@ async def process_chat(session_id: str, user_message: str, db: DBSession, client
             f_state.next_follow_up_at = None
         session.status = "closed"
         db.commit()
+        finalize_turn(db, session, lead, f_state)
         return opt_out_reply
 
     # Save the new user message to the Message table
@@ -544,6 +659,7 @@ async def process_chat(session_id: str, user_message: str, db: DBSession, client
                                             client_id=client_id))
 
         logger.info(f"INSTANT_INTERCEPT | session={session_id} | bypassed LLM")
+        finalize_turn(db, session, lead, f_state)
         return local_reply
 
     # PROPERTY INTENT INTERCEPT — Deterministic zero-latency reply for the most common opener
@@ -620,6 +736,7 @@ async def process_chat(session_id: str, user_message: str, db: DBSession, client
                 log_event_async(session_id, "message_sent", latency_ms=total_latency_ms, agent_type="AI",
                                 client_id=client_id))
             logger.info(f"INTENT_INTERCEPT | session={session_id} | bypassed LLM")
+            finalize_turn(db, session, lead, f_state)
             return local_reply
 
     # -----------------------------------
@@ -636,6 +753,7 @@ async def process_chat(session_id: str, user_message: str, db: DBSession, client
         db.add(Message(session_id=session_id, client_id=client_id, role="assistant", content=guardrail_reply))
         db.commit()
         logger.info(f"GUARDRAIL_INTERCEPT | session={session_id} | bypassed LLM")
+        finalize_turn(db, session, lead, f_state)
         return guardrail_reply
 
     # -----------------------------------
@@ -658,7 +776,7 @@ async def process_chat(session_id: str, user_message: str, db: DBSession, client
             ))
 
         lead.lead_temperature = "hot"
-        lead.funnel_stage = "Human Handoff"
+        lead.funnel_stage = "Contacted"  # P2.4: map "Human Handoff" → "Contacted" (Kanban-aligned)
         session.status = "closed"
         if f_state:
             f_state.follow_up_status = "stopped"
@@ -674,6 +792,7 @@ async def process_chat(session_id: str, user_message: str, db: DBSession, client
         handoff_reply = "I completely understand. I have paused my automated responses and alerted our human team. An expert will review our chat and reach out to you shortly!"
         db.add(Message(session_id=session_id, client_id=client_id, role="assistant", content=handoff_reply))
         db.commit()
+        finalize_turn(db, session, lead, f_state)
         return handoff_reply
 
     # LIMIT CONTEXT: last 6 turns (12 messages) — keeps enough history for the full
@@ -817,6 +936,24 @@ async def process_chat(session_id: str, user_message: str, db: DBSession, client
     else:
         logger.info(f"RAG skipped (non-property query) for session={session_id}")
 
+    # P2.6: Language lock — append hard instruction adjacent to user turn.
+    # This is stronger than system-prompt bullets because it's in the user-message context.
+    user_lang = detect_user_language(user_message)
+    if user_lang == "english":
+        lang_instruction = (
+            "\n\nLANGUAGE LOCK (MANDATORY — overrides all other instructions):\n"
+            "User language: ENGLISH. You MUST reply in natural English only. "
+            "Do NOT use Hinglish words (mein, hain, aapka, kya, ke liye, etc.). "
+            "conversational_reply MUST be English."
+        )
+    else:
+        lang_instruction = (
+            "\n\nLANGUAGE LOCK (MANDATORY — overrides all other instructions):\n"
+            "User language: HINGLISH. Reply in natural Hinglish (Latin script). "
+            "Keep real estate nouns in English (Budget, Location, 2BHK, etc.)."
+        )
+    user_message_for_llm = user_message_for_llm + lang_instruction
+
     # Start Gemini Chat with retrieved history
     chat = client.aio.chats.create(
         model=settings.GEMINI_MODEL,
@@ -869,10 +1006,12 @@ async def process_chat(session_id: str, user_message: str, db: DBSession, client
                 if not isinstance(name_resp, Exception):
                     try:
                         extracted_name = name_resp.text.strip()
-                        if extracted_name and extracted_name.upper() != "NONE":
+                        if extracted_name and extracted_name.upper() != "NONE" and validate_extracted_name(extracted_name):
                             lead.name = extracted_name
                             db.commit()
                             logger.info(f"CONCURRENT_NAME_INTERCEPT | session={session_id} | name={extracted_name}")
+                        elif extracted_name and not validate_extracted_name(extracted_name):
+                            logger.debug(f"NAME_INTERCEPT_REJECTED | session={session_id} | name={extracted_name}")
                     except Exception as e:
                         logger.warning(f"Fast name extraction text parsing failed: {e}")
             else:
@@ -921,6 +1060,7 @@ async def process_chat(session_id: str, user_message: str, db: DBSession, client
                 )
                 db.add(Message(session_id=session_id, client_id=client_id, role="assistant", content=fallback))
                 db.commit()
+                finalize_turn(db, session, lead, f_state)
                 return fallback
 
     # 5. Database Commits & Tool Execution Handling
@@ -1185,7 +1325,8 @@ async def process_chat(session_id: str, user_message: str, db: DBSession, client
     is_fully_qualified_now = is_fully_qualified(lead)
 
     if is_fully_qualified_now:
-        if lead.funnel_stage not in ["Site Visit Done", "Closed Won"]:
+        # P2.4: only advance to "Appointment Scheduled" if not already at a later stage
+        if lead.funnel_stage not in ("Appointment Scheduled", "Closed Won", "Lost"):
             lead.funnel_stage = "Appointment Scheduled"
     elif has_core:
         if lead.funnel_stage == "New":
@@ -1219,6 +1360,17 @@ async def process_chat(session_id: str, user_message: str, db: DBSession, client
         # We rely on the LLM to naturally propose a visit if the context feels right.
         pass
 
+    # P2.6: Language output guard — English user must not receive Hinglish reply.
+    # Catches mismatches from ALL paths (tool conversational_reply, response.text, fallback).
+    if detect_user_language(user_message) == "english" and is_hinglish(final_text):
+        logger.warning(f"LANGUAGE_MISMATCH | session={session_id} | user=en | reply=hinglish")
+        _loc = lead.location or "Pune"
+        _pt = lead.property_type or "property"
+        final_text = (
+            f"Got it — {_pt} options in {_loc} are available. "
+            f"What's your approximate budget, and may I know your name?"
+        )
+
     # Save Gemini's textual response to the Message table (skip if already saved inside tool call block)
     if not locals().get('message_saved', False):
         db.add(Message(session_id=session_id, client_id=client_id, role="assistant", content=final_text))
@@ -1229,23 +1381,8 @@ async def process_chat(session_id: str, user_message: str, db: DBSession, client
     asyncio.create_task(
         log_event_async(session_id, "message_sent", latency_ms=total_latency_ms, agent_type="AI", client_id=client_id))
 
-    # Re-arm Day 0 follow-up scheduler (P0.4/P0.5: never re-arm when terminal)
-    if f_state:
-        from datetime import timedelta
-        f_state.last_ai_reply_timestamp = datetime.now(timezone.utc)
-
-        if should_rearm_day0(session, lead):
-            f_state.follow_up_stage = "Day 0"
-            f_state.follow_up_status = "active"
-            day0_delay = timedelta(minutes=1) if settings.FOLLOW_UP_TEST_MODE else timedelta(minutes=30)
-            f_state.next_follow_up_at = datetime.now(timezone.utc) + day0_delay
-        elif is_fully_qualified(lead):
-            f_state.follow_up_status = "completed"
-            f_state.next_follow_up_at = None
-        elif lead and lead.whatsapp_opt_in is False:
-            f_state.follow_up_status = "stopped"
-            f_state.next_follow_up_at = None
-        db.commit()
+    # P2.1: Consolidated re-arm / terminal logic — single call replaces old inline block
+    finalize_turn(db, session, lead, f_state)
 
     # Return the text response isolated from tool calls
     return final_text

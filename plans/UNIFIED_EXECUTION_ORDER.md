@@ -51,9 +51,9 @@
 
 | Step | Source | Unit | Summary | Exit gate | Status |
 |---:|---|---|---|---|---|
-| **1** | Bug | Phase 0 (P0.1–P0.6) | Safety hotfixes | Bug Phase 0 verification checklist | `[ ]` |
-| **2** | Bug | Phase 1 (P1.1–P1.13) | Agent assignment | Bug Phase 1 verification checklist | `[ ]` |
-| **3** | Bug | Phase 2 (P2.1–P2.6) | Chat/follow-up FSM, language, data quality | Bug Phase 2 verification checklist | `[ ]` |
+| **1** | Bug | Phase 0 (P0.1–P0.6) | Safety hotfixes | Bug Phase 0 verification checklist | `[x]` |
+| **2** | Bug | Phase 1 (P1.1–P1.13) | Agent assignment | Bug Phase 1 verification checklist | `[x]` |
+| **3** | Bug | Phase 2 (P2.1–P2.6) | Chat/follow-up FSM, language, data quality | Bug Phase 2 verification checklist | `[x]` |
 | **4** | Bug | Phase 3 (P3.1–P3.5) | WhatsApp/webhook concurrency | Bug Phase 3 verification checklist | `[ ]` |
 | **5** | Bug | Phase 4 (P4.1–P4.3) | Notification / escalation polish | Items done; no infinite failed alerts; escalation roles as specified | `[ ]` |
 | **6** | Bug | Phase 5 (P5.1–P5.3) | CRM sync completeness | CRM reflects post-qualification fields; no false success on empty identity | `[ ]` |

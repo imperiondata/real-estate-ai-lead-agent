@@ -55,6 +55,8 @@ backups/
 documentation.md
 project_deep_dive.md
 production_report.md
+phase 3 direction.pdf
+phase3 direction diagram.jpeg
 
 # DB migration/alter scripts (one-time use, not for repo)
 alter_db_final.py

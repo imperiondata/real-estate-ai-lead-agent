@@ -9,7 +9,7 @@ from datetime import datetime, timezone, timedelta
 
 import pytz
 from tenacity import retry, stop_after_attempt, wait_exponential
-from twilio.rest import Client
+from twilio.rest import Client as TwilioClient
 
 from app.intelligence.agent_matcher import resolve_followup_agent_label
 from app.intelligence.followup_engine import generate_followup_sequence
@@ -449,12 +449,12 @@ def check_and_send_followups():
                             logger.info(f"[TEST MODE] Skipping Day 7 closure WhatsApp send for {session_id}")
                         elif clean_phone and settings.TWILIO_ACCOUNT_SID:
                             try:
-                                client = Client(settings.TWILIO_ACCOUNT_SID, settings.TWILIO_AUTH_TOKEN)
+                                twilio = TwilioClient(settings.TWILIO_ACCOUNT_SID, settings.TWILIO_AUTH_TOKEN)
                                 to_number = f"whatsapp:{clean_phone}" if lead and lead.source == "whatsapp" else session_id
 
                                 # Start Latency Clock
                                 _twilio_start = time.time()
-                                client.messages.create(
+                                twilio.messages.create(
                                     from_=settings.TWILIO_PHONE_NUMBER,
                                     body=closure_msg,
                                     to=to_number
@@ -516,13 +516,13 @@ def check_and_send_followups():
                             followup_latency_ms = 0
                         else:
                             try:
-                                client = Client(settings.TWILIO_ACCOUNT_SID, settings.TWILIO_AUTH_TOKEN)
+                                twilio = TwilioClient(settings.TWILIO_ACCOUNT_SID, settings.TWILIO_AUTH_TOKEN)
                                 to_number = f"whatsapp:{clean_phone}" if lead and lead.source == "whatsapp" else clean_phone
 
                                 @retry(stop=stop_after_attempt(5), wait=wait_exponential(multiplier=1, min=2, max=30),
                                        reraise=True)
                                 def _send_twilio_msg():
-                                    client.messages.create(
+                                    twilio.messages.create(
                                         from_=settings.TWILIO_PHONE_NUMBER,
                                         body=payload_msg,
                                         to=to_number

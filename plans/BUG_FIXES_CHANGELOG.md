@@ -266,6 +266,26 @@ After every bug-fix slice:
 
 ---
 
+### Hotfix — multi-field lead backfill when tool omits clear signals
+
+**Bug:** LLM tool often returned name/property_type without `location` (e.g. “2bhk in baner”), so CRM stayed null while the reply mentioned Baner.
+
+**Fix:** Deterministic empty-only backfill for `location`, `property_type`, `budget`, `intent` from user text (`backfill_missing_lead_fields`). Runs after tool apply and when tool is skipped. Never overwrites set fields; no free-form name invent; visit_date left to the model.
+
+**Files:** `agent.py`, `tests/test_lead_backfill.py`
+
+---
+
+### Hotfix — Twilio `Client` shadowed by models.Client (follow-up)
+
+**Bug:** After P1.9, `follow_up.py` imported `models.Client` for company name while still using `from twilio.rest import Client`. Twilio sends became `models.Client(sid, token)` → `TypeError: __init__() takes 1 positional argument but 3 were given`. Day 0 follow-up failed in TEST/prod logs.
+
+**Fix:** `from twilio.rest import Client as TwilioClient`; use `TwilioClient(...)` for sends; keep `models.Client` for DB company lookup.
+
+**Files:** `follow_up.py`
+
+---
+
 ### Hotfix — `is_fully_qualified` shadowing (post–Phase 1)
 
 **Bug:** Scoring path set `is_fully_qualified = bool(...)`, shadowing the helper. Re-arm later called `is_fully_qualified(lead)` → `TypeError: 'bool' object is not callable`. Webhook returned fake “connectivity issue” TwiML even after hot alert succeeded.

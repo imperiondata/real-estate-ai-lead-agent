@@ -1,6 +1,7 @@
 import asyncio
 import json
 import logging
+import re
 import string
 import time
 from datetime import datetime, timezone
@@ -19,7 +20,7 @@ from rag import retrieve
 from system_prompt import REAL_ESTATE_SYSTEM_PROMPT
 
 logger = logging.getLogger("agent")
-PUNE_AREAS = ["wakad", "hinjewadi", "baner", "kharadi", "kothrud", "hadapsar",
+PUNE_AREAS = ["wakad road", "wakad", "hinjewadi", "baner", "kharadi", "kothrud", "hadapsar",
                   "ravet", "balewadi", "aundh", "pashan", "viman nagar", "magarpatta",
                   "kondhwa", "undri", "mundhwa", "punawale", "tathawade", "bavdhan",
                   "sinhagad road", "pune"]
@@ -228,6 +229,114 @@ def normalize_lead_data(args: dict, existing_intent: str = None) -> dict:
         # ----------------------------------------------------------------------
 
     return args
+
+
+def _lead_field_empty(value) -> bool:
+    if value is None:
+        return True
+    s = str(value).strip().lower()
+    return s in ("", "unknown", "none", "null")
+
+
+def extract_location_from_text(text: str) -> str | None:
+    """Deterministic Pune area from raw user text (empty-only backfill)."""
+    if not text:
+        return None
+    lower = text.lower()
+    # Longer names first (e.g. wakad road before wakad)
+    candidates = sorted(set(PUNE_AREAS), key=len, reverse=True)
+    for area in candidates:
+        if area in lower:
+            return " ".join(w.capitalize() for w in area.split())
+    return None
+
+
+def extract_property_type_from_text(text: str) -> str | None:
+    if not text:
+        return None
+    import re
+    lower = text.lower()
+    m = re.search(r"\b([1-4])\s*bhk\b", lower)
+    if m:
+        return f"{m.group(1)}BHK"
+    if "penthouse" in lower:
+        return "Penthouse"
+    if "villa" in lower:
+        return "Villa"
+    if re.search(r"\bplot\b", lower):
+        return "Plot"
+    if re.search(r"\b(flat|apartment|apt)\b", lower):
+        return "Apartment"
+    return None
+
+
+def extract_budget_from_text(text: str, existing_intent: str = None) -> str | None:
+    if not text:
+        return None
+    import re
+    lower = text.lower().replace(",", "")
+    # 90 lakhs / 90 lakh / 90l / 1.2 crore / 1 cr
+    m = re.search(
+        r"(\d+(?:\.\d+)?)\s*(crores?|cr|lakhs?|lacs?|l)\b",
+        lower,
+    )
+    if not m:
+        return None
+    num, unit = m.group(1), m.group(2)
+    raw = f"{num}{unit}"
+    normalized = normalize_lead_data({"budget": raw}, existing_intent=existing_intent)
+    return normalized.get("budget")
+
+
+def extract_intent_from_text(text: str) -> str | None:
+    """Only clear buy/rent/invest signals — not weak words like 'looking'."""
+    if not text:
+        return None
+    lower = text.lower()
+    if re.search(r"\b(rent|rental|lease|tenant)\b", lower):
+        return "Rent"
+    if re.search(r"\b(invest|investment|roi|yield)\b", lower):
+        return "Invest"
+    if re.search(r"\b(buy|buying|purchase|purchasing)\b", lower):
+        return "Buy"
+    return None
+
+
+def backfill_missing_lead_fields(lead, user_message: str) -> list[str]:
+    """
+    Safety net when the LLM tool omits fields clearly present in the user message.
+    Only fills empty/unknown fields; never overwrites existing values.
+    """
+    if not lead or not user_message:
+        return []
+
+    filled: list[str] = []
+
+    if _lead_field_empty(lead.location):
+        loc = extract_location_from_text(user_message)
+        if loc:
+            lead.location = loc
+            filled.append("location")
+
+    if _lead_field_empty(lead.property_type):
+        ptype = extract_property_type_from_text(user_message)
+        if ptype:
+            lead.property_type = ptype
+            filled.append("property_type")
+
+    if _lead_field_empty(lead.budget):
+        budget = extract_budget_from_text(user_message, existing_intent=lead.intent)
+        if budget:
+            lead.budget = budget
+            filled.append("budget")
+
+    if _lead_field_empty(lead.intent):
+        intent = extract_intent_from_text(user_message)
+        if intent:
+            lead.intent = intent
+            filled.append("intent")
+
+    return filled
 
 
 # 4. Structured Tool Calling Definition
@@ -854,16 +963,23 @@ async def process_chat(session_id: str, user_message: str, db: DBSession, client
                         logger.info(f"⚠️ Low confidence ({lead.confidence_score}%). Flagged for manual review.")
                 # -----------------------------------------------------
 
+                # Deterministic backfill when tool omits fields present in user text
+                backfilled = backfill_missing_lead_fields(lead, user_message)
+                if backfilled:
+                    logger.info(
+                        f"LEAD_BACKFILL | session={session_id} | fields={backfilled}"
+                    )
+
                 db.commit()
 
                 # Determine which fields are truly new this turn (value changed or was None before)
                 new_fields = set()
-                if "budget" in args and args["budget"] != prev_budget: new_fields.add("budget")
-                if "location" in args and args["location"] != prev_location: new_fields.add("location")
-                if "intent" in args and args["intent"] != prev_intent: new_fields.add("intent")
-                if "name" in args and args["name"] != prev_name: new_fields.add("name")
-                if "visit_date" in args and args["visit_date"] != prev_visit_date: new_fields.add("visit_date")
-                if "property_type" in args and args["property_type"] != prev_property_type: new_fields.add(
+                if lead.budget and lead.budget != prev_budget: new_fields.add("budget")
+                if lead.location and lead.location != prev_location: new_fields.add("location")
+                if lead.intent and lead.intent != prev_intent: new_fields.add("intent")
+                if lead.name and lead.name != prev_name: new_fields.add("name")
+                if lead.visit_date and lead.visit_date != prev_visit_date: new_fields.add("visit_date")
+                if lead.property_type and lead.property_type != prev_property_type: new_fields.add(
                     "property_type")
 
                 # Fire highly-asynchronous funnel events based on new data
@@ -911,6 +1027,13 @@ async def process_chat(session_id: str, user_message: str, db: DBSession, client
                 final_text = local_reply
                 extracted_early = True
                 break
+
+    # Backfill even when Gemini skipped the tool call but user text has clear signals
+    if 'extracted_early' not in locals() or not locals().get('extracted_early'):
+        backfilled = backfill_missing_lead_fields(lead, user_message)
+        if backfilled:
+            db.commit()
+            logger.info(f"LEAD_BACKFILL | session={session_id} | fields={backfilled} | path=no_tool")
 
     # Safely get the final text (handling cases where only a tool call was returned)
     if 'extracted_early' not in locals():

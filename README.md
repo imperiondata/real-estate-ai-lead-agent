@@ -303,6 +303,26 @@ IS_PRODUCTION=false
 FOLLOW_UP_TEST_MODE=false
 FOLLOW_UP_DLQ_TEST=false
 TEST_MODE=false
+
+# --- IREIOS 3.0 expansion (consumed starting in later phases; safe legacy defaults) ---
+# Redis Streams event bus (Phase 1)
+EVENT_STREAM_KEY=ireios:events
+EVENT_CONSUMER_GROUP=ireios-cg
+
+# WhatsApp Agent v3 feature flag (Phase 5) — false keeps the legacy process_chat path
+FEATURE_WHATSAPP_V3=false
+
+# Follow-up engine selector (Phase 4): legacy | v3 | shadow
+FOLLOWUP_ENGINE=legacy
+
+# Neo4j knowledge graph (Phase 7)
+NEO4J_URI=
+NEO4J_USER=
+NEO4J_PASSWORD=
+
+# n8n automation (Phase 2)
+N8N_BASE_URL=
+N8N_API_KEY=
 ```
 
 ---

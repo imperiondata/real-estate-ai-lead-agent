@@ -160,6 +160,16 @@ IS_PRODUCTION=false
 - `google.generativeai` SDK deprecation warning — known, still functional
 - `GEMINI_MODEL` defaults to `gemini-3.1-flash-lite` — can revert to `gemini-2.5-flash` in `.env`
 
+## IREIOS 3.0 Expansion Env Vars (added in Phase 0, consumed in later phases)
+
+- `EVENT_STREAM_KEY` (default `ireios:events`) — Redis Streams key for the Phase 1 event bus.
+- `EVENT_CONSUMER_GROUP` (default `ireios-cg`) — consumer group name for the bus.
+- `FEATURE_WHATSAPP_V3` (default `false`) — when `true`, WhatsApp/chat routes use the new `WhatsAppAgent` (Phase 5); `false` keeps legacy `agent.process_chat`.
+- `FOLLOWUP_ENGINE` (default `legacy`) — `legacy|v3|shadow` selector for the Phase 4 follow-up port.
+- `NEO4J_URI` / `NEO4J_USER` / `NEO4J_PASSWORD` — Neo4j connection (Phase 7); left empty until the service is added.
+- `N8N_BASE_URL` / `N8N_API_KEY` — n8n automation (Phase 2); left empty = `n8n_not_configured`.
+- These are logged/stored in `.env` (gitignored) and `.env.example`. Adding them in Phase 0 is env hygiene only — no production behavior changes until the consuming phases land.
+
 ---
 
 ## Frontend-Specific

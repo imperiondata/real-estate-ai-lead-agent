@@ -81,6 +81,22 @@ class Settings(BaseSettings):
     AWS_REGION: str = ""
     AWS_SECRET_NAME: str = ""
 
+    # --- IREIOS 3.0 expansion env vars (wired in later phases) ---
+    # Redis Streams event bus (Phase 1)
+    EVENT_STREAM_KEY: str = "ireios:events"
+    EVENT_CONSUMER_GROUP: str = "ireios-cg"
+    # WhatsApp Agent v3 feature flag (Phase 5) — false keeps legacy process_chat
+    FEATURE_WHATSAPP_V3: bool = False
+    # Follow-up engine selector (Phase 4): legacy | v3 | shadow
+    FOLLOWUP_ENGINE: str = "legacy"
+    # Neo4j knowledge graph (Phase 7)
+    NEO4J_URI: str = ""
+    NEO4J_USER: str = ""
+    NEO4J_PASSWORD: str = ""
+    # n8n automation (Phase 2)
+    N8N_BASE_URL: str = ""
+    N8N_API_KEY: str = ""
+
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8")
 
     @property

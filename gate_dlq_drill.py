@@ -16,7 +16,7 @@ def trigger_dlq_failure():
     )
     db.add(fake_failure)
     db.commit()
-    print("✅ CRM Failure securely caught and written to Dead Letter Queue.")
+    print("[OK] CRM Failure securely caught and written to Dead Letter Queue.")
 
     count = db.query(DLQEvent).filter_by(status="pending").count()
     print(f"Pending DLQ Events: {count}")

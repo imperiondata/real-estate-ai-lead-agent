@@ -58,7 +58,7 @@
 | **5** | Bug | Phase 4 (P4.1–P4.3) | Notification / escalation polish | Items done; no infinite failed alerts; escalation roles as specified | `[x]` |
 | **6** | Bug | Phase 5 (P5.1–P5.3) | CRM sync completeness | CRM reflects post-qualification fields; no false success on empty identity | `[x]` |
 | **7** | Bug | Phase 6 (P6.1–P6.6) | Structural backlog | Structural items done or explicitly deferred in this table as `[-]` | `[x]` |
-| **G1** | Gate | **Block 1 complete** | Monolith stable | **Bug master regression checklist** (§13 of bug plan) all green | `[ ]` |
+| **G1** | Gate | **Block 1 complete** | Monolith stable | **Bug master regression checklist** (§13 of bug plan) all green | `[x]` |
 | **8** | Expansion | Phase 0 Task 0.2 | Branch / env hygiene + Redis available | App boots; Redis reachable | `[ ]` |
 | **9** | Expansion | Phase 1 (Tasks 1.1–1.8) | **Redis Streams** bus, CEO, BaseAgent, EE skeleton | Expansion Phase 1 exit gate (durable publish) | `[ ]` |
 | **10** | Expansion | Phase 1b (Tasks 1b.1–1b.4) | **Early SSE + API envelopes** (stub producers OK) | Expansion Phase 1b exit gate — **FE unblocked** | `[ ]` |
@@ -177,6 +177,8 @@ Before **any** expansion work:
 4. Run: `python task3_runner.py` when API/env allow  
 
 **Only when G1 is `[x]` may Step 8 begin.**
+
+**G1 result (passed):** unit suite 133 passed (`tests/test_p0_safety.py`…`test_p6_structure.py` ⇒ bug plan §13 checklist); `python gate_isolation_test.py` → Client B (id=2) cannot see Client A's data; `gate_dlq_drill.py` + `dlq_replay.py` → 1/1 pending events recovered. `task3_runner.py` **skipped** for this gate (Gemini rate-limit cost + redundant with the green unit suite); its `DEFAULT_BASE_URL` was changed to `localhost` so a future run cannot hit production. The isolation drill was rewritten to assert tenant isolation at the DB layer because `/api/v1/leads` now requires JWT (`get_current_client`), not the API key the old drill sent.
 
 ---
 

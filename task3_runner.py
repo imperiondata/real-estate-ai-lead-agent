@@ -4,7 +4,7 @@ Project: Real Estate Revenue OS | Imperion Data Systems
 Phase 2: Production Pilot Freeze
 
 Description:
-    Runs all 126 multi-turn conversational edge cases across different leads
+    Runs all 115 multi-turn conversational edge cases across different leads
     (COLD, WARM, HOT, and AUTOMATION) to stress-test NLP parsing, state machine
     synchronization, and multi-tenant isolation. Generates detailed reports.
 
@@ -42,7 +42,7 @@ from typing import List, Dict, Any
 import httpx
 
 # ─── CONFIG ─────────────────────────────────────────────────────────────────
-DEFAULT_BASE_URL = "https://real-estate-ai-lead-agent-3.onrender.com"
+DEFAULT_BASE_URL = "http://localhost:8000"
 DEFAULT_API_KEY = os.getenv("CLIENT_KEY_A", "")
 MSG_DELAY = 4.0   # Simulated human typing delay between turns
 CONV_DELAY = 2.0  # Delay between starting new conversations

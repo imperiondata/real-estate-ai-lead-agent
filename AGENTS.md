@@ -31,6 +31,7 @@ High-signal, repo-specific facts an agent would likely miss without help.
 - **Static dashboard:** HTML/JS/CSS served by FastAPI at `/dashboard`
 - **Scheduler (APScheduler):** 4 jobs — follow-up checker (1min), nightly backup (2am), nightly cleanup (3am), escalation checker (1min)
 - **App entrypoint:** `main.py` — FastAPI app, lifespan starts scheduler, webhook handlers, metrics
+- **Event Bus (IREIOS 3.0):** Redis Streams (`EVENT_STREAM_KEY`, default `ireios:events`) with consumer-group delivery; client in `app/clients/event_bus_client.py` (`EventBusClient`). Runtime: `Event → CEO → Agent/Workflow → Automation Engine → Execution Engine → Event`. Wired into lifespan at Task 1.7.
 
 ---
 

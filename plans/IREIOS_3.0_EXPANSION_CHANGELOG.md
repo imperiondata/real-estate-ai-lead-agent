@@ -48,14 +48,44 @@ The `e` prefix guarantees the two suites never collide and can be collected/run 
 
 | ID | Status | Summary | Tests |
 |---|---|---|---|
-| 1.1 | `[ ]` | Package skeletons | `tests/test_e1_eventbus.py` |
-| 1.2 | `[ ]` | Event Bus client (Redis Streams) | same |
-| 1.3 | `[ ]` | Agent registry | same |
-| 1.4 | `[ ]` | CEO Orchestrator | same |
+| 1.1 | `[x]` | Package skeletons | `tests/test_e1_eventbus.py` |
+| 1.2 | `[x]` | Event Bus client (Redis Streams) | `tests/test_e1_eventbus.py` |
+| 1.3 | `[x]` | Agent registry | `tests/test_e1_eventbus.py` |
+| 1.4 | `[x]` | CEO Orchestrator | `tests/test_e1_eventbus.py` |
 | 1.5 | `[ ]` | BaseExecutor + ExecutionEngine skeleton | same |
 | 1.6 | `[ ]` | BaseAgent lifecycle | same |
 | 1.7 | `[ ]` | Wire lifespan in `main.py` | same |
 | 1.8 | `[ ]` | Phase 1 exit gate (durable publish) | same |
+
+### Entry — 1.1 + 1.2 (Step 9, part 1)
+
+- **1.1 Package skeletons:** created empty `__init__.py` for `app/clients`, `app/orchestrator`, `app/agents`, `app/execution_engine`, `app/workflows`, `app/automation_engine`, `app/knowledge_graph`, `app/memory`. Import check passes.
+- **1.2 Event Bus client (`app/clients/event_bus_client.py`):** Redis Streams only (transport = `redis.asyncio`, same client style as `main.redis_client`; **no in-process `asyncio.Queue` bus**).
+  - `EventBusClient` with `start()` (idempotent; `XGROUP CREATE mkstream`, ignore BUSYGROUP) / `stop()` (cancels loop, closes conns) / `subscribe(event_type, handler)` (+ `"*"` wildcard) / `publish(...)` → `XADD` envelope and returns `event_id`; raises loudly on Redis error (never pretends success).
+  - Envelope shape per Architecture Diagrams §4: `event_id, event_type, tenant_id, entity_id, source, timestamp, correlation_id, payload`.
+  - Consumer loop reads PEL on startup (crash-safe redelivery, at-least-once) then `XREADGROUP ... ">"`; dispatches to subscribed handlers with `return_exceptions=True` (one handler failure never crashes the loop); `XACK` after handling.
+  - **Two separate redis clients** (consumer + publisher) — a blocking consumer read and a concurrent `XADD` on the *same* pool deadlocked the loop; isolated clients fixed it.
+  - Module-level singleton `event_bus` (wired into lifespan at Task 1.7).
+- **Tests:** `tests/test_e1_eventbus.py` replaced skeleton with 5 real async checks (publish→receive, wildcard, durable redelivery after restart, Redis-down fails loud, handler-failure doesn't kill loop). All green.
+- **Regression:** full suite `python -m pytest tests/` → 157 passed, 10 skipped. No regressions. Step 9 stays `[ ]` until Task 1.8 exit gate.
+
+### Entry — 1.3 (Step 9, part 2)
+
+- **Agent registry (`app/orchestrator/agent_registry.py`):** `AgentRecord` dataclass (`agent_id`, `handler`, `subscriptions`, `status`, `last_error`, `last_seen`) + `AgentRegistry` with `register` (upsert; validates `status ∈ {active, placeholder}`), `unregister` (no-op if absent), `get_subscribers(event_type)` (returns active **and** placeholder agents subscribed to the event or `"*"`, sorted by `agent_id` for deterministic dispatch), `list_agents()`, `record_success`/`record_failure` (health tracking used by the CEO in 1.4).
+- Module-level singleton `agent_registry` for the CEO to consume (Task 1.4).
+- Plain `dict` — safe under asyncio's single thread; no locks.
+- **Tests:** 6 new pure (no-Redis) registry checks in `tests/test_e1_eventbus.py` — two agents same event, placeholder still listed, wildcard, unregister, success/failure health, invalid-status rejection. All green.
+- **Regression:** full suite `python -m pytest tests/` → 163 passed, 10 skipped. No regressions. Step 9 stays `[ ]` until Task 1.8 exit gate.
+
+### Entry — 1.4 (Step 9, part 3)
+
+- **CEO Orchestrator (`app/orchestrator/ceo_orchestrator.py`):** `CEOOrchestrator` that routes events to registered agents and owns their health.
+  - `register_agent(agent_id, handler, capabilities, priority, status)` — registers into the supplied `AgentRegistry` (default module singleton `agent_registry`); stores a handler override map for direct invocation.
+  - `bootstrap()` — subscribes the CEO itself as a **single `"*"` wildcard** consumer on the bus (robust to agents that register late, per decided design) so it sees every event and dispatches to active subscribers.
+  - `handle_event(event)` — routes to all `get_subscribers(event_type)`; skips `placeholder` status; invokes each handler; on handler raise records `record_failure` and, if a bus is present, publishes a `{agent_id}.failed` event so downstream automation can react. With `bus=None` it runs fully in-process (used for direct/test paths).
+  - Module-level singleton `ceo` for lifespan wiring at Task 1.7.
+- **Tests:** 4 new CEO checks in `tests/test_e1_eventbus.py` — routes to active agent and skips placeholder, skips placeholder via bus path, publishes `{agent_id}.failed` on handler error (bus path), and direct in-process dispatch with `bus=None` records `last_error`. Plus a fix to the no-bus test assertion (lookup `bad_a` specifically rather than `get_subscribers(...)[0]`). File now 15 tests, all green.
+- **Regression:** full suite `python -m pytest tests/` → 167 passed, 10 skipped (163 baseline + 4 CEO tests). No regressions. Step 9 stays `[ ]` until Task 1.8 exit gate.
 
 ---
 

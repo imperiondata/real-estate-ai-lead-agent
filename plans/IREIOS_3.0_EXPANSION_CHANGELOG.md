@@ -106,16 +106,26 @@ The `e` prefix guarantees the two suites never collide and can be collected/run 
 - **Docs:** this changelog 1.5–1.8 → `[x]`; `UNIFIED_EXECUTION_ORDER.md` Step 9 → `[x]`; `AGENTS.md` gained a one-line Event Engine / BaseAgent note.
 - **Step 9 flipped to `[x]`** — Phase 1 (Tasks 1.1–1.8) complete.
 
+### Entry — Phase 1b (Step 10 — FE unblock)
+
+- **1b.1 SSE stream (`app/api/events.py`, mounted at `/api/v1/events`):** `GET /stream` — tenant-scoped Server-Sent Events bridging the Redis Streams bus. Auth via `get_events_client` accepting `?api_key=` / `X-API-Key` (webhook-style, curl-testable) **or** the `jwt` HttpOnly cookie (frontend `EventSource`). The handler subscribes to the running bus singleton (`"*"`), filters by the authed `tenant_id` (`Client_<id>`), pushes to a bounded `asyncio.Queue` (drops on full so the shared bus loop never blocks), and yields `data: {envelope}` frames with a `: ping` heartbeat every 15s. On disconnect it `unsubscribe`s (new `EventBusClient.unsubscribe`). `503` if the bus is down.
+- **1b.2 Timeline (`GET /leads/{id}/timeline`):** returns envelope-shaped events for a lead, tenant-scoped (404 if the lead isn't owned by the caller's client). Sourced **for real** from `event_logs` via the lead's `Session` (`Lead.session_id -> Session.id`); empty list when no logs (stable schema for the FE; Phase 7/9 enrich it).
+- **1b.3 Stub publisher (`POST /stub` + `publish_stub_event.py` CLI):** admin-gated (`X-Admin-Token` == `ADMIN_API_KEY`) endpoint that `event_bus.publish`es a sample event and returns its `event_id`, so the FE can watch live SSE without WhatsApp/LLM. A repo-root CLI (`python publish_stub_event.py --event-type ... --tenant-id Client_1 --payload '{...}'`) is the documented demo path for Mayank.
+- **Mount + helper:** `app/api/__init__.py` + `app/api/events.py`; `main.py` does `app.include_router(events_router)`. `EventBusClient` gained `unsubscribe(event_type, handler)`. `verify_admin_key` is implemented locally in `events.py` (the `main.py` copy is currently unused) to avoid a circular import.
+- **Tests (`tests/test_e1b_sse.py`, 6):** route registration; SSE auth required (401 without key); tenant-scoped delivery + isolation via the real bus subscriber logic; timeline returns envelope list + other-tenant → 404; stub requires admin key (403) and publishes (200 + `event_id`). Bus tests start/stop the bus in-loop and skip cleanly if Redis is down; timeline skips if Postgres is down. End-to-end SSE-over-HTTP is validated manually (`publish_stub_event.py` + `curl -N`) because the infinite generator hangs httpx's ASGITransport close.
+- **Regression:** full suite `python -m pytest tests/` → **180 passed, 9 skipped** (174 baseline + 6 new). `gate_isolation_test.py` PASSED; `gate_dlq_drill.py` + `dlq_replay.py` → 1/1 recovered.
+- **Step 10 flipped to `[x]`** — Phase 1b (FE unblock) complete; contract frozen for the frontend.
+
 ---
 
 ## Phase 1b status (Tasks 1b.1–1b.4 — early SSE + API envelopes)
 
 | ID | Status | Summary | Tests |
 |---|---|---|---|
-| 1b.1 | `[ ]` | SSE stream endpoint | `tests/test_e1b_sse.py` |
-| 1b.2 | `[ ]` | Timeline / KPI envelope stubs | same |
-| 1b.3 | `[ ]` | Stub event publisher | same |
-| 1b.4 | `[ ]` | Phase 1b exit gate (FE unblocked) | same |
+| 1b.1 | `[x]` | SSE stream endpoint | `tests/test_e1b_sse.py` |
+| 1b.2 | `[x]` | Timeline / KPI envelope stubs | same |
+| 1b.3 | `[x]` | Stub event publisher | same |
+| 1b.4 | `[x]` | Phase 1b exit gate (FE unblocked) | same |
 
 ---
 

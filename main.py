@@ -38,6 +38,7 @@ from crm_sync import sync_lead_to_crm, crm_resync_job
 from database import engine, Base, get_db, SessionLocal
 from follow_up import check_and_send_followups
 from metrics import BACKGROUND_FAILURE_COUNT, INTEGRATION_FAILURES
+from app.api.events import router as events_router
 
 # Create a global set to protect background tasks from garbage collection
 running_bg_tasks = set()
@@ -239,6 +240,8 @@ app = FastAPI(
     version="1.0.0",
     lifespan=lifespan
 )
+
+app.include_router(events_router)
 
 # TLS Enforcement (Redirect HTTP to HTTPS)
 if settings.IS_PRODUCTION or os.getenv("RENDER"):

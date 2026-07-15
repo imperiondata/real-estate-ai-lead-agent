@@ -143,6 +143,22 @@ class EventBusClient:
         else:
             self._handlers.setdefault(event_type, []).append(handler)
 
+    def unsubscribe(self, event_type: str, handler: Handler) -> None:
+        """Remove a previously registered handler (no-op if absent).
+
+        Used by SSE connections to detach their per-connection handler on
+        disconnect so the shared consumer loop never invokes a dead handler.
+        """
+        if event_type == "*":
+            if handler in self._wildcards:
+                self._wildcards.remove(handler)
+        else:
+            handlers = self._handlers.get(event_type)
+            if handlers and handler in handlers:
+                handlers.remove(handler)
+                if not handlers:
+                    self._handlers.pop(event_type, None)
+
     # ------------------------------------------------------------------ #
     # Publish
     # ------------------------------------------------------------------ #

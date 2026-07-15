@@ -179,6 +179,13 @@ IS_PRODUCTION=false
 - **BaseAgent:** `app/agents/base_agent.py` runs `fetch_context → analyze → decide`; `process_event` forwards any action to `app.automation_engine.engine.submit` (Phase 1 stub → EE; Phase 2 adds approval/retry).
 - `EventBusClient.publish` raises loudly if called before `start()` or if Redis is down.
 
+## IREIOS 3.0 — Early API envelopes + SSE (Phase 1b, FE unblock)
+
+- `GET /api/v1/events/stream` — tenant-scoped SSE bridge from the bus. Auth: `?api_key=` / `X-API-Key` **or** the `jwt` HttpOnly cookie. Filters events to the caller's `Client_<id>`; `: ping` heartbeat every 15s; `503` if bus down. Consume via `curl -N` or browser `EventSource`.
+- `GET /api/v1/leads/{id}/timeline` — envelope-shaped events for a lead (sourced from `event_logs` via the lead's session); `404` if not owned by the caller's client. Stable schema so the FE can bind types now.
+- `POST /api/v1/events/stub` — admin-gated (`X-Admin-Token` == `ADMIN_API_KEY`) publisher of sample events; returns `event_id`. Demo CLI: `python publish_stub_event.py --event-type lead.created --tenant-id Client_1 --payload '{"name":"demo"}'`.
+- Routes live in `app/api/events.py` (`events_router`), mounted in `main.py`. `EventBusClient` has `subscribe`/`unsubscribe`.
+
 ---
 
 ## Frontend-Specific

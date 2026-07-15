@@ -15,6 +15,11 @@ import pytest
 from app.clients.event_bus_client import EventBusClient
 from app.orchestrator.agent_registry import AgentRegistry, AgentRecord
 from app.orchestrator.ceo_orchestrator import CEOOrchestrator
+from app.execution_engine.execution_engine import ExecutionEngine, resolve_client_id
+from app.execution_engine.base_executor import BaseExecutor, NoopExecutor
+from app.agents.base_agent import BaseAgent
+from app.automation_engine.engine import submit
+from models import DLQEvent
 
 
 def _names() -> tuple[str, str]:
@@ -306,6 +311,188 @@ def test_ceo_handle_event_direct_no_bus():
         assert placeholder_seen == []
         bad_rec = next(r for r in registry.list_agents() if r.agent_id == "bad_a")
         assert bad_rec.last_error == "agent broke"
+
+    asyncio.run(run())
+
+
+# --------------------------------------------------------------------------- #
+# Task 1.5 — BaseExecutor + ExecutionEngine skeleton
+# --------------------------------------------------------------------------- #
+class _FakeSession:
+    """Minimal in-memory stand-in for an SQLAlchemy SessionLocal."""
+
+    def __init__(self, sink: list):
+        self._sink = sink
+
+    def add(self, obj):
+        self._sink.append(obj)
+
+    def commit(self):
+        pass
+
+    def close(self):
+        pass
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *exc):
+        self.close()
+
+
+def test_resolve_client_id_parses_tenant():
+    assert resolve_client_id("Client_1") == 1
+    assert resolve_client_id("42") == 42
+    assert resolve_client_id("garbage") is None
+    assert resolve_client_id(None) is None
+
+
+def test_ee_unknown_action_errors_and_dlq():
+    async def run():
+        sink = []
+        ee = ExecutionEngine(session_factory=lambda: _FakeSession(sink), bus=None)
+        result = await ee.dispatch({"action_type": "missing", "tenant_id": "Client_7", "entity_id": "e1"})
+        assert result["status"] == "error"
+        assert result["error"] == "no_executor"
+        assert len(sink) == 1
+        dlq = sink[0]
+        assert isinstance(dlq, DLQEvent)
+        assert dlq.target_endpoint == "missing"
+        assert dlq.client_id == 7
+        assert dlq.status == "pending"
+        assert dlq.error_trace == "no_executor"
+
+    asyncio.run(run())
+
+
+def test_ee_noop_success_no_dlq():
+    async def run():
+        sink = []
+        ee = ExecutionEngine(session_factory=lambda: _FakeSession(sink), bus=None)
+        ee.register("noop", NoopExecutor())
+        result = await ee.dispatch({"action_type": "noop", "tenant_id": "Client_1", "entity_id": "e1"})
+        assert result["status"] == "success"
+        assert sink == []  # success writes no DLQ
+
+    asyncio.run(run())
+
+
+def test_ee_failing_executor_writes_dlq():
+    async def run():
+        sink = []
+
+        class BoomExecutor(BaseExecutor):
+            action_type = "boom"
+
+            async def execute(self, action_request):
+                raise RuntimeError("kaboom")
+
+        ee = ExecutionEngine(session_factory=lambda: _FakeSession(sink), bus=None)
+        ee.register("boom", BoomExecutor())
+        result = await ee.dispatch({"action_type": "boom", "tenant_id": "Client_3", "entity_id": "e1"})
+        assert result["status"] == "error"
+        assert result["error"] == "kaboom"
+        assert len(sink) == 1
+        assert sink[0].target_endpoint == "boom"
+        assert sink[0].client_id == 3
+
+    asyncio.run(run())
+
+
+# --------------------------------------------------------------------------- #
+# Task 1.6 — BaseAgent lifecycle + AutomationEngine stub
+# --------------------------------------------------------------------------- #
+def test_base_agent_lifecycle_success():
+    async def run():
+        # BaseAgent routes through the global execution_engine singleton
+        # (via app.automation_engine.engine.submit), so register there.
+        from app.execution_engine.execution_engine import execution_engine as ee_singleton
+
+        ee_singleton.register("send_test", NoopExecutor())
+
+        class TestAgent(BaseAgent):
+            agent_id = "test_agent"
+            subscriptions = ["lead.created"]
+
+            async def fetch_context(self, event):
+                return {"event": event}
+
+            async def analyze(self, context):
+                return {"ok": True}
+
+            async def decide(self, analysis):
+                return {
+                    "action_type": "send_test",
+                    "tenant_id": "Client_1",
+                    "entity_id": "lead_1",
+                    "parameters": {"message": "hi"},
+                }
+
+        agent = TestAgent(bus=None)
+        result = await agent.process_event({"event_type": "lead.created", "tenant_id": "Client_1", "entity_id": "lead_1"})
+        assert result["status"] == "success"
+
+    asyncio.run(run())
+
+
+def test_base_agent_lifecycle_failure_publishes_failed():
+    async def run():
+        stream, group = _names()
+        bus = EventBusClient(stream=stream, group=group)
+        failed_seen = []
+        bus.subscribe("broken_agent.failed", lambda e: failed_seen.append(e))
+        await bus.start()
+        try:
+
+            class BrokenAgent(BaseAgent):
+                agent_id = "broken_agent"
+                subscriptions = ["lead.created"]
+
+                async def fetch_context(self, event):
+                    raise RuntimeError("context broke")
+
+                async def analyze(self, context):  # pragma: no cover - not reached
+                    return context
+
+                async def decide(self, analysis):  # pragma: no cover - not reached
+                    return None
+
+            agent = BrokenAgent(bus=bus)
+            result = await agent.process_event({"event_type": "lead.created", "tenant_id": "Client_1", "entity_id": "e1"})
+            assert result["status"] == "error"
+            await asyncio.sleep(1.0)
+        finally:
+            await bus.stop()
+        assert len(failed_seen) == 1, failed_seen
+        assert failed_seen[0]["payload"]["agent_id"] == "broken_agent"
+
+    asyncio.run(run())
+
+
+# --------------------------------------------------------------------------- #
+# Task 1.7 — lifespan wires bus start/stop (needs Redis)
+# --------------------------------------------------------------------------- #
+def test_lifespan_starts_and_stops_bus():
+    import os
+
+    import redis
+
+    url = os.getenv("REDIS_URL", "redis://localhost:6379/0")
+    try:
+        client = redis.Redis.from_url(url, socket_connect_timeout=3)
+        if not client.ping():
+            pytest.skip(f"Redis not reachable at {url}")
+    except redis.exceptions.RedisError as exc:
+        pytest.skip(f"Redis not reachable at {url}: {exc}")
+
+    import main
+    from app.clients.event_bus_client import event_bus as singleton_bus
+
+    async def run():
+        async with main.lifespan(main.app):
+            assert singleton_bus._running is True
+        assert singleton_bus._running is False
+        assert singleton_bus._task is None
 
     asyncio.run(run())
 

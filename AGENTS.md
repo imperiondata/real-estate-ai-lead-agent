@@ -171,6 +171,14 @@ IS_PRODUCTION=false
 - `N8N_BASE_URL` / `N8N_API_KEY` — n8n automation (Phase 2); left empty = `n8n_not_configured`.
 - These are logged/stored in `.env` (gitignored) and `.env.example`. Adding them in Phase 0 is env hygiene only — no production behavior changes until the consuming phases land.
 
+## IREIOS 3.0 — Event Bus / CEO / Execution Engine (Phase 1)
+
+- **Event Bus:** `app/clients/event_bus_client.py` (`EventBusClient`, `event_bus` singleton) — Redis Streams only. `start()` before scheduler, `stop()` after, in `main.py` lifespan. CEO subscribes as a single `"*"` wildcard handler.
+- **CEO:** `app/orchestrator/ceo_orchestrator.py` (`ceo` singleton) routes events to `agent_registry` subscribers; skips `placeholder` agents; publishes `{agent_id}.failed` on handler error.
+- **Execution Engine:** `app/execution_engine/execution_engine.py` (`execution_engine` singleton) + `BaseExecutor`/`NoopExecutor` in `base_executor.py`. `dispatch` returns `{"status":"error","error":"no_executor"}` for unknown actions and writes a `DLQEvent` (via injectable `session_factory`, default `database.SessionLocal`) on any failure. `resolve_client_id` maps `Client_<id>` tenant ids to integer `client_id`.
+- **BaseAgent:** `app/agents/base_agent.py` runs `fetch_context → analyze → decide`; `process_event` forwards any action to `app.automation_engine.engine.submit` (Phase 1 stub → EE; Phase 2 adds approval/retry).
+- `EventBusClient.publish` raises loudly if called before `start()` or if Redis is down.
+
 ---
 
 ## Frontend-Specific

@@ -52,10 +52,10 @@ The `e` prefix guarantees the two suites never collide and can be collected/run 
 | 1.2 | `[x]` | Event Bus client (Redis Streams) | `tests/test_e1_eventbus.py` |
 | 1.3 | `[x]` | Agent registry | `tests/test_e1_eventbus.py` |
 | 1.4 | `[x]` | CEO Orchestrator | `tests/test_e1_eventbus.py` |
-| 1.5 | `[ ]` | BaseExecutor + ExecutionEngine skeleton | same |
-| 1.6 | `[ ]` | BaseAgent lifecycle | same |
-| 1.7 | `[ ]` | Wire lifespan in `main.py` | same |
-| 1.8 | `[ ]` | Phase 1 exit gate (durable publish) | same |
+| 1.5 | `[x]` | BaseExecutor + ExecutionEngine skeleton | `tests/test_e1_eventbus.py` |
+| 1.6 | `[x]` | BaseAgent lifecycle | `tests/test_e1_eventbus.py` |
+| 1.7 | `[x]` | Wire lifespan in `main.py` | `tests/test_e1_eventbus.py` |
+| 1.8 | `[x]` | Phase 1 exit gate (durable publish) | same |
 
 ### Entry — 1.1 + 1.2 (Step 9, part 1)
 
@@ -86,6 +86,25 @@ The `e` prefix guarantees the two suites never collide and can be collected/run 
   - Module-level singleton `ceo` for lifespan wiring at Task 1.7.
 - **Tests:** 4 new CEO checks in `tests/test_e1_eventbus.py` — routes to active agent and skips placeholder, skips placeholder via bus path, publishes `{agent_id}.failed` on handler error (bus path), and direct in-process dispatch with `bus=None` records `last_error`. Plus a fix to the no-bus test assertion (lookup `bad_a` specifically rather than `get_subscribers(...)[0]`). File now 15 tests, all green.
 - **Regression:** full suite `python -m pytest tests/` → 167 passed, 10 skipped (163 baseline + 4 CEO tests). No regressions. Step 9 stays `[ ]` until Task 1.8 exit gate.
+
+### Entry — 1.5 + 1.6 + 1.7 + 1.8 (Step 9 part 4 — Phase 1 complete)
+
+- **1.5 ExecutionEngine + BaseExecutor (`app/execution_engine/`):**
+  - `base_executor.py`: `BaseExecutor` (abstract `execute(action_request) -> dict`) + `NoopExecutor` (test/placeholder, `action_type="noop"`, succeeds).
+  - `execution_engine.py`: `ExecutionEngine.register(action_type, executor)`; `async dispatch(action_request)` — unknown action type → `{"status":"error","error":"no_executor"}`; executor raise or `status=="error"` → captured into a `DLQEvent` row and an error dict returned (**never raises in the production path**). On success, if `action_type` maps via `register_event` into `_EVENT_MAP`, publishes that downstream event on the bus via `asyncio.create_task` (fire-and-forget, `source="execution_engine"`, map starts empty — Phase 3 fills it). `DLQEvent` written through an **injectable `session_factory`** (default `database.SessionLocal`) so tests use a fake; the write is wrapped so a DB failure can never crash dispatch.
+  - `resolve_client_id(tenant_id)` **tightened** (per request, not deferred): the codebase identifies tenants as `Client_<id>` (`auth.py`, `main.py` `tenant_id_ctx`), so the mapper strips the `Client_` prefix and `int()`s the remainder; bare integer strings also parse; anything else → `None` (DLQ `client_id` stays nullable). Verified by `test_resolve_client_id_parses_tenant`. Module singleton `execution_engine` consumed by the Automation Engine stub.
+- **1.6 BaseAgent + AutomationEngine stub:**
+  - `app/agents/base_agent.py`: `BaseAgent` with abstract `fetch_context`/`analyze`/`decide` and `process_event(event)` that runs the lifecycle, isolates failures (logs + publishes `{agent_id}.failed`, never crashes the caller), and forwards any produced `action_request` to `app.automation_engine.engine.submit`. A `None` decision is a no-op.
+  - `app/automation_engine/engine.py`: Phase 1 stub `submit(action_request)` → `execution_engine.dispatch(...)`. Phase 2 replaces this body with approval/retry **without** touching `BaseAgent`.
+- **1.7 Lifespan wiring (`main.py`):** `lifespan` now `await event_bus.start()` then `ceo.bootstrap()` **before** `scheduler.start()`; on shutdown scheduler stops first, then `await event_bus.stop()`. Imports are deferred inside the context manager to avoid startup circular imports. No webhook/route behavior changed.
+- **1.8 Phase 1 exit gate (verified):**
+  - `python -m pytest tests/` → **174 passed, 10 skipped** (167 baseline + 7 new: `resolve_client_id`, 3 EE, 2 agent-lifecycle, 1 lifespan).
+  - `python gate_isolation_test.py` → **PASSED** (Client B cannot see Client A's data) on a truncated DB.
+  - `python gate_dlq_drill.py` + `python dlq_replay.py` → 1/1 pending events recovered.
+  - App boots clean: logs show `EventBus started` then scheduler started; `/health` unaffected.
+- **Tests:** `tests/test_e1_eventbus.py` now 22 tests — 5 bus + 6 registry + 4 CEO + 7 new (1.5/1.6/1.7). Bus-dependent tests require the `redis-local` container (service name `redis` in compose); the lifespan test skips cleanly if Redis is unavailable.
+- **Docs:** this changelog 1.5–1.8 → `[x]`; `UNIFIED_EXECUTION_ORDER.md` Step 9 → `[x]`; `AGENTS.md` gained a one-line Event Engine / BaseAgent note.
+- **Step 9 flipped to `[x]`** — Phase 1 (Tasks 1.1–1.8) complete.
 
 ---
 

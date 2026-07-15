@@ -214,12 +214,24 @@ scheduler.add_job(crm_resync_job, "interval", minutes=5, id="crm_resync")
 
 @asynccontextmanager
 async def lifespan(app):
-    """Start the follow-up scheduler when the server boots, stop it on shutdown."""
+    """Start the follow-up scheduler and the IREIOS 3.0 event bus when the server boots, stop them on shutdown.
+
+    Order: event bus starts before the scheduler (so bus-backed jobs can
+    publish); on shutdown the scheduler stops first, then the bus.
+    """
+    from app.clients.event_bus_client import event_bus
+    from app.orchestrator.ceo_orchestrator import ceo
+
+    await event_bus.start()
+    ceo.bootstrap()  # subscribes CEO as the single wildcard bus handler (no agents yet ok)
     scheduler.start()
     logger.info("Background scheduler started (follow-ups, backups, cleanup)")
-    yield
-    scheduler.shutdown()
-    logger.info("Background scheduler stopped")
+    try:
+        yield
+    finally:
+        scheduler.shutdown()
+        logger.info("Background scheduler stopped")
+        await event_bus.stop()
 
 app = FastAPI(
     title="Real Estate AI Lead Agent",

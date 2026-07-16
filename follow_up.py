@@ -9,14 +9,15 @@ from datetime import datetime, timezone, timedelta
 
 import pytz
 from tenacity import retry, stop_after_attempt, wait_exponential
-from twilio.rest import Client
+from twilio.rest import Client as TwilioClient
 
+from app.intelligence.agent_matcher import resolve_followup_agent_label
 from app.intelligence.followup_engine import generate_followup_sequence
 from app.intelligence.push_wait_engine import decide_push_vs_wait
 from config import settings, tenant_id_ctx
 from database import SessionLocal
 from metrics import BACKGROUND_FAILURE_COUNT, SCHEDULER_JOB_DURATION, SCHEDULER_JOB_FAILURES
-from models import Session, Message, Lead, FollowUpState, EventLog, DLQEvent
+from models import Session, Message, Lead, FollowUpState, EventLog, DLQEvent, Client
 
 logger = logging.getLogger("follow_up")
 logging.basicConfig(level=logging.INFO)
@@ -45,6 +46,28 @@ def resolve_current_followup_stage(
         selected = followups[0]
 
     return selected
+
+
+# P6.4: derive the next follow-up stage AND the inter-stage day gap directly
+# from the ML `followups` sequence, so the scheduler (hour_map day units) and
+# strategy B (sequence day units) can never diverge. Replaces the hardcoded
+# 24/72/168 fallback constants.
+_STAGE_INDEX = {"Day 0": 0, "Day 1": 1, "Day 3": 2, "Day 7": 3}
+
+
+def next_followup_stage(followups, current_stage: str):
+    """
+    Returns (next_stage, gap_days). `gap_days` is the difference between the
+    current and next stage's `day` value from the sequence. If there is no next
+    stage (end of sequence or terminal), returns (None, 0).
+    """
+    idx = _STAGE_INDEX.get(current_stage)
+    if idx is None or not followups or idx + 1 >= len(followups):
+        return None, 0
+    current_day_val = followups[idx].get("day", idx)
+    next_day_val = followups[idx + 1].get("day", idx + 1)
+    stages = list(_STAGE_INDEX.keys())
+    return stages[idx + 1], max(0, next_day_val - current_day_val)
 
 
 # ==========================================
@@ -310,6 +333,32 @@ def apply_quiet_hours(target_utc_time: datetime) -> datetime:
     return target_ist.astimezone(timezone.utc)
 
 
+def compute_send_failure_backoff(
+    retry_count: int,
+    max_retries: int = 5,
+    base_minutes: int = 15,
+    cap_minutes: int = 240,
+    test_mode: bool = False,
+):
+    """
+    P4.3 (pure): backoff policy for follow-up dispatch failures.
+
+    Returns (next_delay, exhausted):
+      - while retry_count < max_retries: (timedelta backoff, False) — reschedule
+        instead of retrying every scheduler tick.
+      - once retry_count >= max_retries: (None, True) — stop permanently.
+
+    Backoff is exponential (base * 2**(n-1)) capped at cap_minutes. In test mode
+    the delay collapses to 1 minute so QA runs don't wait.
+    """
+    if retry_count >= max_retries:
+        return None, True
+    if test_mode:
+        return timedelta(minutes=1), False
+    minutes = min(base_minutes * (2 ** max(retry_count - 1, 0)), cap_minutes)
+    return timedelta(minutes=minutes), False
+
+
 def check_and_send_followups():
     """
     State machine execution engine for follow-ups.
@@ -349,6 +398,23 @@ def check_and_send_followups():
                     clean_phone = lead.phone.strip()
                     if not clean_phone.startswith("+"):
                         clean_phone = f"+{clean_phone}"
+
+                # P0.5 / P2.2: Terminal-state guards for follow-up scheduler.
+                # These checks are defense-in-depth; agent.py's finalize_turn
+                # should have already set follow_up_status to stopped/completed
+                # for terminal leads. This scheduler double-checks to prevent
+                # any stale "active" row from firing after opt-out or qualify.
+                #
+                # Canonical terminal-state table (P2.2):
+                #   Opt-out     → whatsapp_opt_in=False → stopped
+                #   Full qualify→ visit_date set         → stopped (goal met)
+                #   Handoff     → session closed          → stopped
+                #   Claim       → no scheduler change     (sales FSM only)
+                if lead and lead.whatsapp_opt_in is False:
+                    state.follow_up_status = "stopped"
+                    state.next_follow_up_at = None
+                    db.commit()
+                    continue
 
                 if session.status == "closed" or (lead and lead.visit_date):
                     state.follow_up_status = "stopped"
@@ -414,7 +480,10 @@ def check_and_send_followups():
                         "response_speed_score": 50, # Default or mocked
                         "inactive_lead": inactivity
                     }
-                    assigned_agent = {"assigned_agent": getattr(lead, "assigned_agent", "ABC Properties Team") or "ABC Properties Team"}
+                    # P1.9: never invent demo agency names
+                    client_row = db.query(Client).filter(Client.id == state.client_id).first()
+                    agent_label = resolve_followup_agent_label(lead, client_row)
+                    assigned_agent = {"assigned_agent": agent_label} if agent_label else None
 
                 try:
                     # DLQ TEST HOOK: set FOLLOW_UP_DLQ_TEST=true in .env (alongside TEST_MODE)
@@ -438,12 +507,12 @@ def check_and_send_followups():
                             logger.info(f"[TEST MODE] Skipping Day 7 closure WhatsApp send for {session_id}")
                         elif clean_phone and settings.TWILIO_ACCOUNT_SID:
                             try:
-                                client = Client(settings.TWILIO_ACCOUNT_SID, settings.TWILIO_AUTH_TOKEN)
+                                twilio = TwilioClient(settings.TWILIO_ACCOUNT_SID, settings.TWILIO_AUTH_TOKEN)
                                 to_number = f"whatsapp:{clean_phone}" if lead and lead.source == "whatsapp" else session_id
 
                                 # Start Latency Clock
                                 _twilio_start = time.time()
-                                client.messages.create(
+                                twilio.messages.create(
                                     from_=settings.TWILIO_PHONE_NUMBER,
                                     body=closure_msg,
                                     to=to_number
@@ -505,13 +574,13 @@ def check_and_send_followups():
                             followup_latency_ms = 0
                         else:
                             try:
-                                client = Client(settings.TWILIO_ACCOUNT_SID, settings.TWILIO_AUTH_TOKEN)
+                                twilio = TwilioClient(settings.TWILIO_ACCOUNT_SID, settings.TWILIO_AUTH_TOKEN)
                                 to_number = f"whatsapp:{clean_phone}" if lead and lead.source == "whatsapp" else clean_phone
 
                                 @retry(stop=stop_after_attempt(5), wait=wait_exponential(multiplier=1, min=2, max=30),
                                        reraise=True)
                                 def _send_twilio_msg():
-                                    client.messages.create(
+                                    twilio.messages.create(
                                         from_=settings.TWILIO_PHONE_NUMBER,
                                         body=payload_msg,
                                         to=to_number
@@ -533,6 +602,8 @@ def check_and_send_followups():
                     if success:
                         state.follow_up_sent_at = now
                         state.last_ai_reply_timestamp = now
+                        # P4.3: clear the send-failure backoff counter on success.
+                        state.send_retry_count = 0
 
                         # --- FIX: Sync count and lead stage ---
                         session.follow_up_count = (session.follow_up_count or 0) + 1
@@ -565,25 +636,17 @@ def check_and_send_followups():
                             followups = generated_payload.get("sequence", [])
 
                         # TEST MODE: collapse inter-stage gaps to 1 minute each.
-                        # Production: gaps come from the ML payload (24h, 48h, 96h).
+                        # Production: gaps come from the ML `followups` day values (P6.4).
                         def _next_delay(prod_hours):
                             if settings.FOLLOW_UP_TEST_MODE:
                                 return timedelta(minutes=1)
                             return timedelta(hours=prod_hours)
 
-                        if current_stage == "Day 0" and len(followups) > 1:
-                            state.follow_up_stage = "Day 1"
-                            prod_hours = followups[1].get("day", 24) - followups[0].get("day", 0)
-                            state.next_follow_up_at = apply_quiet_hours(now + _next_delay(prod_hours))
-                        elif current_stage == "Day 1" and len(followups) > 2:
-                            state.follow_up_stage = "Day 3"
-                            prod_hours = followups[2].get("day", 72) - followups[1].get("day", 24)
-                            state.next_follow_up_at = apply_quiet_hours(now + _next_delay(prod_hours))
-                        elif current_stage == "Day 3" and len(followups) > 3:
-                            state.follow_up_stage = "Day 7"
-                            prod_hours = followups[3].get("day", 168) - followups[2].get("day", 72)
-                            state.next_follow_up_at = apply_quiet_hours(now + _next_delay(prod_hours))
-                        elif current_stage == "Day 7" or len(followups) <= 1:
+                        next_stage, gap_days = next_followup_stage(followups, current_stage)
+                        if next_stage:
+                            state.follow_up_stage = next_stage
+                            state.next_follow_up_at = apply_quiet_hours(now + _next_delay(gap_days))
+                        else:
                             state.follow_up_status = "stopped"
                             state.next_follow_up_at = None
                             session.status = "closed"
@@ -599,6 +662,16 @@ def check_and_send_followups():
                     logger.error(f"ML Follow-up Engine failed for session {session_id}: {ml_err}")
                     BACKGROUND_FAILURE_COUNT.labels(component="scheduler").inc()
 
+                    # P4.3: back off instead of retrying every scheduler tick.
+                    # Advance next_follow_up_at so the same row is not re-selected
+                    # on the next minute; cap attempts, then stop permanently.
+                    retry_count = (state.send_retry_count or 0) + 1
+                    state.send_retry_count = retry_count
+                    backoff_delay, exhausted = compute_send_failure_backoff(
+                        retry_count,
+                        test_mode=settings.FOLLOW_UP_TEST_MODE,
+                    )
+
                     # Push to DLQ instead of crashing scheduler
                     try:
                         dlq_entry = DLQEvent(
@@ -609,6 +682,21 @@ def check_and_send_followups():
                             client_id=state.client_id
                         )
                         db.add(dlq_entry)
+
+                        if exhausted:
+                            state.follow_up_status = "stopped"
+                            state.next_follow_up_at = None
+                            logger.error(
+                                f"P4.3: follow-up dispatch permanently failed for {session_id} "
+                                f"after {retry_count} attempts; stopping and leaving DLQ entry for replay."
+                            )
+                        else:
+                            state.next_follow_up_at = apply_quiet_hours(now + backoff_delay)
+                            logger.warning(
+                                f"P4.3: follow-up dispatch failed for {session_id}; "
+                                f"retry {retry_count} scheduled in {backoff_delay} (backoff)."
+                            )
+
                         db.commit()
                     except Exception as dlq_err:
                         logger.error(f"Failed to write ML error to DLQ for {session_id}: {dlq_err}")

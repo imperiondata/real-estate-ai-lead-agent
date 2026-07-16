@@ -44,6 +44,9 @@ export default function PriorityAlertCard({ lead }: { lead: any }) {
           )}
         </div>
         <p className="text-xs text-slate-500 dark:text-zinc-400 truncate">{lead.budget || 'Budget unknown'} • {lead.location || 'Unknown loc'}</p>
+        <p className="text-[10px] text-slate-400 dark:text-zinc-500 truncate mt-0.5">
+          Agent: {lead.assigned_agent || 'Unassigned'}
+        </p>
       </div>
       
       {!isClaimed ? (

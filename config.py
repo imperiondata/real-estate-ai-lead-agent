@@ -66,6 +66,17 @@ class Settings(BaseSettings):
     # Production flag — set to true on Render
     IS_PRODUCTION: bool = False
 
+    # P5.2: when True, sync the extended property map (location, intent,
+    # property_type, visit_date, assignee, alignment, urgency, engagement,
+    # temperature) to the CRM. Set False for portals that lack these custom
+    # properties so the base contact (firstname/phone/budget/lifecyclestage)
+    # still syncs cleanly.
+    CRM_SYNC_EXTENDED_PROPERTIES: bool = True
+
+    # P6.3: below this dynamic match score, do not assign a (poorly matched)
+    # agent — leave the lead unassigned so it can be routed/reviewed manually.
+    MIN_MATCH_SCORE: int = 0
+
     # AWS Secrets Manager
     AWS_REGION: str = ""
     AWS_SECRET_NAME: str = ""

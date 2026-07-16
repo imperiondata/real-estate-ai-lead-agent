@@ -10,6 +10,7 @@ interface Agent {
   email: string;
   phone: string;
   is_manager: boolean;
+  is_director?: boolean;
   locations?: string;
   speciality?: string;
   deal_size?: string;
@@ -28,6 +29,7 @@ export default function TeamManagementPage() {
     phone: '',
     email: '',
     is_manager: false,
+    is_director: false,
     locations: '',
     speciality: '',
     deal_size: '',
@@ -90,6 +92,7 @@ export default function TeamManagementPage() {
           phone: '',
           email: '',
           is_manager: false,
+          is_director: false,
           locations: '',
           speciality: '',
           deal_size: '',
@@ -152,6 +155,11 @@ export default function TeamManagementPage() {
                 {agent.is_manager && (
                   <span className="px-2.5 py-1 bg-indigo-500/10 text-indigo-400 text-xs font-medium rounded-full border border-indigo-500/20">
                     Manager
+                  </span>
+                )}
+                {agent.is_director && (
+                  <span className="px-2.5 py-1 bg-rose-500/10 text-rose-400 text-xs font-medium rounded-full border border-rose-500/20">
+                    Director
                   </span>
                 )}
               </div>
@@ -241,6 +249,20 @@ export default function TeamManagementPage() {
                   <div>
                     <span className="text-sm font-medium text-white block">Manager Privileges</span>
                     <span className="text-xs text-gray-400 block mt-0.5">Can view all team leads and metrics</span>
+                  </div>
+                </label>
+
+                <label className="flex items-center gap-3 cursor-pointer p-3 rounded-lg border border-gray-800 bg-gray-950/50 hover:bg-gray-800/50 transition-colors">
+                  <input
+                    type="checkbox"
+                    name="is_director"
+                    checked={formData.is_director}
+                    onChange={handleInputChange}
+                    className="w-4 h-4 rounded bg-gray-900 border-gray-700 text-rose-600 focus:ring-rose-500 focus:ring-offset-gray-900"
+                  />
+                  <div>
+                    <span className="text-sm font-medium text-white block">Director (30m Escalation)</span>
+                    <span className="text-xs text-gray-400 block mt-0.5">Receives critical 30-minute unacknowledged lead alerts</span>
                   </div>
                 </label>
               </div>

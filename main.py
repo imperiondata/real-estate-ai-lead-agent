@@ -22,8 +22,9 @@ from fastapi.security import OAuth2PasswordRequestForm
 from fastapi.security.api_key import APIKeyHeader
 from fastapi.staticfiles import StaticFiles
 from prometheus_client import Counter, Histogram, generate_latest, CONTENT_TYPE_LATEST
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
 from sqlalchemy import func
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session as DBSession
 from twilio.request_validator import RequestValidator
 from twilio.rest import Client
@@ -33,7 +34,7 @@ import auth
 import models
 from agent import process_chat
 from config import settings, tenant_id_ctx, request_id_ctx
-from crm_sync import sync_lead_to_crm
+from crm_sync import sync_lead_to_crm, crm_resync_job
 from database import engine, Base, get_db, SessionLocal
 from follow_up import check_and_send_followups
 from metrics import BACKGROUND_FAILURE_COUNT, INTEGRATION_FAILURES
@@ -122,6 +123,7 @@ def escalation_cron_job():
     from datetime import datetime, timezone, timedelta
     from twilio.rest import Client
     from config import settings, tenant_id_ctx
+    from notification_service import resolve_escalation_recipient
     import logging
 
     logger = logging.getLogger("escalation_engine")
@@ -168,7 +170,7 @@ def escalation_cron_job():
                 logger.error(
                     f"🚨 30M CRITICAL ESCALATION TRIGGERED: Lead {log.lead_id} still unacknowledged! Alerting Director.")
 
-                director = db.query(Agent).filter(Agent.client_id == log.client_id, Agent.is_manager == True).first()
+                director = resolve_escalation_recipient(db, log.client_id, "30m")
                 if director and settings.TWILIO_ACCOUNT_SID:
                     try:
                         client = Client(settings.TWILIO_ACCOUNT_SID, settings.TWILIO_AUTH_TOKEN)
@@ -185,16 +187,19 @@ def escalation_cron_job():
 
                 log.status = "escalated_30m"
 
-            # --- NOTIFICATION DELIVERY FAILURE HANDLER ---
+            # --- NOTIFICATION DELIVERY FAILURE HANDLER (P0.6: alert once) ---
             failed_notifs = db.query(NotificationLog).filter(
                 NotificationLog.status == "failed",
                 NotificationLog.sent_at <= now - timedelta(minutes=5)
             ).all()
+            from notification_service import terminal_status_after_failed_delivery_alert
+
             for log in failed_notifs:
                 tenant_id_ctx.set(f"Client_{log.client_id}")
                 logger.error(f"⚠️ NOTIFICATION DELIVERY FAILED: Lead {log.lead_id}, agent {log.assigned_agent}")
                 send_critical_alert("Notification Delivery Failure",
                     f"Lead {log.lead_id} failed to deliver to {log.assigned_agent}.")
+                log.status = terminal_status_after_failed_delivery_alert(log.status)
 
             db.commit()
         except Exception as e:
@@ -205,6 +210,7 @@ scheduler.add_job(check_and_send_followups, "interval", minutes=1, id="follow_up
 scheduler.add_job(backup_postgres, "cron", hour=2, minute=0, id="nightly_backup")
 scheduler.add_job(daily_cleanup_job, "cron", hour=3, minute=0, id="nightly_cleanup")
 scheduler.add_job(escalation_cron_job, "interval", minutes=1, id="escalation_checker")
+scheduler.add_job(crm_resync_job, "interval", minutes=5, id="crm_resync")
 
 @asynccontextmanager
 async def lifespan(app):
@@ -354,58 +360,92 @@ async def background_process_and_push(session_id: str, Body: str, client_id: int
     """
     Executes if the LLM exceeds 15s timeout. Uses Twilio REST API to push the reply out-of-band.
     If the LLM still fails in the background, sends a graceful fallback so the user is never left with no response.
+
+    P3.1/P3.2: Re-acquires session lock before processing to prevent concurrent double-processing.
+    P3.3: Passes background=True so agent.py can skip duplicate user message inserts.
     """
-    # --- FIX 3: Use context manager to prevent session leak ---
-    with SessionLocal() as db:
-        try:
-            payload = LeadIngestionPayload(
-                session_id=session_id,
-                source="whatsapp",
-                message=Body,
-                whatsapp_opt_in=True
-            )
-            reply_text = await process_unified_lead(payload, db, client_id, background=True)
-            if settings.TWILIO_ACCOUNT_SID:
-                client = Client(settings.TWILIO_ACCOUNT_SID, settings.TWILIO_AUTH_TOKEN)
-                await asyncio.to_thread(
-                    client.messages.create,
-                    from_=settings.TWILIO_PHONE_NUMBER,
-                    body=reply_text,
-                    to=f"whatsapp:{session_id}"
-                )
-                logger.info(f"Background task pushed response to {session_id}")
-        except Exception as e:
-            logger.error(f"Background task failed for {session_id}: {e}")
-            # Always guarantee the user gets a response — send fallback via Twilio REST
+    # P3.1/P3.2: Re-acquire the session lock so only one background task processes at a time.
+    # Use a longer timeout (45s) since background processing may take longer than the 15s webhook window.
+    lock = redis_client.lock(f"session_lock:{session_id}", timeout=45.0, blocking_timeout=10.0)
+    lock_acquired = False
+    try:
+        lock_acquired = await lock.acquire()
+        if not lock_acquired:
+            logger.warning(f"BACKGROUND_LOCK | session={session_id} | another worker holds the lock; skipping duplicate background run")
+            return
+
+        # --- FIX 3: Use context manager to prevent session leak ---
+        with SessionLocal() as db:
             try:
+                payload = LeadIngestionPayload(
+                    session_id=session_id,
+                    source="whatsapp",
+                    message=Body,
+                    whatsapp_opt_in=True
+                )
+                reply_text = await process_unified_lead(payload, db, client_id, background=True)
                 if settings.TWILIO_ACCOUNT_SID:
-                    fallback_client = Client(settings.TWILIO_ACCOUNT_SID, settings.TWILIO_AUTH_TOKEN)
+                    client = Client(settings.TWILIO_ACCOUNT_SID, settings.TWILIO_AUTH_TOKEN)
                     await asyncio.to_thread(
-                        fallback_client.messages.create,
+                        client.messages.create,
                         from_=settings.TWILIO_PHONE_NUMBER,
-                        body="I'm experiencing a brief connectivity issue. Please try again in a moment, or reach our team directly at +91 9876543210.",
+                        body=reply_text,
                         to=f"whatsapp:{session_id}"
                     )
-                    logger.warning(f"FALLBACK | session={session_id} | reason=background_task_failure | detail=graceful_fallback_sent_via_twilio")
-            except Exception as fallback_err:
-                logger.error(f"FALLBACK push also failed for {session_id}: {fallback_err}")
-                # Phase 2 Hardening: Dead-Letter Queue integration for Twilio outbound
-                BACKGROUND_FAILURE_COUNT.labels(component="twilio").inc()
-                INTEGRATION_FAILURES.labels(integration="twilio").inc()
-                payload_dlq = {
-                    "session_id": session_id,
-                    "body": "I'm experiencing a brief connectivity issue. Please try again in a moment, or reach our team directly at +91 9876543210.",
-                    "to": f"whatsapp:{session_id}"
-                }
-                dlq_entry = models.DLQEvent(
-                    target_endpoint="twilio_outbound",
-                    payload=payload_dlq,
-                    error_trace=str(fallback_err),
-                    status="pending",
-                    client_id=client_id
-                )
-                db.add(dlq_entry)
-                db.commit()
+                    logger.info(f"Background task pushed response to {session_id}")
+            except Exception as e:
+                logger.error(f"Background task failed for {session_id}: {e}")
+                # Always guarantee the user gets a response — send fallback via Twilio REST
+                try:
+                    if settings.TWILIO_ACCOUNT_SID:
+                        fallback_client = Client(settings.TWILIO_ACCOUNT_SID, settings.TWILIO_AUTH_TOKEN)
+                        await asyncio.to_thread(
+                            fallback_client.messages.create,
+                            from_=settings.TWILIO_PHONE_NUMBER,
+                            body="I'm experiencing a brief connectivity issue. Please try again in a moment, or reach our team directly at +91 9876543210.",
+                            to=f"whatsapp:{session_id}"
+                        )
+                        logger.warning(f"FALLBACK | session={session_id} | reason=background_task_failure | detail=graceful_fallback_sent_via_twilio")
+                except Exception as fallback_err:
+                    logger.error(f"FALLBACK push also failed for {session_id}: {fallback_err}")
+                    # Phase 2 Hardening: Dead-Letter Queue integration for Twilio outbound
+                    BACKGROUND_FAILURE_COUNT.labels(component="twilio").inc()
+                    INTEGRATION_FAILURES.labels(integration="twilio").inc()
+                    payload_dlq = {
+                        "session_id": session_id,
+                        "body": "I'm experiencing a brief connectivity issue. Please try again in a moment, or reach our team directly at +91 9876543210.",
+                        "to": f"whatsapp:{session_id}"
+                    }
+                    dlq_entry = models.DLQEvent(
+                        target_endpoint="twilio_outbound",
+                        payload=payload_dlq,
+                        error_trace=str(fallback_err),
+                        status="pending",
+                        client_id=client_id
+                    )
+                    db.add(dlq_entry)
+                    db.commit()
+    finally:
+        if lock_acquired:
+            await lock.release()
+
+
+def _stop_followups_for_session(db: DBSession, scoped_session_id: str) -> bool:
+    """P3.5 edge case: idempotently stop follow-ups for a session.
+
+    Returns True if a FollowUpState row existed and was stopped.
+    Used in both normal (locked) and degraded (Redis-down) paths.
+    """
+    follow_up_state = db.query(models.FollowUpState).filter(
+        models.FollowUpState.session_id == scoped_session_id
+    ).first()
+    if follow_up_state:
+        follow_up_state.follow_up_status = "stopped"
+        follow_up_state.last_user_reply_timestamp = func.now()
+        db.commit()
+        logger.info(f"SMS Webhook: Follow ups stopped for {scoped_session_id}")
+    return follow_up_state is not None
+
 
 class LeadIngestionPayload(BaseModel):
     session_id: str
@@ -477,7 +517,8 @@ async def process_unified_lead(payload: LeadIngestionPayload, db: DBSession, cli
         db.commit()
 
         # Launch the CRM Sync and protect it from Garbage Collection
-        task = asyncio.create_task(sync_lead_to_crm(lead.id))
+        # sync_lead_to_crm already returns a Task in an async context; do not re-wrap.
+        task = sync_lead_to_crm(lead.id)
         running_bg_tasks.add(task)
         task.add_done_callback(running_bg_tasks.discard)
     # --------------------------------------------------------
@@ -532,13 +573,24 @@ async def portals_webhook(payload: dict, current_client: models.Client = Depends
         raise HTTPException(status_code=400, detail=str(e))
 
 
+class AcknowledgeNotificationBody(BaseModel):
+    """P1.11: optional agent binding when claiming (avoids freezing null assignee)."""
+    agent_name: Optional[str] = None
+    agent_id: Optional[int] = None
+
+
 @app.post("/api/v1/notifications/acknowledge")
-def acknowledge_notification(lead_id: int, current_client: models.Client = Depends(auth.get_current_client),
-                             db: DBSession = Depends(get_db)):
+def acknowledge_notification(
+        lead_id: int,
+        body: Optional[AcknowledgeNotificationBody] = None,
+        current_client: models.Client = Depends(auth.get_current_client),
+        db: DBSession = Depends(get_db),
+):
     """Allows human agents to clear the Priority Alert from the dashboard and claim the lead."""
-    from models import NotificationLog, Lead
-    
-    # 1. Clear the Escalation Timer
+    from models import NotificationLog, Lead, Agent
+
+    body = body or AcknowledgeNotificationBody()
+
     log = db.query(NotificationLog).filter(
         NotificationLog.lead_id == lead_id,
         NotificationLog.client_id == current_client.id,
@@ -548,11 +600,27 @@ def acknowledge_notification(lead_id: int, current_client: models.Client = Depen
     if log:
         log.status = "acknowledged"
 
-    # 2. Mark the Lead as Claimed so the Frontend button stays hidden permanently
     lead = db.query(Lead).filter(Lead.id == lead_id, Lead.client_id == current_client.id).first()
-    if lead and lead.conversion_status != "claimed":
-        lead.conversion_status = "claimed"
-        
+    if lead:
+        if lead.conversion_status != "claimed":
+            lead.conversion_status = "claimed"
+
+        # P1.11: bind assignee on claim when client provides agent identity
+        if body.agent_id is not None:
+            agent = db.query(Agent).filter(
+                Agent.id == body.agent_id,
+                Agent.client_id == current_client.id,
+            ).first()
+            if agent:
+                lead.assigned_agent = agent.name
+        elif body.agent_name:
+            agent = db.query(Agent).filter(
+                Agent.client_id == current_client.id,
+                Agent.name == body.agent_name,
+            ).first()
+            if agent:
+                lead.assigned_agent = agent.name
+
     db.commit()
     return {"status": "success", "message": "Lead successfully claimed and alert acknowledged."}
 
@@ -586,16 +654,15 @@ async def whatsapp_webhook(
 
     request_start = time.time()
     try:
-        # Task 1: Duplicate Message Protection
+        # Task 1: Duplicate Message Protection (P3.4: insert-first with IntegrityError)
         if MessageSid:
-            existing = db.query(models.WebhookLog).filter(models.WebhookLog.message_sid == MessageSid).first()
-            if existing:
-                logger.info(f"Duplicate message ignored: {MessageSid}")
+            try:
+                db.add(models.WebhookLog(message_sid=MessageSid))
+                db.commit()
+            except IntegrityError:
+                db.rollback()
+                logger.info(f"Duplicate message ignored (race): {MessageSid}")
                 return Response(content="<Response></Response>", media_type="application/xml")
-            
-            # Log the new message
-            db.add(models.WebhookLog(message_sid=MessageSid))
-            db.commit()
 
         session_id = From.replace("whatsapp:", "")
         client_id = current_client.id
@@ -627,9 +694,20 @@ async def whatsapp_webhook(
                 # Took too long — dispatch to background and return interim response
                 logger.info(f"TIMEOUT | session={session_id} | exceeded=15000ms | action=background_dispatch")
                 background_tasks.add_task(background_process_and_push, session_id, Body, client_id)
-                
+
+                # P3.1: Only send one interim "Just checking..." per MessageSid
+                interim_key = f"interim_sent:{MessageSid}" if MessageSid else None
+                send_interim = True
+                if interim_key:
+                    already_sent = await redis_client.get(interim_key)
+                    if already_sent:
+                        send_interim = False
+                    else:
+                        await redis_client.set(interim_key, "1", ex=120)
+
                 twiml = MessagingResponse()
-                twiml.message("Just checking that for you...")
+                if send_interim:
+                    twiml.message("Just checking that for you...")
                 return Response(content=str(twiml), media_type="application/xml")
     
     except Exception as e:
@@ -681,32 +759,27 @@ async def incoming_sms_webhook(
     """
     request_start = time.time()
     try:
-        # Task 1: Duplicate Message Protection (Idempotency)
+        # Task 1: Duplicate Message Protection (P3.4: insert-first with IntegrityError)
         if MessageSid:
-            existing = db.query(models.WebhookLog).filter(models.WebhookLog.message_sid == MessageSid).first()
-            if existing:
-                logger.info(f"Duplicate SMS message ignored: {MessageSid}")
+            try:
+                db.add(models.WebhookLog(message_sid=MessageSid))
+                db.commit()
+            except IntegrityError:
+                db.rollback()
+                logger.info(f"Duplicate SMS message ignored (race): {MessageSid}")
                 return Response(content="<Response></Response>", media_type="application/xml")
-            
-            db.add(models.WebhookLog(message_sid=MessageSid))
-            db.commit()
 
-        # Format number correctly if needed, Twilio standard SMS starts with '+', no "whatsapp:" prefix
-        session_id = From
-        
-        # Stop FollowUps
-        follow_up_state = db.query(models.FollowUpState).filter(models.FollowUpState.session_id == session_id).first()
-        if follow_up_state:
-            follow_up_state.follow_up_status = "stopped"
-            follow_up_state.last_user_reply_timestamp = func.now()
-            db.commit()
-            logger.info(f"SMS Webhook: Follow ups stopped for {session_id}")
+        # P3.5: Use client-scoped session id for FollowUpState lookup and lock
+        raw_from = From
+        scoped_session_id = f"{current_client.id}_{raw_from}"
 
-        # Process as normal Lead Interaction
+        # Process as normal Lead Interaction (lock serializes per-session)
         try:
-            async with redis_client.lock(f"session_lock:{session_id}", timeout=20.0, blocking_timeout=30.0):
+            async with redis_client.lock(f"session_lock:{scoped_session_id}", timeout=20.0, blocking_timeout=30.0):
+                # P3.5 edge case: stop FollowUps INSIDE the lock for atomicity
+                _stop_followups_for_session(db, scoped_session_id)
                 payload = LeadIngestionPayload(
-                    session_id=session_id,
+                    session_id=scoped_session_id,
                     source="sms",
                     message=Body,
                     whatsapp_opt_in=False
@@ -714,8 +787,10 @@ async def incoming_sms_webhook(
                 reply_text = await process_unified_lead(payload, db, client_id=current_client.id)
         except Exception as redis_err:
             logger.warning(f"Redis unavailable or lock failed, proceeding without lock: {redis_err}")
+            # Degraded path: best-effort stop (no lock available)
+            _stop_followups_for_session(db, scoped_session_id)
             payload = LeadIngestionPayload(
-                session_id=session_id,
+                session_id=scoped_session_id,
                 source="sms",
                 message=Body,
                 whatsapp_opt_in=False
@@ -754,12 +829,13 @@ async def get_pipeline_report(current_client: models.Client = Depends(auth.get_c
     contacted = stage_counts.get("Contacted", 0)
     scheduled = stage_counts.get("Appointment Scheduled", 0)
     closed = stage_counts.get("Closed Won", 0)
+    lost = stage_counts.get("Lost", 0)
     qualified = contacted + scheduled + closed
 
     return {
         "pipeline": {
             "total_leads": total_leads, "new": new_leads, "contacted": contacted,
-            "appointment_scheduled": scheduled, "closed_won": closed
+            "appointment_scheduled": scheduled, "closed_won": closed, "lost": lost
         },
         "rates": {
             "qualified_rate": round((qualified / total_leads * 100), 2) if total_leads else 0,
@@ -959,6 +1035,7 @@ class AgentCreate(BaseModel):
     phone: str
     email: str
     is_manager: bool = False
+    is_director: bool = False
     locations: Optional[str] = None
     speciality: Optional[str] = None
     deal_size: Optional[str] = None
@@ -1011,15 +1088,37 @@ def get_leads(
         query = query.filter(models.Lead.assigned_agent.ilike(f"%{assigned_agent}%"))
         
     leads = query.all()
-    
+
     return {
         "status": "success",
         "total_returned": len(leads),
-        "leads": leads
+        "leads": [serialize_lead(lead) for lead in leads]
     }
+
+
+def serialize_lead(lead) -> dict:
+    """
+    P6.5: ORM row -> JSON-safe dict. Title-cases `lead_temperature` so the
+    dashboard (which compares against 'Hot'/'Warm'/'Cold') matches the backend's
+    lowercase storage ('hot'/'warm'/'cold').
+    """
+    data = {c.name: getattr(lead, c.name) for c in lead.__table__.columns}
+    temp = data.get("lead_temperature")
+    if isinstance(temp, str) and temp:
+        data["lead_temperature"] = temp[:1].upper() + temp[1:]
+    return data
 
 class LeadStageUpdate(BaseModel):
     stage: str
+
+    # P2.4: validate against canonical enum — reject "Human Handoff", "Qualified", etc.
+    @field_validator("stage")
+    @classmethod
+    def stage_must_be_valid(cls, v):
+        from agent import FUNNEL_STAGES
+        if v not in FUNNEL_STAGES:
+            raise ValueError(f"Invalid stage '{v}'. Allowed: {FUNNEL_STAGES}")
+        return v
 
 @app.patch("/api/v1/leads/{lead_id}/stage")
 def update_lead_stage(

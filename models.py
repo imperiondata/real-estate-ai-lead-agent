@@ -103,9 +103,10 @@ class Lead(Base):
     followup_stage = Column(String, default='new')
     best_performing_script = Column(Text, nullable=True)
 
-    funnel_stage = Column(String, default="New")
+    funnel_stage = Column(String, default="New")  # P2.4: canonical values in agent.FUNNEL_STAGES
     external_crm_id = Column(String, nullable=True)
     crm_sync_status = Column(String, default="pending")
+    crm_resync_pending = Column(Boolean, default=False)  # P5.1: debounced re-sync after field changes
 
     # --- NEW CONFIDENCE THRESHOLD COLUMNS ---
     confidence_score = Column(Integer, default=100)
@@ -145,6 +146,7 @@ class FollowUpState(Base):
     
     follow_up_status = Column(String, default="active")
     inactivity_score = Column(Integer, default=0)
+    send_retry_count = Column(Integer, default=0)  # P4.3: dispatch-failure backoff counter
 
     session = relationship("Session", back_populates="followup_state")
     client = relationship("Client", back_populates="followup_states")
@@ -190,7 +192,8 @@ class Agent(Base):
     name = Column(String, nullable=False)
     phone = Column(String, nullable=False)
     email = Column(String, nullable=False)
-    is_manager = Column(Boolean, default=False)  # True if they receive default escalations
+    is_manager = Column(Boolean, default=False)  # True if they receive 10m escalations
+    is_director = Column(Boolean, default=False)  # True if they receive 30m critical escalations
 
     # --- PRODUCTION ROUTING METADATA (Clears agent_matcher warnings) ---
     locations = Column(Text, nullable=True)             # Comma-separated list e.g., "Baner, Wakad, Balewadi"
@@ -200,6 +203,23 @@ class Agent(Base):
     conversion_rate = Column(Integer, default=30)       # Historical win rate percentage
     response_speed_score = Column(Integer, default=50)  # Average response rating
     active_leads = Column(Integer, default=0)           # Active workload count
+
+    client = relationship("Client")
+
+
+class AgentLearning(Base):
+    """
+    P6.1: persisted per-agent win/loss learning, replacing the in-process
+    FEEDBACK_STATS dict so multi-worker deployments converge and survive
+    restarts. Scoped by client for tenant isolation.
+    """
+    __tablename__ = "agent_learning"
+
+    id = Column(Integer, primary_key=True, index=True)
+    client_id = Column(Integer, ForeignKey("clients.id", ondelete="CASCADE"), nullable=False, index=True)
+    agent_name = Column(String, nullable=False)
+    wins = Column(Integer, default=0)
+    losses = Column(Integer, default=0)
 
     client = relationship("Client")
 
@@ -218,12 +238,18 @@ class NotificationLog(Base):
     correlation_id = Column(String, default=lambda: str(uuid.uuid4()), unique=True, index=True, nullable=False)
     assigned_agent = Column(String, nullable=True)
 
-    # Statuses: pending_ack, acknowledged, escalated_10m, escalated_30m, failed
+    # Statuses: pending_ack, acknowledged, escalated_10m, escalated_30m,
+    # failed (delivery failed, awaiting one ops alert), failed_alerted (ops notified — terminal)
     status = Column(String, default="pending_ack")
 
     # --- NEW: Twilio Tracking Columns ---
     twilio_message_sid = Column(String, nullable=True, index=True)
     twilio_delivery_status = Column(String, nullable=True)
+
+    # P4.2: reason text + severity rank so a higher-severity alert (e.g. explicit
+    # handoff) can upgrade an existing lower-severity (score-threshold) alert.
+    reason = Column(String, nullable=True)
+    severity = Column(Integer, default=1)
 
     sent_at = Column(DateTime(timezone=True), server_default=func.now())
     escalate_at = Column(DateTime(timezone=True), nullable=False)  # The escalation deadline

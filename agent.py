@@ -36,7 +36,7 @@ from sqlalchemy.orm import Session as DBSession
 from app.intelligence.agent_matcher import ensure_lead_assignment, hot_threshold_notification_reason
 from app.intelligence.lead_scoring import calculate_lead_score
 from config import settings
-from crm_sync import sync_lead_to_crm
+
 from models import Session, Message, Lead, EventLog
 from notification_service import trigger_hot_lead_notification, SEVERITY_HANDOFF, SEVERITY_SCORE_ALERT
 from rag import retrieve
@@ -552,7 +552,7 @@ INTENT-BASED BEHAVIOR:
 
 # 3. Stateful Memory Function
 async def process_chat(session_id: str, user_message: str, db: DBSession, client_id: int = 1,
-                       is_background: bool = False) -> str:
+                       is_background: bool = False, extra_context: str | None = None) -> str:
     """
     Main orchestrator for user input. Fetches memory, injects context to the LLM,
     extracts function calls for lead generation, and commits all data to DB.
@@ -568,7 +568,8 @@ async def process_chat(session_id: str, user_message: str, db: DBSession, client
 
     lead = db.query(Lead).filter(Lead.session_id == session_id).first()
     if not lead:
-        lead = Lead(session_id=session_id, client_id=client_id)
+        # Interactive chat/WA defaults to opted-in; explicit STOP sets False (P0.5).
+        lead = Lead(session_id=session_id, client_id=client_id, whatsapp_opt_in=True)
         db.add(lead)
         db.commit()
 
@@ -583,10 +584,8 @@ async def process_chat(session_id: str, user_message: str, db: DBSession, client
         task1 = asyncio.create_task(log_event_async(session_id, "lead_created", latency_ms=latency, client_id=client_id))
         task1.add_done_callback(handle_task_result)
 
-        # --- FIX: Trigger HubSpot CRM sync for organically created chats ---
-        # sync_lead_to_crm already returns a Task in an async context; do not re-wrap.
-        task2 = sync_lead_to_crm(lead.id)
-        task2.add_done_callback(handle_task_result)
+        # CRM create is bus-owned (lead.created → crm_automation → AE→EE).
+        # Do not dual-call sync_lead_to_crm here (BD-1).
 
     # --- FIX: Extract raw phone number from the tenant-prefixed Session ID ---
     if not lead.phone:
@@ -909,6 +908,11 @@ async def process_chat(session_id: str, user_message: str, db: DBSession, client
         if summary_parts:
             summary_text = "Known about this user: " + ", ".join(summary_parts) + ".\n"
 
+        # BD-5: Neo4j / graph micro-market context (injected by WhatsAppAgent).
+        if extra_context:
+            summary_text += f"Knowledge graph signal: {extra_context}\n"
+
+        if summary_parts:
             # THE FIX: If they want to visit but are missing details, force Gemini to naturally ask for them.
             # Check if they are discussing a visit in this turn
             wants_visit = lead.visit_date or (lead.intent and "visit" in lead.intent.lower()) or any(

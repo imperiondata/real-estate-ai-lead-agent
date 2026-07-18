@@ -207,6 +207,33 @@ class Agent(Base):
     client = relationship("Client")
 
 
+class ApprovalRequest(Base):
+    """IREIOS 3.0 — Phase 2 HITL approval queue.
+
+    A pending human-approval request created when an agent/workflow emits an
+    action with ``requires_approval=True``. Human managers approve/reject via
+    the dashboard; on approve the original action is resumed through the
+    Automation Engine, on reject it is dropped (and the agent is notified).
+    """
+
+    __tablename__ = "approval_requests"
+
+    id = Column(Integer, primary_key=True, index=True)
+    client_id = Column(Integer, ForeignKey("clients.id", ondelete="CASCADE"), nullable=False, index=True)
+    entity_id = Column(String, nullable=True, index=True)        # lead/session the action concerns
+    action_type = Column(String, nullable=False)
+    action_payload = Column(JSONB, nullable=False, default=dict)
+    status = Column(String, default="pending")                  # pending|approved|rejected|expired
+    requested_by = Column(String, nullable=True)                # agent id that asked
+    resolved_by = Column(String, nullable=True)                 # manager id/name who decided
+    reason = Column(String, nullable=True)
+    correlation_id = Column(String, default=lambda: str(uuid.uuid4()), unique=True, index=True, nullable=False)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    resolved_at = Column(DateTime(timezone=True), nullable=True)
+
+    client = relationship("Client")
+
+
 class AgentLearning(Base):
     """
     P6.1: persisted per-agent win/loss learning, replacing the in-process
@@ -256,3 +283,29 @@ class NotificationLog(Base):
 
     client = relationship("Client")
     lead = relationship("Lead")
+
+
+class LeadMemory(Base):
+    """
+    Phase 7: persistent per-lead conversation memory for the IREIOS memory layer.
+
+    Stores short structured memory items (facts, preferences, intents) keyed by
+    lead, so the agent can recall prior context across sessions without re-reading
+    the full message history. Scoped by client for tenant isolation.
+    """
+    __tablename__ = "lead_memories"
+
+    id = Column(Integer, primary_key=True, index=True)
+    client_id = Column(Integer, ForeignKey("clients.id", ondelete="CASCADE"), nullable=False, index=True)
+    lead_id = Column(Integer, ForeignKey("leads.id", ondelete="CASCADE"), nullable=False, index=True)
+    session_id = Column(String, nullable=True, index=True)
+
+    key = Column(String, nullable=False)            # e.g. "budget", "preference", "objection"
+    value = Column(Text, nullable=True)
+    memory_type = Column(String, default="fact")     # fact | preference | objection | event
+
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+    client = relationship("Client")
+    lead = relationship("Lead")
+

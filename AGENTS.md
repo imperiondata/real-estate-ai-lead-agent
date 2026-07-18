@@ -117,7 +117,7 @@ High-signal, repo-specific facts an agent would likely miss without help.
 
 ## CRM Sync (P5)
 
-- `crm_sync.py`: create-time sync fires once (`sync_lead_to_crm`); later field changes are debounced, not per-turn.
+- `crm_sync.py`: **create-time CRM is bus-owned** (`lead.created` → `crm_automation` → AE→EE `update_crm`). Helpers in `crm_sync` remain for `CRMExecutor` + `crm_resync_job` (debounced field re-sync every 5 min). Do not call `sync_lead_to_crm` from chat/webhook paths.
 - **P5.1:** after a meaningful field change on an already-synced lead, `agent.py` sets `Lead.crm_resync_pending = True`; `crm_resync_job` (scheduler, every 5 min) re-pushes and clears the flag. Failed re-sync keeps the flag set for retry.
 - **P5.2:** extended property map (location, intent, property_type, visit_date, assignee, budget_alignment_status, urgency_level, engagement_score, lead_temperature) gated by `CRM_SYNC_EXTENDED_PROPERTIES` (default True). A 4xx for an unknown custom property drops that property and retries once.
 - **P5.3:** `decide_crm_status_after_poll` leaves `crm_sync_status = "pending"` (never "success") when both `phone` and `name` are still empty after the create-time poll, so the next field update re-syncs.
@@ -165,11 +165,56 @@ IS_PRODUCTION=false
 
 - `EVENT_STREAM_KEY` (default `ireios:events`) — Redis Streams key for the Phase 1 event bus.
 - `EVENT_CONSUMER_GROUP` (default `ireios-cg`) — consumer group name for the bus.
-- `FEATURE_WHATSAPP_V3` (default `false`) — when `true`, WhatsApp/chat routes use the new `WhatsAppAgent` (Phase 5); `false` keeps legacy `agent.process_chat`.
-- `FOLLOWUP_ENGINE` (default `legacy`) — `legacy|v3|shadow` selector for the Phase 4 follow-up port.
-- `NEO4J_URI` / `NEO4J_USER` / `NEO4J_PASSWORD` — Neo4j connection (Phase 7); left empty until the service is added.
-- `N8N_BASE_URL` / `N8N_API_KEY` — n8n automation (Phase 2); left empty = `n8n_not_configured`.
-- These are logged/stored in `.env` (gitignored) and `.env.example`. Adding them in Phase 0 is env hygiene only — no production behavior changes until the consuming phases land.
+- `FEATURE_WHATSAPP_V3` (**default `true`** — production) — WhatsApp/chat routes use `WhatsAppAgent`; set `false` to roll back to `app.agents.qualification.process_chat` only.
+- `FOLLOWUP_ENGINE` (**default `v3`** — production) — `legacy|v3|shadow`. Prod = `v3` (AE→EE). `legacy` is emergency rollback only.
+- `NEO4J_URI` / `NEO4J_USER` / `NEO4J_PASSWORD` — Neo4j (Phase 7). Empty = graph no-op. Local: `bolt://localhost:7687` / `neo4j`/`localpass`.
+- `N8N_BASE_URL` / `N8N_API_KEY` — n8n (optional). Empty = `n8n_not_configured`. See **`docs/N8N_INTEGRATION.md`**.
+- `COMPETITOR_KEYWORDS` — comma-separated watch-list for the competitor monitor (empty = job no-ops).
+- `GOOGLE_CALENDAR_ID` / `GOOGLE_CALENDAR_CREDENTIALS_JSON` / `GOOGLE_CALENDAR_TIMEZONE` — real Google Calendar for `CalendarExecutor`. Empty = synthetic `visit_id` stub fallback (AE contract unchanged).
+
+## Production Go-Live Checklist (config-later flags)
+
+Flip these in `.env` at deploy (see `.env.example` footer): `IS_PRODUCTION=true`, `TEST_MODE=false`, `FOLLOW_UP_TEST_MODE=false`, `FOLLOW_UP_DLQ_TEST=false`, real `TWILIO_*`. Optional integrations: `NEO4J_*`, `N8N_*`, `GOOGLE_CALENDAR_*`, `COMPETITOR_KEYWORDS`. Everything degrades gracefully when an integration is left unconfigured.
+
+## IREIOS 3.0 — Active agents / workflows (full parity)
+
+Registered on the CEO bus in `main.py` lifespan (`register_*(ceo)`), all `status="active"`:
+
+- **`followup_arm`** (`app/workflows/followup_arm.py`) — arms `FollowUpState` on `lead.created`/`conversation.updated`.
+- **`lead_scoring`** (`app/agents/lead_scoring_handler.py`) — rescoring on `conversation.updated`/`lead.created`/`whatsapp.received` → publishes `lead.scored`.
+- **`crm_automation`** (`app/workflows/crm_automation.py`, Task 6.1) — on `lead.*` ensures sticky assignment + AE→EE `update_crm`, publishes `lead.assigned` (idempotent).
+- **`marketing_agent`** (`app/agents/marketing_agent.py`, 8.2) — on `cron.weekly_report`/`campaign.completed` builds segmentation report → `marketing.report.generated`.
+- **`customer_success_agent`** (`app/agents/customer_success_agent.py`, 8.3) — on `booking.confirmed`/`payment.*`/`renewal.due`/`document.pending` fires reminder via AE `notify_agent`. Covers former `retention_agent`.
+- **`kg_event_writer`** (`app/knowledge_graph/event_writers.py`, 7.4) — async Neo4j projections on core events (no-op when Neo4j down).
+- **Direct-invoked (not bus):** `WhatsAppAgent` (via `FEATURE_WHATSAPP_V3`), `SalesAgent` (via `POST /api/v1/leads/{id}/sales-ai`).
+- **Cron (scheduler):** `competitor_monitor_job` (`app/workflows/competitor_monitor.py`, 8.4) nightly 01:00 → `market.alert.generated` on `COMPETITOR_KEYWORDS` matches (publishes via short-lived Redis conn from the scheduler thread).
+- **Placeholders (skipped by CEO):** `pricing_agent`, `negotiation_agent`, `inventory_agent`, `legal_agent`, `finance_agent`, `onboarding_agent` (`app/agents/placeholders.py`).
+
+## IREIOS 3.0 — Neo4j Knowledge Graph (Phase 7 + BD-5 reply path)
+
+- `app/knowledge_graph/neo4j_client.py` (`neo4j_client`) — shared driver, `run()`, `health()`, `migrate_schema()` (idempotent constraints/indexes + `:SchemaVersion{version:1}`). `KnowledgeGraph` (`neo4j_kg.py`) delegates to it.
+- Schema migrate runs in lifespan (no-op when unconfigured).
+- **Writes:** `kg_event_writer` on bus (`lead.created`/`scored`/`assigned`/…). WhatsAppAgent also best-effort `upsert_lead` before the turn so similarity can anchor.
+- **Reads on reply path (BD-5):** `WhatsAppAgent._graph_extra_context` → `graph_client.get_lead_context` → `format_graph_context_for_llm` → injected into `process_chat(..., extra_context=...)` summary for Gemini. Never blocks hard if Neo4j down.
+- **Routes:** `GET /api/v1/graph/health`, `GET /api/v1/graph/leads/{id}/context` (tenant-scoped), `POST /api/v1/graph/upsert` (admin).
+- `neo4j==5.28.2` in `requirements.lock`; docker service `neo4j` (7474/7687).
+
+## WhatsApp message path (current)
+
+```text
+Twilio → /api/v1/whatsapp → lock/dedupe → process_unified_lead
+  → WhatsAppAgent (graph context + qualify + score + tools)
+  → TwiML reply
+  → _emit_turn_events → Redis Streams → CEO agents (CRM/score/KG/arm)
+Follow-ups: FOLLOWUP_ENGINE=v3 → AE → WhatsAppExecutor
+Outbound (alerts/escalation/background): app/execution_engine/outbound.py → EE
+```
+
+## Docs pointers
+
+- n8n future integration: `docs/N8N_INTEGRATION.md`
+- Frontend remaining work: `docs/FRONTEND_BACKLOG.md`
+- Evidence: `plans/IREIOS_3.0_EVIDENCE_PACK.md`
 
 ## IREIOS 3.0 — Event Bus / CEO / Execution Engine (Phase 1)
 

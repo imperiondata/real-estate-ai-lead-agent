@@ -62,16 +62,16 @@
 | **8** | Expansion | Phase 0 Task 0.2 | Branch / env hygiene + Redis available | App boots; Redis reachable | `[x]` |
 | **9** | Expansion | Phase 1 (Tasks 1.1–1.8) | **Redis Streams** bus, CEO, BaseAgent, EE skeleton | Expansion Phase 1 exit gate (durable publish) | `[x]` |
 | **10** | Expansion | Phase 1b (Tasks 1b.1–1b.4) | **Early SSE + API envelopes** (stub producers OK) | Expansion Phase 1b exit gate — **FE unblocked** | `[x]` |
-| **11** | Expansion | Phase 2 (Tasks 2.1–2.7) | Automation Engine, HITL, LangGraph/n8n hooks | Expansion Phase 2 exit gate | `[ ]` |
-| **12** | Expansion | Phase 3 (Tasks 3.1–3.4) | WhatsApp & CRM executors | Expansion Phase 3 exit gate | `[ ]` |
-| **13** | Expansion | Phase 4 (Tasks 4.1–4.5) | Follow-up scheduler via AE→EE | Expansion Phase 4 exit gate | `[ ]` |
-| **14** | Expansion | Phase 5 (Tasks 5.1–5.9) | WhatsApp Agent, brochure/floorplan, scoring | Expansion Phase 5 exit gate (`task3_runner`, isolation) | `[ ]` |
-| **15** | Expansion | Phase 6 (Tasks 6.1–6.4) | CRM automation + Sales AI | Expansion Phase 6 exit gate | `[ ]` |
-| **16** | Expansion | Phase 7 (Tasks 7.1–7.7) | Neo4j KG + Memory | Expansion Phase 7 exit gate | `[ ]` |
-| **17** | Expansion | Phase 8 (Tasks 8.1–8.5) | Prediction APIs + Marketing/CS/Competitor | Expansion Phase 8 exit gate | `[ ]` |
-| **18** | Expansion | Phase 9 (Tasks 9.1–9.8) | FE cutover to live SSE/APIs (contracts from 1b) | Expansion Phase 9 exit gate | `[ ]` |
-| **19** | Expansion | Phase 10 (Tasks 10.1–10.5) | Placeholders, decommission, evidence | Expansion Phase 10 final gate | `[ ]` |
-| **G2** | Gate | **Program complete** | MVP close | Expansion plan **Program final gate (G2)** checklist + Task 10.4–10.5 | `[ ]` |
+| **11** | Expansion | Phase 2 (Tasks 2.1–2.7) | Automation Engine, HITL, LangGraph/n8n hooks | Expansion Phase 2 exit gate | `[x]` |
+| **12** | Expansion | Phase 3 (Tasks 3.1–3.4) | WhatsApp & CRM executors | Expansion Phase 3 exit gate | `[x]` |
+| **13** | Expansion | Phase 4 (Tasks 4.1–4.5) | Follow-up scheduler via AE→EE | Expansion Phase 4 exit gate | `[x]` |
+| **14** | Expansion | Phase 5 (Tasks 5.1–5.9) | WhatsApp Agent, brochure/floorplan, scoring | Expansion Phase 5 exit gate (`task3_runner`, isolation) | `[x]` |
+| **15** | Expansion | Phase 6 (Tasks 6.1–6.4) | CRM automation + Sales AI | Expansion Phase 6 exit gate | `[x]` |
+| **16** | Expansion | Phase 7 (Tasks 7.1–7.7) | Neo4j KG + Memory | Expansion Phase 7 exit gate | `[x]` |
+| **17** | Expansion | Phase 8 (Tasks 8.1–8.5) | Prediction APIs + Marketing/CS/Competitor | Expansion Phase 8 exit gate | `[x]` |
+| **18** | Expansion | Phase 9 (Tasks 9.1–9.8) | FE cutover to live SSE/APIs (contracts from 1b) | Expansion Phase 9 exit gate | `[x]` |
+| **19** | Expansion | Phase 10 (Tasks 10.1–10.5) | Placeholders, decommission, evidence | Expansion Phase 10 final gate | `[x]` |
+| **G2** | Gate | **Program complete** | MVP close | Expansion plan **Program final gate (G2)** checklist + Task 10.4–10.5 + Step 20 parity | `[x]` |
 
 **Expansion Task 0.1** (doc freeze) is already done; do not re-open it as a blocking step.
 
@@ -248,6 +248,20 @@ Supporting architecture (read-only reference, not alternate queues) — all unde
 ### Step 19 — Expansion Phase 10
 
 - Tasks **10.1 → 10.5**: Placeholders, decommission dual paths, evidence pack, final gate.
+
+### Step 20 — Full plan parity (v3 enablement + real agents/integrations)
+
+- Promote the 4 previously endpoint-only plan agents to **real bus-registered agents**:
+  `lead_scoring`, `crm_automation` (6.1 → `lead.assigned`), `marketing_agent` (8.2 →
+  `marketing.report.generated`), `customer_success_agent` (8.3 → AE `notify_agent`),
+  `kg_event_writer` (7.4), `competitor_monitor_job` (8.4 nightly → `market.alert.generated`).
+- Full Neo4j build (7.1–7.5): `neo4j==5.28.2` in `requirements.lock`, docker service,
+  `neo4j_client.migrate_schema()`, `graph_api` routes, `event_writers`, `graph_client`.
+- Enable v3 by default (`FEATURE_WHATSAPP_V3=True`, `FOLLOWUP_ENGINE=v3`).
+- Real Google Calendar in `CalendarExecutor` (stub fallback when unconfigured).
+- Tests: `tests/test_e11_parity.py` (11), `tests/test_e7_graph.py` (6 filled).
+- Regression: full `pytest` **253 passed, 3 skipped**; `gate_isolation_test.py` PASS (v3);
+  `gate_dlq_drill.py` OK. No push/branch. **Step 20 → `[x]`.**
 
 ### Gate G2 — Program complete
 

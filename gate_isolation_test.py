@@ -28,7 +28,7 @@ async def test_isolation():
     session_a = f"+9199{uuid.uuid4().hex[:10]}"
     body = "I want to buy 2BHK Baner"
 
-    async with httpx.AsyncClient(base_url="http://localhost:8000") as client:
+    async with httpx.AsyncClient(base_url="http://localhost:8000", timeout=90.0) as client:
         # Inject a lead for Client A via the chat path (tenant-scoped, no webhook sig needed)
         print(f"\n1. Injecting lead for Client A (id={id_a}) via chat...")
         r = await client.post(

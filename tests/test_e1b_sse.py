@@ -99,7 +99,11 @@ def test_sse_delivers_tenant_scoped_events():
             try:
                 await event_bus.publish("lead.created", "Client_1", "e1", {"n": 1}, source="stub")
                 await event_bus.publish("lead.created", "Client_2", "e2", {"n": 2}, source="stub")
-                await asyncio.sleep(1.0)
+                # Poll for delivery (tolerant of Redis/contention latency).
+                for _ in range(30):
+                    if len(received) >= 1:
+                        break
+                    await asyncio.sleep(0.1)
             finally:
                 event_bus.unsubscribe("*", _handler)
 

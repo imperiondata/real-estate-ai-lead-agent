@@ -21,6 +21,19 @@ services:
       - redisdata:/data
     restart: always
 
+  neo4j:
+    image: neo4j:5-community
+    container_name: neo4j-local
+    environment:
+      NEO4J_AUTH: neo4j/localpass
+      NEO4J_PLUGINS: '["apoc"]'
+    ports:
+      - "127.0.0.1:7474:7474"
+      - "127.0.0.1:7687:7687"
+    volumes:
+      - neo4jdata:/data
+    restart: always
+
   ngrok:
     image: ngrok/ngrok:latest
     container_name: ngrok-local
@@ -49,3 +62,4 @@ services:
 volumes:
   pgdata:
   redisdata:
+  neo4jdata:

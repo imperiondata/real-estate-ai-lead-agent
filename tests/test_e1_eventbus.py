@@ -280,7 +280,11 @@ def test_ceo_publishes_failed_event():
         await bus.start()
         try:
             await bus.publish("lead.created", "t", "e1", {})
-            await asyncio.sleep(0.8)
+            # Poll for the failed event (tolerant of Redis/contention latency).
+            for _ in range(30):
+                if len(failed_seen) >= 1:
+                    break
+                await asyncio.sleep(0.1)
         finally:
             await bus.stop()
         assert len(failed_seen) == 1, failed_seen

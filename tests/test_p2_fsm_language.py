@@ -314,3 +314,93 @@ def test_guard_allows_english_for_english_user():
     assert detect_user_language(user_msg) == "english"
     assert is_hinglish(model_reply) is False
     # Guard does NOT fire: user=english, reply=english → ok
+
+
+def test_is_hinglish_false_positive_let_me():
+    """Normal English 'let me…' must not be flagged as Hinglish."""
+    from agent import is_hinglish
+
+    assert is_hinglish("Let me share some 2BHK options in Baner.") is False
+    assert is_hinglish("Would you like me to shortlist a few?") is False
+    assert is_hinglish("Tell me your budget when ready.") is False
+
+
+def test_is_hinglish_still_detects_real_hinglish():
+    from agent import is_hinglish
+
+    assert is_hinglish("Hinjewadi mein 2BHKs ke liye options hain.") is True
+    assert is_hinglish("Aapka budget kya hai?") is True
+    assert is_hinglish("mujhe 2bhk chahiye") is True
+
+
+def test_fallback_asks_only_budget_when_name_known():
+    """DB already has name/loc/type — fallback must not re-ask name."""
+    from types import SimpleNamespace
+    from agent import build_english_fallback_reply
+
+    lead = SimpleNamespace(
+        name="Maitri",
+        location="Baner",
+        property_type="2BHK",
+        budget=None,
+    )
+    reply = build_english_fallback_reply(lead)
+    assert "Maitri" in reply
+    assert "budget" in reply.lower()
+    assert "name" not in reply.lower()
+    assert "Baner" in reply
+    assert "2BHK" in reply
+
+
+def test_fallback_asks_name_when_missing():
+    from types import SimpleNamespace
+    from agent import build_english_fallback_reply
+
+    lead = SimpleNamespace(
+        name=None,
+        location="Baner",
+        property_type="2BHK",
+        budget=None,
+    )
+    reply = build_english_fallback_reply(lead)
+    assert "name" in reply.lower()
+    assert "budget" in reply.lower()
+
+
+def test_fallback_no_asks_when_fully_known():
+    from types import SimpleNamespace
+    from agent import build_english_fallback_reply
+
+    lead = SimpleNamespace(
+        name="Maitri",
+        location="Baner",
+        property_type="2BHK",
+        budget=80,
+    )
+    reply = build_english_fallback_reply(lead)
+    assert "Maitri" in reply
+    assert "name" not in reply.lower()
+    assert "budget" not in reply.lower()
+    assert "site visit" in reply.lower() or "shortlisted" in reply.lower()
+
+
+def test_guard_path_with_name_known_simulates_user_bug():
+    """English user + false-positive Hinglish reply → field-aware fallback."""
+    from types import SimpleNamespace
+    from agent import is_hinglish, build_english_fallback_reply
+
+    user_msg = "hi.. im maitri i want 2bhk in baner"
+    # Pre-fix: this English reply used to trip is_hinglish via bare "me"
+    model_reply = "Got it Maitri! Let me share 2BHK options in Baner. What's your budget?"
+
+    assert detect_user_language(user_msg) == "english"
+    assert is_hinglish(model_reply) is False
+
+    # If a real Hinglish reply still trips the guard, fallback must respect lead.name
+    hinglish_reply = "Baner mein 2BHK options hain. Budget kya hai aur aapka naam?"
+    assert is_hinglish(hinglish_reply) is True
+    lead = SimpleNamespace(name="Maitri", location="Baner", property_type="2BHK", budget=None)
+    fallback = build_english_fallback_reply(lead)
+    assert "may i know your name" not in fallback.lower()
+    assert "name" not in fallback.lower()
+    assert "budget" in fallback.lower()

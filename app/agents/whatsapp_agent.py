@@ -135,6 +135,36 @@ class WhatsAppAgent:
     """v3 chat agent. Delegates qualification to the shared pipeline and adds
     brochure/floorplan tools + scoring + Neo4j graph context on the reply path."""
 
+    def _upsert_lead_snapshot(self, lead: Optional[Lead], client_id: int) -> None:
+        """Best-effort Neo4j Lead upsert from current ORM fields (never raises)."""
+        if not lead or not getattr(lead, "id", None):
+            return
+        try:
+            from app.knowledge_graph.neo4j_kg import knowledge_graph
+
+            if not knowledge_graph.available:
+                return
+            knowledge_graph.upsert_lead(
+                lead.id,
+                client_id,
+                {
+                    k: v
+                    for k, v in {
+                        "name": lead.name,
+                        "location": lead.location,
+                        "property_type": lead.property_type,
+                        "lead_temperature": lead.lead_temperature,
+                        "intent": lead.intent,
+                        "conversion_probability": getattr(
+                            lead, "conversion_probability", None
+                        ),
+                    }.items()
+                    if v is not None
+                },
+            )
+        except Exception as e:  # noqa: BLE001
+            logger.debug("graph upsert skipped: %s", e)
+
     def _graph_extra_context(self, lead: Optional[Lead], client_id: int) -> str:
         """BD-5: best-effort Neo4j context for the LLM (never raises / blocks hard)."""
         if not lead or not getattr(lead, "id", None):
@@ -143,27 +173,7 @@ class WhatsAppAgent:
             from app.clients.graph_client import format_graph_context_for_llm, graph_client
 
             # Ensure this lead exists in the graph so similarity queries can anchor.
-            try:
-                from app.knowledge_graph.neo4j_kg import knowledge_graph
-
-                if knowledge_graph.available:
-                    knowledge_graph.upsert_lead(
-                        lead.id,
-                        client_id,
-                        {
-                            k: v
-                            for k, v in {
-                                "name": lead.name,
-                                "location": lead.location,
-                                "property_type": lead.property_type,
-                                "lead_temperature": lead.lead_temperature,
-                                "intent": lead.intent,
-                            }.items()
-                            if v is not None
-                        },
-                    )
-            except Exception as e:  # noqa: BLE001
-                logger.debug("graph upsert pre-chat skipped: %s", e)
+            self._upsert_lead_snapshot(lead, client_id)
 
             ctx = graph_client.get_lead_context(lead.id, client_id)
             return format_graph_context_for_llm(ctx)
@@ -204,6 +214,9 @@ class WhatsAppAgent:
         for k, v in scores.items():
             setattr(lead, k, v)
         db.commit()
+
+        # Post-turn graph sync so location/name changes in this turn land same-turn.
+        self._upsert_lead_snapshot(lead, client_id)
 
         # v3 tool routing: brochure/floorplan reply is returned to the caller
         # (TwiML /chat JSON). Do NOT also AE-send here — that double-delivers on

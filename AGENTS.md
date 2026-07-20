@@ -13,6 +13,9 @@ High-signal, repo-specific facts an agent would likely miss without help.
 | Start frontend | `cd frontend && npm run dev` |
 | Docker services | `docker compose up -d` (pg, redis, ngrok, frontend) |
 | Seed local test clients | `python seed.py` → keys `secret-client-key-123` / `secret-client-key-456` |
+| Seed 1000 dummy leads + Neo4j | `python seed_dummy_leads.py` (`--count`, `--purge-only`, `--no-neo4j`) |
+| Project PG leads → Neo4j | `python project_leads_to_neo4j.py` (`--client-id`, `--source dummy_seed`) |
+| Ops / maintenance runbook | `docs/MAINTENANCE.md` |
 | Provision production client | `python add_client.py` (interactive, generates secure keys) |
 | Stress test (126 cases) | `python task3_runner.py` |
 | Filter stress test | `python task3_runner.py --category HOT` (`--test-id R01`, `--skip-db`, `--base-url`, `--api-key`) |
@@ -194,7 +197,7 @@ Registered on the CEO bus in `main.py` lifespan (`register_*(ceo)`), all `status
 
 - `app/knowledge_graph/neo4j_client.py` (`neo4j_client`) — shared driver, `run()`, `health()`, `migrate_schema()` (idempotent constraints/indexes + `:SchemaVersion{version:1}`). `KnowledgeGraph` (`neo4j_kg.py`) delegates to it.
 - Schema migrate runs in lifespan (no-op when unconfigured).
-- **Writes:** `kg_event_writer` on bus (`lead.created`/`scored`/`assigned`/…). WhatsAppAgent also best-effort `upsert_lead` before the turn so similarity can anchor.
+- **Writes:** `kg_event_writer` on bus (`lead.created`/`qualified`/`scored`/`conversation.updated`/`assigned`/`site_visit.scheduled`). Writer **hydrates props from live Postgres** before upsert so sparse `lead.scored` payloads cannot leave stale `location`/name. WhatsAppAgent best-effort `upsert_lead` **pre-turn** (similarity anchor) and **post-turn** (same-turn field sync after qualify+score).
 - **Reads on reply path (BD-5):** `WhatsAppAgent._graph_extra_context` → `graph_client.get_lead_context` → `format_graph_context_for_llm` → injected into `process_chat(..., extra_context=...)` summary for Gemini. Never blocks hard if Neo4j down.
 - **Routes:** `GET /api/v1/graph/health`, `GET /api/v1/graph/leads/{id}/context` (tenant-scoped), `POST /api/v1/graph/upsert` (admin).
 - `neo4j==5.28.2` in `requirements.lock`; docker service `neo4j` (7474/7687).

@@ -6,14 +6,17 @@ failures log (and could DLQ) but never fail the producing agent, and the graph
 being unavailable is a clean no-op (Postgres stays the source of truth).
 
 Handled events:
-    lead.created / lead.qualified / lead.scored -> upsert Lead node
-    lead.assigned                                -> Lead-[:ASSIGNED_TO]->Agent
-    site_visit.scheduled                         -> Lead visit props
+    lead.created / lead.qualified / lead.scored / conversation.updated
+        -> upsert Lead node (props hydrated from live Postgres row)
+    lead.assigned
+        -> Lead-[:ASSIGNED_TO]->Agent (+ full Lead refresh from PG)
+    site_visit.scheduled
+        -> Lead visit props
 """
 from __future__ import annotations
 
 import logging
-from typing import Optional
+from typing import Any, Optional
 
 from app.knowledge_graph.neo4j_kg import knowledge_graph
 
@@ -23,9 +26,24 @@ GRAPH_EVENTS = [
     "lead.created",
     "lead.qualified",
     "lead.scored",
+    "conversation.updated",
     "lead.assigned",
     "site_visit.scheduled",
 ]
+
+# Demographic + score fields projected onto :Lead. Postgres wins over sparse payloads.
+LEAD_PROP_FIELDS = (
+    "name",
+    "location",
+    "property_type",
+    "lead_temperature",
+    "conversion_probability",
+    "intent",
+)
+
+_UPSERT_EVENTS = frozenset(
+    {"lead.created", "lead.qualified", "lead.scored", "conversation.updated"}
+)
 
 
 def _resolve_client_id(tenant_id) -> Optional[int]:
@@ -50,6 +68,47 @@ def _lead_id(envelope: dict) -> Optional[int]:
         return None
 
 
+def _props_from_payload(payload: dict) -> dict:
+    return {
+        k: payload[k]
+        for k in LEAD_PROP_FIELDS
+        if payload.get(k) is not None
+    }
+
+
+def _props_from_lead_row(lead: Any) -> dict:
+    props = {}
+    for k in LEAD_PROP_FIELDS:
+        v = getattr(lead, k, None)
+        if v is not None:
+            props[k] = v
+    return props
+
+
+def _hydrate_lead_props(lead_id: int, client_id: int, payload: dict) -> dict:
+    """Build Lead props: event payload as base, live Postgres row overwrites.
+
+    Sparse events like ``lead.scored`` only carry scores; without PG hydration
+    location/name stay stuck at first-create values in Neo4j.
+    """
+    props = _props_from_payload(payload or {})
+    try:
+        from database import SessionLocal
+        from models import Lead
+
+        with SessionLocal() as db:
+            lead = (
+                db.query(Lead)
+                .filter(Lead.id == lead_id, Lead.client_id == client_id)
+                .first()
+            )
+            if lead is not None:
+                props.update(_props_from_lead_row(lead))
+    except Exception as e:  # noqa: BLE001 - never fail the writer on DB blips
+        logger.debug("kg hydrate from PG failed lead=%s: %s", lead_id, e)
+    return props
+
+
 async def graph_event_writer(envelope: dict) -> None:
     """CEO-registered handler: project a bus event into Neo4j (best-effort)."""
     if not knowledge_graph.available:
@@ -61,17 +120,13 @@ async def graph_event_writer(envelope: dict) -> None:
         return
     payload = envelope.get("payload") or {}
     try:
-        if event_type in ("lead.created", "lead.qualified", "lead.scored"):
-            props = {
-                k: payload[k]
-                for k in ("name", "location", "property_type", "lead_temperature",
-                          "conversion_probability", "intent")
-                if payload.get(k) is not None
-            }
+        if event_type in _UPSERT_EVENTS:
+            props = _hydrate_lead_props(lead_id, client_id, payload)
             knowledge_graph.upsert_lead(lead_id, client_id, props)
         elif event_type == "lead.assigned":
+            props = _hydrate_lead_props(lead_id, client_id, payload)
+            knowledge_graph.upsert_lead(lead_id, client_id, props)
             agent_name = payload.get("assigned_agent") or payload.get("agent_name")
-            knowledge_graph.upsert_lead(lead_id, client_id, {})
             if agent_name:
                 knowledge_graph.link_lead_agent(lead_id, str(agent_name), client_id)
         elif event_type == "site_visit.scheduled":
@@ -79,7 +134,9 @@ async def graph_event_writer(envelope: dict) -> None:
                 "visit_id": payload.get("visit_id"),
                 "visit_date": payload.get("visit_date"),
             }
-            knowledge_graph.upsert_lead(lead_id, client_id, {k: v for k, v in props.items() if v})
+            knowledge_graph.upsert_lead(
+                lead_id, client_id, {k: v for k, v in props.items() if v}
+            )
     except Exception as e:  # noqa: BLE001 - writer never fails the agent
         logger.warning("graph writer failed for %s lead=%s: %s", event_type, lead_id, e)
 

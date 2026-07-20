@@ -384,6 +384,35 @@ After every bug-fix slice:
 
 ---
 
+### KG-1 — Neo4j Lead location stale after PG preference change
+
+**Bug:** Preference change (e.g. Wakad → Baner) updated Postgres but Neo4j Browser still showed Wakad after refresh. Root cause: post-create graph writes were mostly `lead.scored` (scores-only payload); `conversation.updated` (which carries full fields) was not a graph event; WhatsAppAgent only upserted **pre-turn** lead state.
+
+**Fix (full hardened):**
+- `event_writers._hydrate_lead_props`: load Lead from PG (tenant-scoped); PG overwrites sparse event payload
+- Subscribe `conversation.updated` in `GRAPH_EVENTS`
+- `lead.assigned` also refreshes full Lead props from PG before link
+- `WhatsAppAgent._upsert_lead_snapshot` pre- and post-turn
+- Tests in `tests/test_e7_graph.py`
+
+**Files:** `app/knowledge_graph/event_writers.py`, `app/agents/whatsapp_agent.py`, `tests/test_e7_graph.py`, `AGENTS.md`
+
+---
+
+### P2.6b — Language guard re-asks name after extract (field-blind fallback)
+
+**Bug:** Message `"hi.. im maitri i want 2bhk in baner"` saved `name=Maitri` to DB but reply still asked "may I know your name?". Root cause: (1) `is_hinglish` treated bare `"me"` as Hinglish so English replies like "Let me share…" tripped the P2.6 output guard; (2) guard fallback always hard-coded budget + name asks and ignored already-extracted lead fields. Not a backfill bug.
+
+**Fix:**
+- `is_hinglish`: drop short false positives (`me`, `ha`, `ka`, `ki`, `ko`, `kar`); keep strong tokens (`mein`, `chahiye`, `hai`, …)
+- `build_english_fallback_reply(lead)`: only ask missing budget/name/location/property_type; greet with name when known
+- Output guard uses field-aware fallback
+- Tests: `let me` false-positive, fallback with name known, full-known CTA
+
+**Files:** `agent.py`, `tests/test_p2_fsm_language.py`
+
+---
+
 ## Phase 3 status
 
 | ID | Status | Summary | Tests |

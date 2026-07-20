@@ -50,9 +50,52 @@ PUNE_AREAS = ["wakad road", "wakad", "hinjewadi", "baner", "kharadi", "kothrud",
 
 
 def is_hinglish(text: str) -> bool:
-    hinglish_keywords = {"kya", "hai", "hain", "mujhe", "mein", "me", "chahiye", "tha", "bas", "nahi", "ha", "haan", "kab", "ka", "ki", "ko", "kar", "karna"}
+    # Strong Hindi/Hinglish tokens only. Bare "me"/"ha"/"ka"/"ki"/"ko" are English
+    # false positives ("let me share…", "ha ha") and must not trip the output guard.
+    hinglish_keywords = {
+        "kya", "hai", "hain", "mujhe", "mein", "chahiye", "tha", "bas", "nahi",
+        "haan", "kab", "karna", "liye", "aapka", "apna", "humare", "ke",
+    }
     words = set(text.lower().replace("?", "").replace(".", "").replace(",", "").split())
     return bool(words.intersection(hinglish_keywords))
+
+
+def build_english_fallback_reply(lead) -> str:
+    """P2.6 safe English reply that only asks for fields still missing on the lead."""
+    _loc = (getattr(lead, "location", None) if lead else None) or "Pune"
+    _pt = (getattr(lead, "property_type", None) if lead else None) or "property"
+    name = (getattr(lead, "name", None) or "").strip() if lead else ""
+    budget = getattr(lead, "budget", None) if lead else None
+    has_budget = budget is not None and str(budget).strip() not in ("", "0", "None")
+    has_location = bool(getattr(lead, "location", None) if lead else None)
+    has_property_type = bool(getattr(lead, "property_type", None) if lead else None)
+
+    asks = []
+    if not has_budget:
+        asks.append("your approximate budget")
+    if not name:
+        asks.append("your name")
+    if not has_location:
+        asks.append("which area you're interested in")
+    if not has_property_type:
+        asks.append("property type (e.g. 2BHK)")
+
+    name_bit = f", {name}" if name else ""
+    if asks:
+        if len(asks) == 1:
+            ask_str = asks[0]
+        elif len(asks) == 2:
+            ask_str = f"{asks[0]} and {asks[1]}"
+        else:
+            ask_str = ", ".join(asks[:-1]) + f", and {asks[-1]}"
+        return (
+            f"Got it{name_bit} — {_pt} options in {_loc} are available. "
+            f"Could you share {ask_str}?"
+        )
+    return (
+        f"Got it{name_bit} — {_pt} options in {_loc} are available. "
+        f"Would you like shortlisted options or to book a site visit?"
+    )
 
 
 def detect_user_language(text: str) -> str:
@@ -1416,14 +1459,10 @@ async def process_chat(session_id: str, user_message: str, db: DBSession, client
 
     # P2.6: Language output guard — English user must not receive Hinglish reply.
     # Catches mismatches from ALL paths (tool conversational_reply, response.text, fallback).
+    # Fallback is field-aware so we never re-ask name/budget/etc. already on the lead.
     if detect_user_language(user_message) == "english" and is_hinglish(final_text):
         logger.warning(f"LANGUAGE_MISMATCH | session={session_id} | user=en | reply=hinglish")
-        _loc = lead.location or "Pune"
-        _pt = lead.property_type or "property"
-        final_text = (
-            f"Got it — {_pt} options in {_loc} are available. "
-            f"What's your approximate budget, and may I know your name?"
-        )
+        final_text = build_english_fallback_reply(lead)
 
     # Save Gemini's textual response to the Message table (skip if already saved inside tool call block)
     if not locals().get('message_saved', False):

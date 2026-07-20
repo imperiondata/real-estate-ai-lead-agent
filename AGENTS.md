@@ -229,10 +229,26 @@ Outbound (alerts/escalation/background): app/execution_engine/outbound.py → EE
 
 ## IREIOS 3.0 — Early API envelopes + SSE (Phase 1b, FE unblock)
 
-- `GET /api/v1/events/stream` — tenant-scoped SSE bridge from the bus. Auth: `?api_key=` / `X-API-Key` **or** the `jwt` HttpOnly cookie. Filters events to the caller's `Client_<id>`; `: ping` heartbeat every 15s; `503` if bus down. Consume via `curl -N` or browser `EventSource`.
-- `GET /api/v1/leads/{id}/timeline` — envelope-shaped events for a lead (sourced from `event_logs` via the lead's session); `404` if not owned by the caller's client. Stable schema so the FE can bind types now.
-- `POST /api/v1/events/stub` — admin-gated (`X-Admin-Token` == `ADMIN_API_KEY`) publisher of sample events; returns `event_id`. Demo CLI: `python publish_stub_event.py --event-type lead.created --tenant-id Client_1 --payload '{"name":"demo"}'`.
+- `GET /api/v1/events/stream` — tenant-scoped SSE bridge from the bus. Auth: `?api_key=` / `X-API-Key` **or** the `jwt` HttpOnly cookie. Filters events to the caller's `Client_<id>`; `: ping` heartbeat every 15s; `503` if bus down.
+- `GET /api/v1/events/leads/{id}/timeline` — envelope-shaped events for a lead (sourced from `event_logs` via the lead's session); `404` if not owned by the caller's client.
+- `POST /api/v1/events/stub` — admin-gated (`X-Admin-Token` == `ADMIN_API_KEY`) publisher of sample events; returns `event_id`.
 - Routes live in `app/api/events.py` (`events_router`), mounted in `main.py`. `EventBusClient` has `subscribe`/`unsubscribe`.
+- **Smoke:**
+  ```powershell
+  curl -N "http://localhost:8000/api/v1/events/stream?api_key=secret-client-key-123"
+  python publish_stub_event.py --event-type lead.created --tenant-id Client_1 --payload "{\"name\":\"demo\"}"
+  ```
+- Contracts: `plans/IREIOS_3.0_API_SSE_CONTRACTS.md`. FE cutover: `docs/FRONTEND_BACKLOG.md`. Wipes / Neo4j ops: `docs/MAINTENANCE.md` §4.1.
+
+## Dev data wipes (soft / hard)
+
+Postgres ≠ Neo4j — clear both when testing graph + chat. Full SQL/Cypher: `docs/MAINTENANCE.md` §4.1 and `README.md` → Resetting Test Data.
+
+| | Postgres | Neo4j |
+|--|----------|--------|
+| **Soft** | TRUNCATE traffic tables; keep `clients`/`agents` | `MATCH (n:Lead) DETACH DELETE n;` |
+| **Hard** | + `agents`,`clients` then `python seed.py` | `MATCH (n) WHERE NOT n:SchemaVersion DETACH DELETE n;` |
+| **WA retest + clean graph** | soft PG + soft Neo4j, then send message | |
 
 ---
 

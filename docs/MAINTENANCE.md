@@ -112,12 +112,88 @@ Idempotent-ish additive SQL. After pull: migrate → restart uvicorn.
 | Goal | Approach |
 |------|----------|
 | Reset dummy graph load test | `python seed_dummy_leads.py --purge-only` |
-| Full tenant wipe | Dangerous — prefer restore from backup or drop DB volume |
+| Soft / hard wipes | §4.1 below (canonical) |
+| Full tenant wipe | Postgres **hard** + `seed.py`; or restore from backup |
 | DLQ stuck events | `python dlq_replay.py` after fixing root cause |
 
 ### Multi-tenant rule
 
 Every query on client data **must** filter `client_id`. Session ids are scoped `{client_id}_…` at the webhook boundary.
+
+### 4.1 Soft / hard wipes (canonical — current schema)
+
+Postgres and Neo4j are **independent**. Truncating Postgres does **not** clear Neo4j.
+
+**Connect PG:** `psql postgresql://realestate:localpass@localhost:5432/realestate_db`  
+**Neo4j Browser:** `http://localhost:7474` · bolt `bolt://localhost:7687` · user/pass `neo4j` / `localpass`
+
+#### Postgres — soft (keep `clients` + `agents`)
+
+```sql
+TRUNCATE
+  messages,
+  event_logs,
+  dlq_events,
+  follow_up_states,
+  lead_memories,
+  approval_requests,
+  agent_learning,
+  notification_logs,
+  leads,
+  sessions,
+  webhook_logs
+RESTART IDENTITY CASCADE;
+```
+
+#### Postgres — hard (wipe tenants too)
+
+```sql
+TRUNCATE
+  messages,
+  event_logs,
+  dlq_events,
+  follow_up_states,
+  lead_memories,
+  approval_requests,
+  agent_learning,
+  notification_logs,
+  leads,
+  sessions,
+  webhook_logs,
+  agents,
+  clients
+RESTART IDENTITY CASCADE;
+```
+
+Then: `python seed.py`
+
+#### Neo4j — soft (leads; keep `:SchemaVersion`)
+
+```cypher
+MATCH (n:Lead) DETACH DELETE n;
+```
+
+Optional orphan cleanup after soft lead delete:
+
+```cypher
+MATCH (n:Agent) DETACH DELETE n;
+```
+
+#### Neo4j — hard (all nodes except schema marker)
+
+```cypher
+MATCH (n) WHERE NOT n:SchemaVersion DETACH DELETE n;
+```
+
+#### Fresh WhatsApp retest
+
+| Goal | Commands |
+|------|----------|
+| Chat/CRM only | Postgres **soft** → send WA |
+| Chat + clean graph UI / similar-lead context | Postgres **soft** + Neo4j **soft** → send WA |
+| Full local reset | Postgres **hard** + `seed.py` + Neo4j **hard** |
+
+New WA traffic **upserts** into Neo4j; it does **not** remove old dummy nodes left from a prior bulk seed.
 
 ---
 
@@ -133,10 +209,26 @@ Every query on client data **must** filter `client_id`. Session ids are scoped `
 
 - Redis down → bus publish fails loud; WhatsApp path may degrade depending on lock fallback.
 - After Redis volume wipe: groups recreate on `event_bus.start()`; in-flight PEL is gone.
-- Demo inject: `python publish_stub_event.py --event-type lead.created --tenant-id Client_1 --payload "{}"`
-- Live tail: `curl -N "http://localhost:8000/api/v1/events/stream?api_key=SECRET"`
+- Do **not** treat Redis as durable business state; Postgres is.
 
-Do **not** treat Redis as durable business state; Postgres is.
+### SSE smoke (Phase 1b)
+
+```powershell
+# Terminal A — tenant-filtered live stream (seed.py key for client 1)
+curl -N "http://localhost:8000/api/v1/events/stream?api_key=secret-client-key-123"
+
+# Terminal B — publish without WhatsApp/LLM
+python publish_stub_event.py --event-type lead.created --tenant-id Client_1 --payload "{\"name\":\"demo\"}"
+```
+
+| Route | Auth | Notes |
+|-------|------|--------|
+| `GET /api/v1/events/stream` | `?api_key=` / `X-API-Key` **or** `jwt` cookie | `: ping` every 15s; `503` if bus down |
+| `GET /api/v1/events/leads/{id}/timeline` | same | From `event_logs`; 404 cross-tenant |
+| `POST /api/v1/events/stub` | `X-Admin-Token` = `ADMIN_API_KEY` | Returns `event_id` |
+
+Envelope fields (bus): `event_id`, `event_type`, `tenant_id`, `entity_id`, `source`, `timestamp`, `correlation_id`, `payload`.  
+Contracts: `plans/IREIOS_3.0_API_SSE_CONTRACTS.md`.
 
 ---
 
@@ -147,15 +239,16 @@ Do **not** treat Redis as durable business state; Postgres is.
 - **Postgres = source of truth** for leads.
 - Neo4j = **async projection** (`kg_event_writer` on bus) + WhatsApp pre/post-turn upsert + optional batch project.
 - Similarity today: same `client_id` + same `location` string (not vector layout in Browser).
+- Local: `NEO4J_URI=bolt://localhost:7687`, `NEO4J_USER=neo4j`, `NEO4J_PASSWORD=localpass` (see `.env.example`).
 
 ### Health
 
 ```text
-GET /api/v1/graph/health
+GET http://localhost:8000/api/v1/graph/health
 GET /api/v1/graph/leads/{id}/context   # tenant-scoped
 ```
 
-Browser (http://localhost:7474): use filtered Cypher only:
+Browser (`http://localhost:7474`): use filtered Cypher only:
 
 ```cypher
 MATCH (l:Lead {client_id: 1}) RETURN count(l);
@@ -173,7 +266,7 @@ python project_leads_to_neo4j.py --client-id 1 --source dummy_seed
 python project_leads_to_neo4j.py --dry-run
 ```
 
-Use after: Neo4j volume reset, schema change, bulk SQL seed without bus events.
+Use after: Neo4j volume reset, schema change, bulk SQL seed without bus events. Wipes: §4.1.
 
 ### Schema
 

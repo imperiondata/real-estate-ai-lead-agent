@@ -304,26 +304,44 @@ FOLLOW_UP_TEST_MODE=false
 FOLLOW_UP_DLQ_TEST=false
 TEST_MODE=false
 
-# --- IREIOS 3.0 expansion (consumed starting in later phases; safe legacy defaults) ---
-# Redis Streams event bus (Phase 1)
+# --- IREIOS 3.0 (production-oriented defaults; flip TEST_* off for real Twilio) ---
+# Redis Streams event bus
 EVENT_STREAM_KEY=ireios:events
 EVENT_CONSUMER_GROUP=ireios-cg
 
-# WhatsApp Agent v3 feature flag (Phase 5) — false keeps the legacy process_chat path
-FEATURE_WHATSAPP_V3=false
+# WhatsApp Agent v3 + follow-up via Automation Engine → Execution Engine
+FEATURE_WHATSAPP_V3=true
+FOLLOWUP_ENGINE=v3
 
-# Follow-up engine selector (Phase 4): legacy | v3 | shadow
-FOLLOWUP_ENGINE=legacy
+# Neo4j knowledge graph — host API + docker Neo4j
+# Leave NEO4J_URI empty for graceful no-op (chat still works).
+# Setup: docker compose up -d neo4j  →  http://localhost:7474  · bolt://localhost:7687
+# Auth must match docker-compose NEO4J_AUTH (default neo4j/localpass)
+NEO4J_URI=bolt://localhost:7687
+NEO4J_USER=neo4j
+NEO4J_PASSWORD=localpass
 
-# Neo4j knowledge graph (Phase 7)
-NEO4J_URI=
-NEO4J_USER=
-NEO4J_PASSWORD=
-
-# n8n automation (Phase 2)
+# n8n automation (optional — empty = n8n_not_configured)
 N8N_BASE_URL=
 N8N_API_KEY=
 ```
+
+After API start with Neo4j up: `GET http://localhost:8000/api/v1/graph/health` → `available: true`.
+
+### Event bus SSE smoke (Phase 1b)
+
+```powershell
+# Terminal A — live stream (seed client key from seed.py)
+curl -N "http://localhost:8000/api/v1/events/stream?api_key=secret-client-key-123"
+
+# Terminal B — inject a demo event (no WhatsApp/LLM required)
+python publish_stub_event.py --event-type lead.created --tenant-id Client_1 --payload "{\"name\":\"demo\"}"
+```
+
+Auth alternatives: `X-API-Key` header, or browser `EventSource` with HttpOnly `jwt` cookie.  
+Timeline: `GET /api/v1/events/leads/{id}/timeline`. Admin stub HTTP: `POST /api/v1/events/stub` + `X-Admin-Token`.  
+Contracts: `plans/IREIOS_3.0_API_SSE_CONTRACTS.md`, FE checklist: `docs/FRONTEND_BACKLOG.md`.  
+Full ops runbook: `docs/MAINTENANCE.md`.
 
 ---
 
@@ -332,12 +350,12 @@ N8N_API_KEY=
 When returning after closing everything:
 
 ```powershell
-# 1. Restart Docker services (postgres, redis, ngrok, frontend)
+# 1. Restart Docker services (postgres, redis, neo4j, ngrok, frontend)
 docker compose up -d
 
 # 2. Reactivate venv and start the server
 cd path\to\project
-venv\Scripts\activate
+.\.venv\Scripts\Activate.ps1
 uvicorn main:app --host 0.0.0.0 --port 8000 --reload
 ```
 
@@ -351,15 +369,80 @@ uvicorn main:app --host 0.0.0.0 --port 8000 --reload
 
 ## Resetting Test Data
 
-To clear all lead data and start fresh without touching containers:
+Postgres and Neo4j are **separate**. Truncating Postgres does **not** clear the graph.  
+Connect PG: `psql postgresql://realestate:localpass@localhost:5432/realestate_db`  
+Neo4j Browser: `http://localhost:7474` (or cypher-shell).
+
+### Postgres — soft (keep tenants / login)
+
+Wipes CRM traffic; keeps `clients` + `agents` (no need to re-run `seed.py`).
 
 ```sql
--- Connect first:
--- psql postgresql://realestate:localpass@localhost:5432/realestate_db
-
-TRUNCATE messages, event_log, dlq_events, follow_up_states, leads, sessions
+TRUNCATE
+  messages,
+  event_logs,
+  dlq_events,
+  follow_up_states,
+  lead_memories,
+  approval_requests,
+  agent_learning,
+  notification_logs,
+  leads,
+  sessions,
+  webhook_logs
 RESTART IDENTITY CASCADE;
 ```
+
+### Postgres — hard (full tenant wipe)
+
+```sql
+TRUNCATE
+  messages,
+  event_logs,
+  dlq_events,
+  follow_up_states,
+  lead_memories,
+  approval_requests,
+  agent_learning,
+  notification_logs,
+  leads,
+  sessions,
+  webhook_logs,
+  agents,
+  clients
+RESTART IDENTITY CASCADE;
+```
+
+Then: `python seed.py`
+
+### Neo4j — soft (leads only; keep schema)
+
+```cypher
+MATCH (n:Lead) DETACH DELETE n;
+```
+
+Optional: drop orphan agent nodes left after lead delete:
+
+```cypher
+MATCH (n:Agent) DETACH DELETE n;
+```
+
+### Neo4j — hard (all graph data except schema marker)
+
+```cypher
+MATCH (n) WHERE NOT n:SchemaVersion DETACH DELETE n;
+```
+
+### Fresh WhatsApp test
+
+| Goal | Run |
+|------|-----|
+| Clean chat/CRM only | Postgres **soft** → send WA |
+| Clean chat + clean Browser / similar-lead context | Postgres **soft** + Neo4j **soft** → send WA |
+| Nuclear local reset | Postgres **hard** + `seed.py` + Neo4j **hard** |
+
+Dummy bulk load only: `python seed_dummy_leads.py --purge-only` (or full reseed).  
+Re-project PG → Neo4j anytime: `python project_leads_to_neo4j.py`.
 
 ---
 

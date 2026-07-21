@@ -59,5 +59,10 @@ n8n is **orchestration around** the OS, not a replacement for the CEO/AE/EE spin
 ## Status
 
 - Client scaffold: **shipped** (`app/automation_engine/n8n_client.py`)
-- Live workflows: **not provisioned** (config-later)
+- AE `template_type=n8n` dispatch: **planned Wave A.3** (`plans/IREIOS_3.0_WAVE_A_D_EXPANSION.md`) — today `engine.submit` still runs linear EE only
+- Live workflows: **not provisioned** (config-later → Wave A.0.3 + B.5 + D.3)
 - Owner: backend ops when first workflow is approved
+
+## Practicality vs LangGraph
+
+Prefer **n8n** for Slack/email/Drive/partner connectors. Prefer **LangGraph** (or existing HITL pause) for in-process multi-step AI. Do not put WhatsApp TwiML or the 6-field gate in n8n. Full decision table: Wave plan §0.3 Q1.

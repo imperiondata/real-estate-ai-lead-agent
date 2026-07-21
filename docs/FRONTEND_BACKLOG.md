@@ -50,10 +50,24 @@ Contracts: `plans/IREIOS_3.0_API_SSE_CONTRACTS.md`, OpenAPI `plans/openapi_ireio
 - `NEXT_PUBLIC_API_URL` → backend
 - Ensure cookie path works for SSE (same site)
 
+## Upcoming backend APIs (Wave A–D — do not block current cutover)
+
+Backend depth-fill plan: `plans/IREIOS_3.0_WAVE_A_D_EXPANSION.md`. When shipped, FE can later bind:
+
+| API / event | Wave | FE use |
+|-------------|------|--------|
+| `marketing.report.generated` (SSE) | A–B | Marketing / executive panels |
+| Lifecycle inject is admin-only | A | Optional ops tools |
+| Sales auto-NBA still exposes `POST .../sales-ai` | B | Copilot button (already listed) |
+| `GET /api/v1/predictions/revenue` etc. | D | Replace `mockForecastData` |
+| `GET /api/v1/inventory/match` | C | Twin / inventory widgets |
+| Approvals already live | — | HITL UI |
+
 ## Out of scope for FE
 - Changing bus schema (frozen in Phase 1b)
 - Direct Redis / Neo4j access
 - Twilio webhooks
+- Implementing Wave A–D backend (backend-owned)
 
 ## Acceptance
 - [ ] `MockSSEService` unused / deleted

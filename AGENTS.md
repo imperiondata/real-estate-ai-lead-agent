@@ -218,6 +218,13 @@ Outbound (alerts/escalation/background): app/execution_engine/outbound.py → EE
 - n8n future integration: `docs/N8N_INTEGRATION.md`
 - Frontend remaining work: `docs/FRONTEND_BACKLOG.md`
 - Evidence: `plans/IREIOS_3.0_EVIDENCE_PACK.md`
+- **Post-G2 Waves A–D (depth fill):** `plans/IREIOS_3.0_WAVE_A_D_EXPANSION.md` + changelog `plans/IREIOS_3.0_WAVE_A_D_CHANGELOG.md` + tests `tests/test_e14_wave_a.py`…`test_e17_wave_d.py`. Order: UNIFIED Steps **20–23** + Gate **G3**.
+
+## WhatsApp brochure / floor plan (current → Wave D.4 Approach B)
+
+- Trigger: `detect_tool_intent` in `app/agents/whatsapp_agent.py` on keywords (brochure / floor plan / layout…).
+- **Today:** deterministic **plain text** from lead fields (`generate_brochure` / `generate_floorplan`); TwiML/chat body; **no** AE double-send (`tests/test_e12_bus_wiring.py`).
+- **Planned (Wave D.4 Approach B):** host static PDF/image at public HTTPS (`BROCHURE_MEDIA_URL` / `FLOORPLAN_MEDIA_URL`); send as Twilio **`MediaUrl` document bubble** + short caption via AE W1 path; empty env → text fallback. Full steps: `plans/IREIOS_3.0_WAVE_A_D_EXPANSION.md` §4.4. Executor already accepts `media_url` (`whatsapp_executor.py`).
 
 ## IREIOS 3.0 — Event Bus / CEO / Execution Engine (Phase 1)
 

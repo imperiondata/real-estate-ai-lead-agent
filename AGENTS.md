@@ -228,14 +228,14 @@ Outbound (alerts/escalation/background): app/execution_engine/outbound.py → EE
 - Evidence: `plans/IREIOS_3.0_EVIDENCE_PACK.md`
 - **Post-G2 Waves A–D (depth fill):** `plans/IREIOS_3.0_WAVE_A_D_EXPANSION.md` + changelog `plans/IREIOS_3.0_WAVE_A_D_CHANGELOG.md` + tests `tests/test_e14_wave_a.py`…`test_e17_wave_d.py`. Order: UNIFIED Steps **20–23** + Gate **G3**.
 
-## WhatsApp brochure / floor plan (Wave D.4 Approach B — IMPLEMENTED)
+## WhatsApp brochure / floor plan (Approach B — shipped + post-G3 polish)
 
-- Trigger: `detect_tool_intent` in `app/agents/whatsapp_agent.py` on keywords (brochure / floor plan / layout…).
-- **Media URL:** `resolve_tool_media_url(tool)` reads `settings.BROCHURE_MEDIA_URL` / `FLOORPLAN_MEDIA_URL`. When configured, short caption replaces full text in tool reply; `media_url` passed to AE `send_whatsapp` parameters.
-- **TwiML:** `main.py` TwiML response includes `<Media>` element when media URL configured.
-- **Fallback:** Empty env → full `generate_brochure` / `generate_floorplan` text (pre-Wave D behavior).
-- **AE outbound:** `_dispatch_outbound` now accepts `media_url` parameter, forwarded to `WhatsAppExecutor`.
-- **Status:** Shipped in Wave D.4.
+- Trigger: `detect_tool_intent` on keywords (brochure / floor plan / layout…).
+- **Media:** `resolve_tool_media_url` — HTTPS-only `BROCHURE_MEDIA_URL` / `FLOORPLAN_MEDIA_URL` (non-HTTPS rejected).
+- **Default WA path:** short caption + `take_outbound_media_url()` → TwiML `<Media>` in `main.py` (no reply-text scrape; no AE double-send; e12).
+- **Chat API:** `POST /api/v1/chat` may include `media_url` in JSON when staged.
+- **Sales NBA / AE:** `send_brochure` attaches `media_url` when configured.
+- **Fallback:** empty env → full plain-text generators.
 
 ## IREIOS 3.0 — Event Bus / CEO / Execution Engine (Phase 1)
 

@@ -227,15 +227,29 @@ async def _nba_to_ae_action(lead: Lead, client_id: int, recommendation: dict) ->
             "source": "sales_agent",
         })
     elif action == "send_brochure":
+        from app.agents.whatsapp_agent import generate_brochure, resolve_tool_media_url
+
+        media_url = resolve_tool_media_url("brochure")
+        if media_url:
+            body = (
+                f"Hi {lead.name or 'there'}, here is the brochure for "
+                f"{lead.property_type or 'properties'} in {lead.location or 'our projects'}."
+            )
+        else:
+            body = generate_brochure(lead)
+        params = {
+            "to": lead.phone or "",
+            "body": body,
+            "source": "sales_agent",
+            "tool": "brochure",
+        }
+        if media_url:
+            params["media_url"] = media_url
         await ae_submit({
             "action_type": "send_whatsapp",
             "tenant_id": f"Client_{client_id}",
             "entity_id": str(lead.id),
-            "parameters": {
-                "to": lead.phone or "",
-                "body": f"Hi {lead.name or 'there'}, here is the brochure for {lead.property_type or 'properties'} in {lead.location or 'our projects'}.",
-                "source": "sales_agent",
-            },
+            "parameters": params,
             "source": "sales_agent",
         })
     # Other actions (request_info, nurture_followup, assign_agent) are handled

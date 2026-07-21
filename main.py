@@ -582,12 +582,22 @@ async def chat_endpoint(session_id: str, message: str, current_client: models.Cl
             is_new_lead=is_new_lead,
             message=message,
         )
-        return {
+        media_url = None
+        try:
+            from app.agents.whatsapp_agent import take_outbound_media_url
+
+            media_url = take_outbound_media_url()
+        except Exception:
+            pass
+        out = {
             "status": "success",
             "session_id": session_id,
             "client_id": client_id,
-            "reply": reply
+            "reply": reply,
         }
+        if media_url:
+            out["media_url"] = media_url
+        return out
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -933,16 +943,16 @@ async def whatsapp_webhook(
                 latency_ms = round((time.time() - request_start) * 1000)
                 logger.info(f"LATENCY | session={session_id} | {latency_ms}ms | status=delivered")
                 twiml = MessagingResponse()
-                msg = twiml.message(reply_text)
-                # Wave D.4: attach media URL when tool intent detected
-                rl = reply_text.lower()
-                if "brochure" in rl and settings.BROCHURE_MEDIA_URL:
-                    msg.media(settings.BROCHURE_MEDIA_URL)
-                elif (
-                    ("floor plan" in rl or "floorplan" in rl)
-                    and settings.FLOORPLAN_MEDIA_URL
-                ):
-                    msg.media(settings.FLOORPLAN_MEDIA_URL)
+                msg = twiml.message(reply_text or "")
+                # Approach B: structured media from WhatsAppAgent (not reply-text scrape).
+                try:
+                    from app.agents.whatsapp_agent import take_outbound_media_url
+
+                    media_url = take_outbound_media_url()
+                    if media_url:
+                        msg.media(media_url)
+                except Exception as e:  # pragma: no cover
+                    logger.debug("outbound media attach skipped: %s", e)
                 return Response(content=str(twiml), media_type="application/xml")
             
             except asyncio.TimeoutError:

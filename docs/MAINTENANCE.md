@@ -336,8 +336,21 @@ Restart uvicorn to pick up code; scheduler lives in the API process (not a separ
 | Neo4j | `NEO4J_*` | Graph no-op |
 | n8n | `N8N_*` | `n8n_not_configured` |
 | Google Calendar | `GOOGLE_CALENDAR_*` | Synthetic `visit_id` stub |
+| Brochure / floor plan PDF | `BROCHURE_MEDIA_URL` / `FLOORPLAN_MEDIA_URL` (public **HTTPS**) | Text-only fallback when empty |
 | Stripe | webhook + keys | Billing routes only |
 | AWS secrets | optional boto path in `config` | Falls back to env |
+
+### Brochure / floor plan media (Approach B)
+
+1. Host a lean PDF or image on CDN/S3 (or FastAPI static behind HTTPS tunnel).
+2. Set env:
+   ```env
+   BROCHURE_MEDIA_URL=https://cdn.example.com/brochure.pdf
+   FLOORPLAN_MEDIA_URL=https://cdn.example.com/floorplan.pdf
+   ```
+3. Non-HTTPS URLs are rejected by `resolve_tool_media_url`.
+4. Smoke: Twilio sandbox message “send brochure” → caption + document bubble (TwiML `<Media>`). Empty env → plain-text brochure.
+5. Sales NBA `send_brochure` also attaches `media_url` when configured (AE path).
 
 DLQ drill:
 

@@ -19,6 +19,7 @@ plans/IREIOS_3.0_EXPANSION_CHANGELOG.md.
 """
 from __future__ import annotations
 
+import contextvars
 import logging
 import re
 from typing import Optional
@@ -35,13 +36,55 @@ logger = logging.getLogger("whatsapp_agent_v3")
 _PROP_TYPE_RE = re.compile(r"\b(1bhk|2bhk|3bhk|4bhk|villa|plot|studio|penthouse|flat|apartment)\b", re.I)
 _AREA_RE = re.compile(r"\b(\d{3,5})\s*sq\s*(ft|feet)\b", re.I)
 
+# Post-G3 Approach B: structured media URL for the current turn (TwiML path).
+# ContextVar keeps concurrent requests isolated; module fallback covers tests
+# that call process_chat via asyncio.run (new context copy).
+_outbound_media_ctx: contextvars.ContextVar[Optional[str]] = contextvars.ContextVar(
+    "wa_outbound_media", default=None
+)
+_outbound_media_fallback: Optional[str] = None
+
+
+def take_outbound_media_url() -> Optional[str]:
+    """Return and clear the media URL staged for this turn (if any)."""
+    global _outbound_media_fallback
+    url = _outbound_media_ctx.get()
+    _outbound_media_ctx.set(None)
+    if url is None:
+        url = _outbound_media_fallback
+    _outbound_media_fallback = None
+    return url
+
+
+def peek_outbound_media_url() -> Optional[str]:
+    """Read staged media URL without clearing (tests)."""
+    return _outbound_media_ctx.get() or _outbound_media_fallback
+
+
+def _stage_outbound_media_url(url: Optional[str]) -> None:
+    global _outbound_media_fallback
+    val = url if url else None
+    _outbound_media_ctx.set(val)
+    _outbound_media_fallback = val
+
 
 def resolve_tool_media_url(tool: str) -> Optional[str]:
+    """Return public HTTPS media URL for brochure|floorplan, or None (text fallback).
+
+    Approach B: Twilio fetches this URL and delivers a document bubble.
+    Non-HTTPS values are rejected so broken local paths never reach Twilio.
+    """
+    raw = None
     if tool == "brochure":
-        return settings.BROCHURE_MEDIA_URL or None
-    if tool == "floorplan":
-        return settings.FLOORPLAN_MEDIA_URL or None
-    return None
+        raw = (getattr(settings, "BROCHURE_MEDIA_URL", None) or "").strip()
+    elif tool == "floorplan":
+        raw = (getattr(settings, "FLOORPLAN_MEDIA_URL", None) or "").strip()
+    if not raw:
+        return None
+    if not raw.lower().startswith("https://"):
+        logger.warning("rejecting non-HTTPS media URL for tool=%s", tool)
+        return None
+    return raw
 
 
 def detect_tool_intent(message: str) -> Optional[str]:
@@ -226,9 +269,13 @@ class WhatsAppAgent:
         # Post-turn graph sync so location/name changes in this turn land same-turn.
         self._upsert_lead_snapshot(lead, client_id)
 
+        # Clear any stale staged media from a prior turn in this context.
+        _stage_outbound_media_url(None)
+
         # v3 tool routing: brochure/floorplan reply is returned to the caller
         # (TwiML /chat JSON). Do NOT also AE-send here — that double-delivers on
         # the Twilio webhook path. Async/out-of-band sends use dispatch_via_ae=True.
+        # Approach B: stage media_url via contextvar for TwiML <Media> (W2 path).
         intent = detect_tool_intent(user_message)
         if intent and lead.whatsapp_opt_in:
             media_url = resolve_tool_media_url(intent)
@@ -236,20 +283,44 @@ class WhatsAppAgent:
                 name = lead.name or "there"
                 pt = lead.property_type or "property"
                 loc = lead.location or ""
-                tool_reply = f"Hi {name}, here is the {intent} for {pt} in {loc}."
+                label = "floor plan" if intent == "floorplan" else intent
+                tool_reply = f"Hi {name}, here is the {label} for {pt} in {loc}."
             else:
                 tool_reply = generate_brochure(lead) if intent == "brochure" else generate_floorplan(lead)
             db.add(Message(session_id=session_id, client_id=client_id, role="assistant", content=tool_reply))
             db.commit()
             if dispatch_via_ae:
                 await self._dispatch_outbound(session_id, client_id, lead, tool_reply, tool=intent, media_url=media_url)
+                if media_url:
+                    try:
+                        from app.clients.event_bus_client import event_bus
+
+                        if getattr(event_bus, "_running", False):
+                            await event_bus.publish(
+                                f"{intent}.sent",
+                                f"Client_{client_id}",
+                                str(lead.id),
+                                {
+                                    "lead_id": lead.id,
+                                    "session_id": session_id,
+                                    "tool": intent,
+                                    "media_url": media_url,
+                                },
+                                source="whatsapp_agent_v3",
+                            )
+                    except Exception as e:  # pragma: no cover
+                        logger.debug("tool sent event publish skipped: %s", e)
             else:
+                # Default WA path: stage URL for TwiML builder; single delivery.
+                if media_url:
+                    _stage_outbound_media_url(media_url)
                 try:
                     from app.clients.event_bus_client import event_bus
 
                     if getattr(event_bus, "_running", False):
+                        evt = f"{intent}.sent" if media_url else f"{intent}.generated"
                         await event_bus.publish(
-                            f"{intent}.generated",
+                            evt,
                             f"Client_{client_id}",
                             str(lead.id),
                             {

@@ -8,7 +8,7 @@
 - [x] **BD-3** Qualification entry = `app.agents.qualification`; WhatsAppAgent is default orchestrator
 - [x] **BD-4** Outbound purity: escalation + hot alerts + background via `outbound` / `WhatsAppExecutor` (not ad-hoc Twilio Client in those paths). `dlq_replay` / legacy `follow_up` retain direct Twilio for rollback/recovery tools.
 - [x] **BD-5** Neo4j used on WhatsApp reply path (`extra_context` → LLM summary)
-- [x] Brochure tools: text fallback + Approach B media (`resolve_tool_media_url` + TwiML `<Media>` when URL set; no AE double-send on default path)
+- [x] Brochure tools: Approach B — HTTPS `resolve_tool_media_url` + staged `take_outbound_media_url` → TwiML `<Media>` (no reply-text scrape); Sales NBA attaches media; empty env text fallback; no AE double-send on default path
 - [~] Full deletion of root `agent.py` / `follow_up.py` / `crm_sync.py` modules — not required; they are libraries for EE/v3. Dead *call paths* removed.
 - [ ] FE MockSSE cutover — see `docs/FRONTEND_BACKLOG.md` (Mayank)
 

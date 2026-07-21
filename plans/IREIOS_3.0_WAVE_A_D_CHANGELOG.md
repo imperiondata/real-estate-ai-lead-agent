@@ -313,6 +313,7 @@ Living record of **post-G2 depth fill** (Waves A–D). Parallel to `IREIOS_3.0_E
 | 2026-07-21 | Wave D | `test_e17_wave_d.py` 10/13 (D.2/D.3/D.5 skipped) | not tested | not tested | |
 | 2026-07-21 | Waves A–D final | `test_e14+e15+e16+e17` 54/58 (4 skipped) | not tested | not tested | All non-skeleton green |
 | 2026-07-21 | P0 stabilize | full `tests/` **332 passed, 7 skipped** | **PASS** | **1/1 DLQ recovered** | seed.py ASCII fix; `ensure_test_client` in conftest; e14/e15/e5/e12 FK harden; remove duplicate `events_router` mount; e1b OpenAPI route check |
+| 2026-07-21 | Post-G3 brochure polish | e17+e12+e5+e6+e15 green | — | — | `take_outbound_media_url` staging; HTTPS reject; Sales NBA media; chat JSON `media_url`; no reply-text scrape |
 
 ---
 

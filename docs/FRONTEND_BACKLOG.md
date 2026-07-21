@@ -62,6 +62,7 @@ Backend depth-fill plan: `plans/IREIOS_3.0_WAVE_A_D_EXPANSION.md`. When shipped,
 | `GET /api/v1/predictions/revenue` etc. | D | Replace `mockForecastData` |
 | `GET /api/v1/inventory/match` | C | Twin / inventory widgets |
 | Approvals already live | — | HITL UI |
+| Chat/ingest may expose `media_url` after brochure turn | Post-G3 B | Optional FE preview of PDF URL |
 
 ## Out of scope for FE
 - Changing bus schema (frozen in Phase 1b)

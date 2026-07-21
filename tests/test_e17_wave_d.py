@@ -149,54 +149,92 @@ def test_resolve_tool_media_url_falls_back_to_none(monkeypatch):
 
 
 def test_resolve_tool_media_url_rejects_http(monkeypatch):
-    """Approach B requires HTTPS."""
+    """Approach B requires HTTPS — non-HTTPS is rejected."""
     from app.agents.whatsapp_agent import resolve_tool_media_url
     from config import settings
     monkeypatch.setattr(settings, "BROCHURE_MEDIA_URL", "http://cdn.example.com/bad.pdf")
-    # The helper returns whatever is in settings, but the plan says HTTPS is required.
-    # In MVP we return the URL even if http — enforcement is at deployment level.
-    url = resolve_tool_media_url("brochure")
-    assert url is not None
+    assert resolve_tool_media_url("brochure") is None
 
 
-def test_process_chat_uses_short_caption_when_media_url(monkeypatch):
-    """When media URL is configured, tool reply is a short caption not full text."""
-    from app.agents.whatsapp_agent import resolve_tool_media_url, generate_brochure
+def test_process_chat_stages_media_url_for_twiml(monkeypatch):
+    """Default brochure path stages HTTPS media for TwiML (no AE double-send)."""
+    import asyncio
+    from uuid import uuid4
+
+    from app.agents.whatsapp_agent import (
+        WhatsAppAgent,
+        peek_outbound_media_url,
+        take_outbound_media_url,
+    )
     from config import settings
+    from database import SessionLocal
+    from models import Lead, Message, Session
+    from tests.conftest import ensure_test_client
+
     monkeypatch.setattr(settings, "BROCHURE_MEDIA_URL", "https://cdn.example.com/brochure.pdf")
+    monkeypatch.setattr(settings, "FLOORPLAN_MEDIA_URL", "")
 
-    class FakeLead:
-        name = "Test"
-        property_type = "3BHK"
-        location = "Pune"
-        budget = "1cr"
-        phone = "+919999999999"
-        whatsapp_opt_in = True
-        id = 1
-        session_id = "test_session"
-        intent = ""
-        visit_date = ""
-        conversion_probability = 50
-        lead_temperature = "warm"
-        urgency_level = "medium"
-        engagement_score = 60
-        budget_alignment_status = "aligned"
-        inactivity_penalty = 0
-        confidence_score = 80
-        requires_manual_review = False
+    async def fake_legacy(session_id, user_message, db, client_id=1, is_background=False, extra_context=None):
+        return "ok"
 
-    # When media_url is present, the caption should be short
-    from app.agents.whatsapp_agent import WhatsAppAgent
-    agent = WhatsAppAgent()
+    import agent
+    import app.agents.qualification as qual
+    import app.agents.whatsapp_agent as wa
 
-    # The tool reply uses a short caption when media URL is resolved
-    media_url = resolve_tool_media_url("brochure")
-    assert media_url is not None
+    monkeypatch.setattr(agent, "process_chat", fake_legacy)
+    monkeypatch.setattr(qual, "process_chat", fake_legacy)
 
-    # The caption should be shorter than the full brochure
-    caption = f"Hi Test, here is the brochure for 3BHK in Pune."
-    full = generate_brochure(FakeLead())
-    assert len(caption) < len(full)
+    ae_calls = []
+
+    async def boom(*a, **k):
+        ae_calls.append(1)
+        raise AssertionError("AE must not run on default brochure path")
+
+    monkeypatch.setattr(wa, "ae_submit", boom)
+
+    cid = ensure_test_client(1)
+    sid = f"sess_media_stage_{uuid4().hex[:8]}"
+    with SessionLocal() as db:
+        db.query(Message).filter(Message.session_id == sid).delete()
+        db.query(Lead).filter(Lead.session_id == sid).delete()
+        db.query(Session).filter(Session.id == sid).delete()
+        db.add(Session(id=sid, client_id=cid, status="active"))
+        db.add(
+            Lead(
+                session_id=sid,
+                client_id=cid,
+                name="Test",
+                phone="+919999999999",
+                whatsapp_opt_in=True,
+                property_type="3BHK",
+                location="Pune",
+                budget="1cr",
+            )
+        )
+        db.commit()
+    try:
+        take_outbound_media_url()  # clear
+
+        async def run():
+            with SessionLocal() as db:
+                return await WhatsAppAgent().process_chat(
+                    sid, "send me the brochure", db, client_id=cid, dispatch_via_ae=False
+                )
+
+        reply = asyncio.run(run())
+        assert "brochure" in reply.lower()
+        assert "Highlights" not in reply  # short caption, not full text
+        assert peek_outbound_media_url() == "https://cdn.example.com/brochure.pdf"
+        assert take_outbound_media_url() == "https://cdn.example.com/brochure.pdf"
+        assert take_outbound_media_url() is None  # cleared
+        assert ae_calls == []
+    finally:
+        with SessionLocal() as db:
+            db.query(Message).filter(Message.session_id == sid).delete()
+            db.query(Lead).filter(Lead.session_id == sid).delete()
+            db.query(Session).filter(Session.id == sid).delete()
+            db.commit()
+        take_outbound_media_url()
 
 
 def test_twiml_includes_media_when_configured(monkeypatch):
@@ -212,6 +250,40 @@ def test_twiml_includes_media_when_configured(monkeypatch):
     xml = str(twiml)
     assert "<Media>" in xml
     assert "https://cdn.example.com/brochure.pdf" in xml
+
+
+def test_sales_send_brochure_includes_media_url(monkeypatch):
+    """Sales NBA send_brochure attaches resolve_tool_media_url when configured."""
+    import asyncio
+    from app.agents.sales_agent import _nba_to_ae_action
+    from config import settings
+
+    monkeypatch.setattr(settings, "BROCHURE_MEDIA_URL", "https://cdn.example.com/brochure.pdf")
+
+    submitted = []
+
+    async def fake_submit(req):
+        submitted.append(req)
+        return {"status": "success"}
+
+    import app.agents.sales_agent as sa
+    monkeypatch.setattr(sa, "ae_submit", fake_submit)
+
+    class L:
+        id = 99
+        name = "Raj"
+        phone = "+919999999999"
+        property_type = "2BHK"
+        location = "Wakad"
+        budget = "80L"
+        visit_date = None
+        intent = ""
+
+    asyncio.run(_nba_to_ae_action(L(), 1, {"action": "send_brochure", "rationale": "test"}))
+    assert len(submitted) == 1
+    assert submitted[0]["action_type"] == "send_whatsapp"
+    assert submitted[0]["parameters"]["media_url"] == "https://cdn.example.com/brochure.pdf"
+    assert "Highlights" not in submitted[0]["parameters"]["body"]
 
 
 # --------------------------------------------------------------------------- #

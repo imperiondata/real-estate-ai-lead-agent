@@ -72,11 +72,11 @@
 | **18** | Expansion | Phase 9 (Tasks 9.1–9.8) | FE cutover to live SSE/APIs (contracts from 1b) | Expansion Phase 9 exit gate | `[x]` |
 | **19** | Expansion | Phase 10 (Tasks 10.1–10.5) | Placeholders, decommission, evidence | Expansion Phase 10 final gate | `[x]` |
 | **G2** | Gate | **MVP program complete** | Phases 0–10 close | Expansion plan **Program final gate (G2)** checklist + Task 10.4–10.5 | `[x]` |
-| **20** | Wave A–D | **Wave A** — dead loops + live HubSpot/Calendar/n8n hooks | Wave A exit gate | `plans/IREIOS_3.0_WAVE_A_D_EXPANSION.md` §1 | `[ ]` |
-| **21** | Wave A–D | **Wave B** — deepen Sales/CS/Marketing + AE templates | Wave B exit gate | same §2 | `[ ]` |
-| **22** | Wave A–D | **Wave C** — 6 placeholders → active agents | Wave C exit gate | same §3 | `[ ]` |
-| **23** | Wave A–D | **Wave D** — forecast/memory/n8n + brochure **Approach B** (MediaUrl PDF) | Wave D exit gate §4.7 | same §4 | `[ ]` |
-| **G3** | Gate | **Waves A–D complete** | Depth-fill close | Wave D + G3 checklist; `test_e14`–`e17`; changelog | `[ ]` |
+| **20** | Wave A–D | **Wave A** — dead loops + live HubSpot/Calendar/n8n hooks | Wave A exit gate | `plans/IREIOS_3.0_WAVE_A_D_EXPANSION.md` §1 | `[x]` |
+| **21** | Wave A–D | **Wave B** — deepen Sales/CS/Marketing + AE templates | Wave B exit gate | same §2 | `[x]` |
+| **22** | Wave A–D | **Wave C** — 6 placeholders → active agents | Wave C exit gate | same §3 | `[x]` |
+| **23** | Wave A–D | **Wave D** — forecast/memory/n8n + brochure **Approach B** (MediaUrl PDF) | Wave D exit gate §4.7 | same §4 | `[x]` |
+| **G3** | Gate | **Waves A–D complete** | Depth-fill close | pytest full + isolation + DLQ green; evidence pack Wave section; changelog | `[x]` |
 
 **Expansion Task 0.1** (doc freeze) is already done; do not re-open it as a blocking step.
 

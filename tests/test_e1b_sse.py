@@ -61,16 +61,39 @@ def test_sse_requires_auth():
 
 
 def test_events_routes_registered():
-    """Wiring check: SSE + timeline + stub endpoints are mounted."""
+    """Wiring check: SSE + timeline + stub endpoints are mounted.
+
+    Starlette/FastAPI may nest included routers as ``_IncludedRouter`` without
+    flattening paths onto ``app.routes``; prefer OpenAPI paths (stable contract).
+    """
     import main
 
-    routes = {
-        (getattr(r, "path", None), tuple(sorted(getattr(r, "methods", []) or [])))
-        for r in main.app.routes
-    }
-    assert ("/api/v1/events/stream", ("GET",)) in routes
-    assert ("/api/v1/events/leads/{lead_id}/timeline", ("GET",)) in routes
-    assert ("/api/v1/events/stub", ("POST",)) in routes
+    def _walk(routes, out):
+        for r in routes:
+            path = getattr(r, "path", None)
+            methods = getattr(r, "methods", None)
+            if path and methods:
+                out.add((path, tuple(sorted(m for m in methods if m != "HEAD"))))
+            nested = getattr(r, "routes", None)
+            if nested is not None:
+                _walk(nested, out)
+
+    flat = set()
+    _walk(main.app.routes, flat)
+    openapi_paths = set((main.app.openapi() or {}).get("paths", {}) or {})
+
+    def _present(path: str, method: str) -> bool:
+        if (path, (method,)) in flat:
+            return True
+        # OpenAPI keys are path strings; methods nested under them.
+        ops = ((main.app.openapi() or {}).get("paths") or {}).get(path) or {}
+        return method.lower() in ops
+
+    assert _present("/api/v1/events/stream", "GET") or "/api/v1/events/stream" in openapi_paths
+    assert _present("/api/v1/events/leads/{lead_id}/timeline", "GET") or (
+        "/api/v1/events/leads/{lead_id}/timeline" in openapi_paths
+    )
+    assert _present("/api/v1/events/stub", "POST") or "/api/v1/events/stub" in openapi_paths
 
 
 def test_sse_delivers_tenant_scoped_events():

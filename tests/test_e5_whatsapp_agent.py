@@ -22,8 +22,11 @@ from models import Lead, Message, Session
 
 
 def _make_lead(db, session_id="sess_wa_1", **kw):
-    db.add(Session(id=session_id, client_id=1, status="active"))
-    lead = Lead(session_id=session_id, client_id=1, **kw)
+    from tests.conftest import ensure_test_client
+
+    cid = ensure_test_client(1)
+    db.add(Session(id=session_id, client_id=cid, status="active"))
+    lead = Lead(session_id=session_id, client_id=cid, **kw)
     db.add(lead)
     db.commit()
     return lead

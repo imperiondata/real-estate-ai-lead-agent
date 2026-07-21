@@ -1,6 +1,7 @@
 # IREIOS 3.0 — Wave A–D Expansion Plan (Post-G2 Depth Fill)
 
-**Status:** Ready to implement · **Target:** 31 July 2026 · **No FE demo polish required**  
+**Status:** **Implemented (G3 code gates green 2026-07-21)** · **Target:** 31 July 2026 · **No FE demo polish required**  
+**Living log:** `plans/IREIOS_3.0_WAVE_A_D_CHANGELOG.md` (task rows `[x]`/`[-]`). This plan remains the how-to reference; do not treat remaining `[ ]` task bullets below as “not built” without checking the changelog.  
 **Owners:** Backend AI / Automation (Maitri + Aritro) · Integrations ops as noted  
 **Does not replace:** Phases 0–10 in `IREIOS_3.0_STEP_BY_STEP_EXPANSION.md` (those are `[x]` at G2). This plan is the **next program block** after Gate G2.
 

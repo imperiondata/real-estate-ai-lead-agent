@@ -938,7 +938,10 @@ async def whatsapp_webhook(
                 rl = reply_text.lower()
                 if "brochure" in rl and settings.BROCHURE_MEDIA_URL:
                     msg.media(settings.BROCHURE_MEDIA_URL)
-                elif "floor plan" in rl and settings.FLOORPLAN_MEDIA_URL:
+                elif (
+                    ("floor plan" in rl or "floorplan" in rl)
+                    and settings.FLOORPLAN_MEDIA_URL
+                ):
                     msg.media(settings.FLOORPLAN_MEDIA_URL)
                 return Response(content=str(twiml), media_type="application/xml")
             
@@ -1672,6 +1675,6 @@ async def health_check(db: DBSession = Depends(get_db)):
     }
 
 # Mount static files for the Dashboard
-app.include_router(events_router)
-
+# Note: events_router is mounted once near app construction (above); do not
+# re-include here — duplicate include breaks OpenAPI operation IDs and route lookup.
 app.mount("/dashboard", StaticFiles(directory="dashboard", html=True), name="dashboard")

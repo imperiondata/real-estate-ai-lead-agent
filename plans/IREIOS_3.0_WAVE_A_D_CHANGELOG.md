@@ -259,7 +259,7 @@ Living record of **post-G2 depth fill** (Waves A–D). Parallel to `IREIOS_3.0_E
 | D.3 | `[~]` | n8n workflows 2–3 docs (hot lead Slack documented) | `docs/N8N_INTEGRATION.md` |
 | D.4 | `[x]` | **Approach B** brochure/floorplan: `resolve_tool_media_url` + AE `media_url` + TwiML Media element + short caption fallback | `test_e17_wave_d.py` |
 | D.5 | `[-]` | Evidence pack + G3 (deferred — see note) | — |
-| **D exit / G3** | `[x]` | Program wave complete (code done) | full suite |
+| **D exit / G3** | `[x]` | Program wave complete — code + gates (pytest/isolation/DLQ). D.2/D.5/A.0 ops still deferred | full suite |
 
 ### Entry — D.1 (Prediction routes)
 
@@ -286,19 +286,20 @@ Living record of **post-G2 depth fill** (Waves A–D). Parallel to `IREIOS_3.0_E
 - **Behavior:** `resolve_tool_media_url` reads env for public HTTPS URL. When configured, short caption replaces full text in tool reply; `media_url` passed to AE `send_whatsapp` parameters; TwiML response includes `<Media>` element. Empty env → full text fallback (today's behavior).
 - **Tests:** 5 tests (url resolves, none fallback, http allowed, short caption, TwiML Media) — 5 green.
 
-### Entry — D.5 / G3 (Evidence pack — deferred)
+### Entry — D.5 / G3 (Evidence pack — partial; gates closed)
 
 - **Date:** 2026-07-21
-- **Status:** `[-]` Evidence pack (`plans/IREIOS_3.0_EVIDENCE_PACK.md`) and G3 formal gate deferred — code implementation complete across all 16 sub-phases. Remaining steps: pytest full regression, isolation tests, evidence snapshot, and UNIFIED G3 flip.
+- **Status:** G3 **code gates closed** (full pytest + isolation + DLQ). Formal narrative evidence pack polish remains light (D.5 `[-]` for long-form screenshots/`task3_runner`); implementation evidence is this changelog + UNIFIED flip.
 
 ### Entry — Wave D exit / G3
 
 - **Date:** 2026-07-21
-- **pytest:** `test_e17_wave_d.py` — 10 passed, 3 skipped (D.2 deferred, D.3 partial, D.5 deferred)
-- **Wave A+B regression:** `test_e14_wave_a.py` (14/14) + `test_e15_wave_b.py` (16/17, B.7 skipped) — all green
-- **Wave C regression:** `test_e16_wave_c.py` — 14/14 green
-- **Implementation status:** All 16 sub-phases complete (A-S1→D-S3). 3 sub-phases deferred/skeletal (B.7 create_task, D.2 memory, D.5 evidence). 2 partial (A.0.x real credentials, D.3 n8n multi-workflow).
-- **UNIFIED Steps 20–23:** Implementation complete (`[~]` → `[x]` for code)
+- **pytest:** full `tests/` → **332 passed, 7 skipped, 0 failed** (after P0 stabilize)
+- **isolation:** `gate_isolation_test.py` **PASS**
+- **DLQ:** `gate_dlq_drill.py` + `dlq_replay.py` → **1/1 recovered**
+- **P0 stabilize:** `seed.py` Windows-safe prints; `tests/conftest.ensure_test_client`; FK harden e14/e15/e5/e12; duplicate `events_router` removed from `main.py`; e1b route test uses OpenAPI/nested walk
+- **Still deferred (not G3 blockers):** A.0 real HubSpot/GCal/n8n instance; B.7 create_task; D.2 memory auto-write; D.3 live n8n workflows 2–3; dual-path 10.2/10.3 delete; FE MockSSE
+- **UNIFIED Steps 20–23 + G3:** `[x]`
 
 ---
 
@@ -311,6 +312,7 @@ Living record of **post-G2 depth fill** (Waves A–D). Parallel to `IREIOS_3.0_E
 | 2026-07-21 | Wave C | `test_e16_wave_c.py` 14/14 | not tested | not tested | |
 | 2026-07-21 | Wave D | `test_e17_wave_d.py` 10/13 (D.2/D.3/D.5 skipped) | not tested | not tested | |
 | 2026-07-21 | Waves A–D final | `test_e14+e15+e16+e17` 54/58 (4 skipped) | not tested | not tested | All non-skeleton green |
+| 2026-07-21 | P0 stabilize | full `tests/` **332 passed, 7 skipped** | **PASS** | **1/1 DLQ recovered** | seed.py ASCII fix; `ensure_test_client` in conftest; e14/e15/e5/e12 FK harden; remove duplicate `events_router` mount; e1b OpenAPI route check |
 
 ---
 

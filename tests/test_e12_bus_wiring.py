@@ -39,12 +39,15 @@ def test_is_lead_qualified_six_field_gate():
 
 
 def test_followup_arm_uses_payload_session_id():
+    from tests.conftest import ensure_test_client
+
+    cid = ensure_test_client(1)
     sid = "sess_arm_payload_1"
     try:
         with SessionLocal() as db:
             db.query(FollowUpState).filter(FollowUpState.session_id == sid).delete()
             db.query(Session).filter(Session.id == sid).delete()
-            db.add(Session(id=sid, client_id=1, status="active"))
+            db.add(Session(id=sid, client_id=cid, status="active"))
             db.commit()
 
         async def run():
@@ -88,16 +91,19 @@ def test_brochure_default_path_does_not_ae_dispatch(monkeypatch):
     monkeypatch.setattr(qual, "process_chat", fake_legacy)
     monkeypatch.setattr(wa, "ae_submit", boom)
 
+    from tests.conftest import ensure_test_client
+
+    cid = ensure_test_client(1)
     sid = "sess_brochure_nodouble"
     with SessionLocal() as db:
         db.query(Message).filter(Message.session_id == sid).delete()
         db.query(Lead).filter(Lead.session_id == sid).delete()
         db.query(Session).filter(Session.id == sid).delete()
-        db.add(Session(id=sid, client_id=1, status="active"))
+        db.add(Session(id=sid, client_id=cid, status="active"))
         db.add(
             Lead(
                 session_id=sid,
-                client_id=1,
+                client_id=cid,
                 name="Me",
                 phone="+919999999999",
                 whatsapp_opt_in=True,
@@ -111,7 +117,7 @@ def test_brochure_default_path_does_not_ae_dispatch(monkeypatch):
         async def run():
             with SessionLocal() as db:
                 return await WhatsAppAgent().process_chat(
-                    sid, "send me the brochure", db, client_id=1
+                    sid, "send me the brochure", db, client_id=cid
                 )
 
         reply = asyncio.run(run())

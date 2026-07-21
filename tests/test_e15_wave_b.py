@@ -64,18 +64,20 @@ def test_lead_hot_envelope_triggers_notify_ae(monkeypatch):
     from app.agents.sales_agent import sales_bus_handler
     from database import SessionLocal
     from uuid import uuid4
+    from tests.conftest import ensure_test_client
 
+    cid = ensure_test_client(1)
     # Create a real lead for the bus handler to find
     sid = f"b1_test_{uuid4().hex[:8]}"
     db = SessionLocal()
     try:
+        db.add(Session(id=sid, client_id=cid))
         lead = Lead(
-            session_id=sid, client_id=1,
+            session_id=sid, client_id=cid,
             name="Test", phone="+919999999999", location="Pune",
             budget="1cr", property_type="flat", lead_temperature="hot",
         )
         db.add(lead)
-        db.add(Session(id=sid, client_id=1))
         db.commit()
         db.refresh(lead)
         lid = lead.id
@@ -91,10 +93,21 @@ def test_lead_hot_envelope_triggers_notify_ae(monkeypatch):
     import app.agents.sales_agent as sa
     monkeypatch.setattr(sa, "ae_submit", fake_submit)
 
+    # Clear any leftover Redis debounce from prior runs (same client/lead ids rare but flaky).
+    try:
+        import redis
+        from app.agents.sales_agent import _debounce_key
+        from config import settings as _s
+        r = redis.from_url(_s.REDIS_URL, decode_responses=True)
+        r.delete(_debounce_key(cid, lid))
+        r.close()
+    except Exception:
+        pass
+
     async def run():
         await sales_bus_handler({
             "event_type": "lead.hot",
-            "tenant_id": "Client_1",
+            "tenant_id": f"Client_{cid}",
             "entity_id": str(lid),
             "payload": {"lead_id": lid},
         })

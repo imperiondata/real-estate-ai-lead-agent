@@ -44,6 +44,9 @@ def test_weekly_marketing_cron_publishes_per_client(monkeypatch):
     if not _db_ok():
         pytest.skip("requires Postgres")
     from app.workflows.weekly_marketing_cron import weekly_marketing_cron_job
+    from tests.conftest import ensure_test_client
+
+    ensure_test_client(1)
 
     published = []
 
@@ -310,11 +313,13 @@ def test_expire_stale_approvals_marks_old_pending():
     from models import ApprovalRequest
     from datetime import datetime, timezone, timedelta
     from uuid import uuid4
+    from tests.conftest import ensure_test_client
 
+    cid = ensure_test_client(1)
     entity = f"e_expire_{uuid4()}"
     with SessionLocal() as db:
         old = ApprovalRequest(
-            client_id=1,
+            client_id=cid,
             entity_id=entity,
             action_type="test",
             action_payload={},

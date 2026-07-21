@@ -60,14 +60,41 @@ async def submit(action_request: dict, attempt: int = 1) -> dict:
         logger.info("HITL pause: action=%s approval_id=%s", action_request["action_type"], approval["id"])
         return {"status": "pending_approval", "approval_id": approval["id"]}
 
-    # Linear / template_type default to "linear". LangGraph/n8n are wired in
-    # their respective runner modules (Tasks 2.4/2.5); for now we execute via EE.
+    # Linear / template_type branching (Wave A.3 — wire real n8n/langgraph runners).
     template_type = action_request.get("template_type", "linear")
     if template_type not in ("linear", "langgraph", "n8n"):
         template_type = "linear"
     action_request = {**action_request, "template_type": template_type}
 
-    # Execute with bounded retry/backoff (Path D).
+    if template_type == "n8n":
+        from app.automation_engine.n8n_client import N8NClient
+        n8n_client = N8NClient()
+        workflow_id = action_request.get("parameters", {}).get("workflow_id") or action_request.get("workflow_id")
+        if not workflow_id:
+            return {"status": "error", "error": "n8n_workflow_id_required"}
+        result = await n8n_client.trigger_workflow(workflow_id, action_request)
+        if result.get("error") == "n8n_not_configured":
+            fallback = action_request.get("fallback_action")
+            if fallback:
+                fallback.setdefault("tenant_id", action_request["tenant_id"])
+                fallback.setdefault("entity_id", action_request["entity_id"])
+                fallback.setdefault("parameters", {})
+                return await _execute_with_retry(fallback, 1)
+            return result
+        return result
+
+    if template_type == "langgraph":
+        from app.automation_engine.langgraph_runner import run_graph
+        try:
+            state = run_graph({"action_request": action_request})
+            if state.get("ready_to_execute"):
+                return await _execute_with_retry(action_request, attempt)
+            return {"status": "error", "error": "langgraph_not_ready", "state": state}
+        except Exception as exc:
+            logger.warning("langgraph runner failed, falling back to linear: %s", exc)
+            return await _execute_with_retry(action_request, attempt)
+
+    # Execute linear with bounded retry/backoff (Path D).
     result = await _execute_with_retry(action_request, attempt)
 
     # On EE failure, optionally run the declared fallback action once.

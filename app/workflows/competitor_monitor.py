@@ -21,7 +21,9 @@ from app.clients.event_bus_client import EventBusClient
 from app.services.prediction_service import competitor_signals
 from config import settings
 from database import SessionLocal
-from models import Client, Lead, Message
+from datetime import datetime, timezone
+
+from models import Client, Lead, Message, NotificationLog
 
 logger = logging.getLogger("competitor_monitor")
 
@@ -78,6 +80,51 @@ def _scan_client(db, client: Client) -> list[dict]:
     return envelopes
 
 
+def _write_notification(db, envelope: dict) -> None:
+    """Write a NotificationLog row for a market alert."""
+    tenant_id = envelope.get("tenant_id", "")
+    payload = envelope.get("payload", {})
+    lead_id = payload.get("lead_id")
+    client_id = None
+    if str(tenant_id).startswith("Client_"):
+        try:
+            client_id = int(tenant_id.split("_", 1)[1])
+        except (ValueError, TypeError):
+            pass
+    if client_id and lead_id:
+        try:
+            log = NotificationLog(
+                client_id=client_id,
+                lead_id=lead_id,
+                assigned_agent="manager",
+                status="pending_ack",
+                reason="competitor_alert",
+                severity=2,
+                escalate_at=datetime.now(timezone.utc),
+            )
+            db.add(log)
+            db.commit()
+        except Exception as e:  # noqa: BLE001
+            db.rollback()
+            logger.warning("failed to write competitor notification log: %s", e)
+
+
+def _notify_for_envelopes(envelopes: list[dict]) -> None:
+    """Write NotificationLog rows for each alert (sync, own session)."""
+    if not envelopes:
+        return
+    db = SessionLocal()
+    try:
+        for env in envelopes:
+            _write_notification(db, env)
+        db.commit()
+    except Exception as e:  # noqa: BLE001
+        db.rollback()
+        logger.warning("competitor notification batch failed: %s", e)
+    finally:
+        db.close()
+
+
 def competitor_monitor_job() -> None:
     """Scheduler entry point: scan all active clients, publish alerts."""
     keywords = getattr(settings, "COMPETITOR_KEYWORDS", "") or ""
@@ -96,6 +143,7 @@ def competitor_monitor_job() -> None:
     finally:
         db.close()
     if envelopes:
+        _notify_for_envelopes(envelopes)
         try:
             asyncio.run(_publish(envelopes))
             logger.info("competitor_monitor published %d market alerts", len(envelopes))

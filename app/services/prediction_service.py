@@ -118,6 +118,77 @@ def detect_at_risk(db: Session, client_id: int, inactivity_days: int = 7) -> lis
     return at_risk
 
 
+def predict_revenue(db: Session, client_id: int) -> dict:
+    open_leads = db.query(Lead).filter(
+        Lead.client_id == client_id,
+        Lead.conversion_status == "open",
+    ).all()
+    total = 0.0
+    count = len(open_leads)
+    for lead in open_leads:
+        budget = 0
+        try:
+            raw = (lead.budget or "").strip().lower()
+            if raw:
+                multiplier = 1.0
+                if "cr" in raw:
+                    multiplier = 10000000
+                    raw = raw.replace("cr", "").replace("crore", "").replace("crores", "")
+                elif "lakh" in raw:
+                    multiplier = 100000
+                    raw = raw.replace("lakh", "").replace("lakhs", "")
+                raw = raw.replace(",", "").strip()
+                budget = float(raw) * multiplier
+        except (ValueError, TypeError):
+            budget = 0
+        prob = (lead.conversion_probability or 50) / 100.0
+        total += budget * prob
+    return {"total_expected_revenue": round(total, 2), "open_lead_count": count}
+
+
+def predict_cancellation_risk(db: Session, client_id: int) -> list:
+    return detect_at_risk(db, client_id, inactivity_days=7)
+
+
+def predict_inventory(db: Session, client_id: int) -> dict:
+    from models import InventoryUnit
+    q = db.query(InventoryUnit).filter(InventoryUnit.client_id == client_id)
+    counts: dict[str, int] = {}
+    for row in q.all():
+        st = row.status or "unknown"
+        counts[st] = counts.get(st, 0) + 1
+    return counts
+
+
+def predict_cashflow(db: Session, client_id: int) -> dict:
+    open_leads = db.query(Lead).filter(
+        Lead.client_id == client_id,
+        Lead.conversion_status == "open",
+    ).all()
+    expected = 0.0
+    for lead in open_leads:
+        budget = 0
+        try:
+            raw = (lead.budget or "").strip().lower()
+            if raw:
+                multiplier = 1.0
+                if "cr" in raw:
+                    multiplier = 10000000
+                    raw = raw.replace("cr", "").replace("crore", "").replace("crores", "")
+                elif "lakh" in raw:
+                    multiplier = 100000
+                    raw = raw.replace("lakh", "").replace("lakhs", "")
+                raw = raw.replace(",", "").strip()
+                budget = float(raw) * multiplier
+        except (ValueError, TypeError):
+            budget = 0
+        expected += budget * 0.3  # rough 30% booking probability
+    return {
+        "expected_30pct_cashflow": round(expected, 2),
+        "open_lead_count": len(open_leads),
+    }
+
+
 def competitor_signals(lead_text: Optional[str] = None) -> dict:
     """8.5: return the configured competitor watch-list and any matches.
 

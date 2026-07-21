@@ -19,7 +19,7 @@ from database import SessionLocal
 
 logger = logging.getLogger("marketing_agent")
 
-MARKETING_EVENTS = ["cron.weekly_report", "campaign.completed"]
+MARKETING_EVENTS = ["cron.weekly_report", "campaign.completed", "market.alert.generated"]
 
 
 def _resolve_client_id(tenant_id) -> Optional[int]:
@@ -47,11 +47,22 @@ async def marketing_agent_handler(envelope: dict) -> None:
     client_id = _resolve_client_id(envelope.get("tenant_id"))
     if client_id is None:
         return
+    event_type = envelope.get("event_type")
     db = SessionLocal()
     try:
         report = build_marketing_report(db, client_id)
     finally:
         db.close()
+
+    # Fold market alert payload into report when triggered by competitor monitor
+    if event_type == "market.alert.generated":
+        alert_payload = envelope.get("payload", {})
+        report["market_alert"] = {
+            "competitor": alert_payload.get("competitor"),
+            "matched_keyword": alert_payload.get("matched_keyword"),
+            "alert_time": alert_payload.get("alert_time"),
+        }
+
     try:
         await event_bus.publish(
             "marketing.report.generated",

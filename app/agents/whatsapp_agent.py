@@ -36,6 +36,14 @@ _PROP_TYPE_RE = re.compile(r"\b(1bhk|2bhk|3bhk|4bhk|villa|plot|studio|penthouse|
 _AREA_RE = re.compile(r"\b(\d{3,5})\s*sq\s*(ft|feet)\b", re.I)
 
 
+def resolve_tool_media_url(tool: str) -> Optional[str]:
+    if tool == "brochure":
+        return settings.BROCHURE_MEDIA_URL or None
+    if tool == "floorplan":
+        return settings.FLOORPLAN_MEDIA_URL or None
+    return None
+
+
 def detect_tool_intent(message: str) -> Optional[str]:
     """Return 'brochure' | 'floorplan' | None based on the user message."""
     m = (message or "").lower()
@@ -223,13 +231,19 @@ class WhatsAppAgent:
         # the Twilio webhook path. Async/out-of-band sends use dispatch_via_ae=True.
         intent = detect_tool_intent(user_message)
         if intent and lead.whatsapp_opt_in:
-            tool_reply = generate_brochure(lead) if intent == "brochure" else generate_floorplan(lead)
+            media_url = resolve_tool_media_url(intent)
+            if media_url:
+                name = lead.name or "there"
+                pt = lead.property_type or "property"
+                loc = lead.location or ""
+                tool_reply = f"Hi {name}, here is the {intent} for {pt} in {loc}."
+            else:
+                tool_reply = generate_brochure(lead) if intent == "brochure" else generate_floorplan(lead)
             db.add(Message(session_id=session_id, client_id=client_id, role="assistant", content=tool_reply))
             db.commit()
             if dispatch_via_ae:
-                await self._dispatch_outbound(session_id, client_id, lead, tool_reply, tool=intent)
+                await self._dispatch_outbound(session_id, client_id, lead, tool_reply, tool=intent, media_url=media_url)
             else:
-                # Timeline/SSE signal only — delivery is the TwiML/chat response body.
                 try:
                     from app.clients.event_bus_client import event_bus
 
@@ -243,6 +257,7 @@ class WhatsAppAgent:
                                 "session_id": session_id,
                                 "tool": intent,
                                 "preview": tool_reply[:200],
+                                "media_url": media_url,
                             },
                             source="whatsapp_agent_v3",
                         )
@@ -252,28 +267,26 @@ class WhatsAppAgent:
 
         return reply
 
-    async def _dispatch_outbound(self, session_id, client_id, lead, text, tool="brochure"):
-        """Route an outbound WhatsApp message through AE->EE (observable + DLQ).
-
-        Only for out-of-band delivery (not when the HTTP/TwiML caller already
-        returns the same text to Twilio).
-        """
+    async def _dispatch_outbound(self, session_id, client_id, lead, text, tool="brochure", media_url=None):
         try:
+            params = {
+                "to": lead.phone or session_id.split("_")[-1],
+                "body": text,
+                "source": "whatsapp_agent_v3",
+                "tool": tool,
+            }
+            if media_url:
+                params["media_url"] = media_url
             await ae_submit(
                 {
                     "action_type": "send_whatsapp",
                     "tenant_id": f"Client_{client_id}",
                     "entity_id": session_id,
-                    "parameters": {
-                        "to": lead.phone or session_id.split("_")[-1],
-                        "body": text,
-                        "source": "whatsapp_agent_v3",
-                        "tool": tool,
-                    },
+                    "parameters": params,
                     "source": "whatsapp_agent_v3",
                 }
             )
-        except Exception as e:  # pragma: no cover - defensive; delivery is best-effort
+        except Exception as e:
             logger.warning(f"v3 outbound dispatch failed (queued best-effort): {e}")
 
 

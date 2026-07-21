@@ -1,9 +1,13 @@
-"""IREIOS 3.0 — Phase 6: Sales AI agent + CRM automation (Tasks 6.1–6.4).
+"""IREIOS 3.0 — Phase 6 + Wave B.1/B.2: Sales AI agent + CEO bus + objections.
 
 `SalesAgent` turns qualification output into a recommended next-best sales
 action and (optionally) advances the deal stage and syncs the lead to the CRM
 through the AutomationEngine -> ExecutionEngine (so CRM writes are observable
 and DLQ-protected, reusing the Phase 3 `CRMExecutor`).
+
+Wave B.1: registered on the CEO bus (``lead.scored``, ``lead.hot``, ``conversation.updated``)
+so hot/scored leads trigger real AE actions without an HTTP call.
+Wave B.2: lightweight objection detection via rule lexicon.
 
 It is deterministic (no extra LLM call) and reuses:
   * `agent_matcher.ensure_lead_assignment` for sticky assignment
@@ -19,6 +23,7 @@ import logging
 from typing import Optional
 
 from config import settings
+from database import SessionLocal
 from models import Lead
 
 from app.agents.whatsapp_agent import score_lead
@@ -26,6 +31,18 @@ from app.automation_engine.engine import submit as ae_submit
 from app.intelligence.agent_matcher import ensure_lead_assignment
 
 logger = logging.getLogger("sales_agent")
+
+# Wave B.1: bus subscription events.
+SALES_BUS_EVENTS = ["lead.scored", "lead.hot", "conversation.updated"]
+
+# Wave B.2: objection lexicon.
+_OBJECTION_PATTERNS = {
+    "price": ["too expensive", "out of budget", "over budget", "costly", "high price", "can't afford", "pricey"],
+    "timing": ["not now", "later", "not ready", "need time", "thinking", "maybe next month", "no rush"],
+    "location": ["too far", "not in that area", "other location", "wrong area", "too remote"],
+    "trust": ["scam", "fraud", "not sure about you", "unreliable", "never heard"],
+    "competitor": ["other builder", "another project", "found better", "going with", "other company"],
+}
 
 # Canonical funnel progression used by `progress_deal_stage`.
 _FUNNEL_NEXT = {
@@ -149,6 +166,161 @@ class SalesAgent:
         except Exception as e:  # pragma: no cover - defensive
             logger.warning(f"SalesAI CRM sync via AE failed (DLQ may catch): {e}")
             return {"status": "error", "error": str(e)}
+
+
+# --------------------------------------------------------------------------- #
+# Wave B.1: CEO bus handler — maps NBA actions to AE submissions.
+# --------------------------------------------------------------------------- #
+
+def _resolve_client_id(tenant_id) -> Optional[int]:
+    if tenant_id is None:
+        return None
+    s = str(tenant_id)
+    if s.startswith("Client_"):
+        s = s.split("_", 1)[1]
+    try:
+        return int(s)
+    except (ValueError, TypeError):
+        return None
+
+
+def _lead_id(envelope: dict) -> Optional[int]:
+    payload = envelope.get("payload") or {}
+    raw = payload.get("lead_id", envelope.get("entity_id"))
+    try:
+        return int(raw)
+    except (ValueError, TypeError):
+        return None
+
+
+def _debounce_key(client_id: int, lead_id: int) -> str:
+    """Redis key for per-lead sales AI debounce (10min TTL)."""
+    return f"sales_ai_lock:{client_id}:{lead_id}"
+
+
+async def _nba_to_ae_action(lead: Lead, client_id: int, recommendation: dict) -> None:
+    """Map a Sales NBA recommendation to an AE action request when applicable."""
+    action = recommendation.get("action")
+    if action == "escalate_hot":
+        await ae_submit({
+            "action_type": "notify_agent",
+            "tenant_id": f"Client_{client_id}",
+            "entity_id": str(lead.id),
+            "parameters": {
+                "kind": "hot_lead",
+                "lead_id": lead.id,
+                "reason": recommendation.get("rationale", "Hot lead — auto-escalated by Sales AI"),
+            },
+            "source": "sales_agent",
+        })
+    elif action == "schedule_site_visit" and lead.visit_date:
+        await ae_submit({
+            "action_type": "schedule_visit",
+            "tenant_id": f"Client_{client_id}",
+            "entity_id": str(lead.id),
+            "parameters": {
+                "lead_id": lead.id,
+                "visit_date": lead.visit_date,
+                "name": lead.name or "",
+                "phone": lead.phone or "",
+            },
+            "source": "sales_agent",
+        })
+    elif action == "send_brochure":
+        await ae_submit({
+            "action_type": "send_whatsapp",
+            "tenant_id": f"Client_{client_id}",
+            "entity_id": str(lead.id),
+            "parameters": {
+                "to": lead.phone or "",
+                "body": f"Hi {lead.name or 'there'}, here is the brochure for {lead.property_type or 'properties'} in {lead.location or 'our projects'}.",
+                "source": "sales_agent",
+            },
+            "source": "sales_agent",
+        })
+    # Other actions (request_info, nurture_followup, assign_agent) are handled
+    # by the follow-up scheduler and agent assignment — no AE action needed here.
+
+
+async def sales_bus_handler(envelope: dict) -> None:
+    """CEO handler for sales bus events: score/assign/recommend → AE actions."""
+    client_id = _resolve_client_id(envelope.get("tenant_id"))
+    lid = _lead_id(envelope)
+    if client_id is None or lid is None:
+        return
+
+    # Debounce: skip if this lead was acted on recently.
+    try:
+        import redis.asyncio as aioredis
+        r = aioredis.from_url(settings.REDIS_URL, decode_responses=True)
+        lock_key = _debounce_key(client_id, lid)
+        already = await r.get(lock_key)
+        if already:
+            logger.debug("sales_bus debounce: lead %s client %s skipped", lid, client_id)
+            await r.aclose()
+            return
+        await r.set(lock_key, "1", ex=600)  # 10 minute TTL
+        await r.aclose()
+    except Exception:
+        pass  # debounce is best-effort; proceed without it
+
+    db = SessionLocal()
+    try:
+        lead = db.query(Lead).filter(Lead.id == lid, Lead.client_id == client_id).first()
+        if lead is None:
+            return
+
+        recommendation = recommend_next_action(lead)
+        await _nba_to_ae_action(lead, client_id, recommendation)
+    finally:
+        db.close()
+
+
+# --------------------------------------------------------------------------- #
+# Wave B.2: Objection detection (lightweight rule lexicon).
+# --------------------------------------------------------------------------- #
+
+def detect_objections(message: str) -> list[dict]:
+    """Scan a user message for known objection patterns.
+
+    Returns a list of dicts ``[{"type": "price", "matched": "too expensive"}, …]``.
+    Empty list when no objection is detected.
+    """
+    if not message:
+        return []
+    msg_lower = message.lower()
+    hits: list[dict] = []
+    for obj_type, patterns in _OBJECTION_PATTERNS.items():
+        for pat in patterns:
+            if pat in msg_lower:
+                hits.append({"type": obj_type, "matched": pat})
+                break  # one match per type per message
+    return hits
+
+
+async def persist_objection(db, lead_id: int, client_id: int, objection: dict) -> None:
+    """Store an objection in LeadMemory."""
+    from models import LeadMemory
+    mem = LeadMemory(
+        client_id=client_id,
+        lead_id=lead_id,
+        key=f"objection_{objection['type']}",
+        value=objection["matched"],
+        memory_type="objection",
+    )
+    db.add(mem)
+    db.commit()
+
+
+# --------------------------------------------------------------------------- #
+# CEO registration
+# --------------------------------------------------------------------------- #
+
+def register_sales_agent(ceo) -> None:
+    ceo.register_agent(
+        "sales_agent", sales_bus_handler, subscriptions=list(SALES_BUS_EVENTS), status="active"
+    )
+    logger.info("Registered sales_agent on %d event types (B.1 bus)", len(SALES_BUS_EVENTS))
 
 
 sales_agent = SalesAgent()

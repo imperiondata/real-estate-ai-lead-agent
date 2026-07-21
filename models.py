@@ -309,3 +309,40 @@ class LeadMemory(Base):
     client = relationship("Client")
     lead = relationship("Lead")
 
+
+class InventoryUnit(Base):
+    __tablename__ = "inventory_units"
+
+    id = Column(Integer, primary_key=True, index=True)
+    client_id = Column(Integer, ForeignKey("clients.id", ondelete="CASCADE"), nullable=False, index=True)
+    project_name = Column(String, nullable=False)
+    tower = Column(String, nullable=True)
+    unit_code = Column(String, nullable=False)
+    bhk = Column(String, nullable=True)
+    location = Column(String, nullable=True)
+    list_price = Column(Integer, nullable=True)
+    status = Column(String, default="available")
+    carpet_sqft = Column(Integer, nullable=True)
+    meta_json = Column(JSONB, nullable=True)
+
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+    client = relationship("Client")
+
+
+class PricingRule(Base):
+    __tablename__ = "pricing_rules"
+
+    id = Column(Integer, primary_key=True, index=True)
+    client_id = Column(Integer, ForeignKey("clients.id", ondelete="CASCADE"), nullable=False, index=True)
+    location = Column(String, nullable=True)
+    bhk = Column(String, nullable=True)
+    min_budget = Column(Integer, nullable=True)
+    max_budget = Column(Integer, nullable=True)
+    list_price = Column(Integer, nullable=True)
+    notes = Column(Text, nullable=True)
+
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+    client = relationship("Client")
+

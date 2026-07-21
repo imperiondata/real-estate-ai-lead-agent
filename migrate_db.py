@@ -32,7 +32,11 @@ def run_migration():
         "CREATE INDEX IF NOT EXISTS ix_approval_requests_client_status ON approval_requests (client_id, status);",
         "CREATE TABLE IF NOT EXISTS lead_memories (id SERIAL PRIMARY KEY, client_id INTEGER REFERENCES clients(id) ON DELETE CASCADE, lead_id INTEGER REFERENCES leads(id) ON DELETE CASCADE, session_id VARCHAR, key VARCHAR, value TEXT, memory_type VARCHAR DEFAULT 'fact', created_at TIMESTAMP WITH TIME ZONE DEFAULT now());",
         "CREATE INDEX IF NOT EXISTS ix_lead_memories_lead ON lead_memories (lead_id);",
-        "CREATE INDEX IF NOT EXISTS ix_lead_memories_client ON lead_memories (client_id);"
+        "CREATE INDEX IF NOT EXISTS ix_lead_memories_client ON lead_memories (client_id);",
+        "CREATE TABLE IF NOT EXISTS inventory_units (id SERIAL PRIMARY KEY, client_id INTEGER REFERENCES clients(id) ON DELETE CASCADE, project_name VARCHAR NOT NULL, tower VARCHAR, unit_code VARCHAR NOT NULL, bhk VARCHAR, location VARCHAR, list_price INTEGER, status VARCHAR DEFAULT 'available', carpet_sqft INTEGER, meta_json JSONB, created_at TIMESTAMP WITH TIME ZONE DEFAULT now());",
+        "CREATE INDEX IF NOT EXISTS ix_inventory_units_client ON inventory_units (client_id);",
+        "CREATE TABLE IF NOT EXISTS pricing_rules (id SERIAL PRIMARY KEY, client_id INTEGER REFERENCES clients(id) ON DELETE CASCADE, location VARCHAR, bhk VARCHAR, min_budget INTEGER, max_budget INTEGER, list_price INTEGER, notes TEXT, created_at TIMESTAMP WITH TIME ZONE DEFAULT now());",
+        "CREATE INDEX IF NOT EXISTS ix_pricing_rules_client ON pricing_rules (client_id);"
     ]
 
     for query in migrations:

@@ -59,9 +59,25 @@ n8n is **orchestration around** the OS, not a replacement for the CEO/AE/EE spin
 ## Status
 
 - Client scaffold: **shipped** (`app/automation_engine/n8n_client.py`)
-- AE `template_type=n8n` dispatch: **planned Wave A.3** (`plans/IREIOS_3.0_WAVE_A_D_EXPANSION.md`) — today `engine.submit` still runs linear EE only
-- Live workflows: **not provisioned** (config-later → Wave A.0.3 + B.5 + D.3)
-- Owner: backend ops when first workflow is approved
+- AE `template_type=n8n` dispatch: **shipped** (Wave A.3) — `engine.py` branches on `template_type`, calls `N8NClient.trigger_workflow` or falls back to linear EE.
+- **Workflow 1: `ireios_hot_lead_slack`** — webhook path `/webhook/ireios-hot-lead-slack`.
+  Trigger: `template_type="n8n"`, `workflow_id="ireios_hot_lead_slack"` from `hot_lead_notify.py` template.
+  Payload:
+  ```json
+  {
+    "action_type": "notify_agent",
+    "tenant_id": "Client_1",
+    "entity_id": "42",
+    "parameters": { "kind": "hot_lead", "lead_name": "...", "lead_phone": "...", "score": 0.95 },
+    "template_type": "n8n",
+    "workflow_id": "ireios_hot_lead_slack"
+  }
+  ```
+  Action: Post to sales Slack channel.
+- **Workflow 2 (recommended): Weekly marketing CSV** — subscribe to `marketing.report.generated` via n8n Redis Streams trigger or HTTP webhook from marketing_agent optional second publish. Push CSV to Google Drive / email.
+- **Workflow 3 (recommended): DLQ depth alert** — cron in n8n polling `GET /api/v1/admin/dlq-count` (admin-gated) or subscribe to Redis Streams DLQ events. Alert ops if count > threshold.
+- **Live workflows: not provisioned** — webhook endpoints are accepted by n8n but the instance is not stood up yet. Deploy as part of Wave D.3 config-later.
+- **Owner:** backend ops when first workflow is approved
 
 ## Practicality vs LangGraph
 

@@ -21,18 +21,11 @@ from app.orchestrator.ceo_orchestrator import CEOOrchestrator
 logger = logging.getLogger("placeholders")
 
 # Layer-2 agent names reserved for future IREIOS 3.0 builds.
-# NOTE: marketing_agent, customer_success_agent, crm_automation, lead_scoring,
-# and kg_event_writer are now REAL active agents (registered in main.py lifespan)
-# and are intentionally no longer placeholders. `retention_agent` responsibilities
-# are covered by customer_success_agent (renewal.due / payment.due handling).
-PLACEHOLDER_AGENTS = [
-    "pricing_agent",
-    "negotiation_agent",
-    "inventory_agent",
-    "legal_agent",
-    "finance_agent",
-    "onboarding_agent",
-]
+# NOTE: pricing_agent, negotiation_agent, inventory_agent, legal_agent,
+# finance_agent, onboarding_agent are now REAL active agents (registered in
+# main.py lifespan, Wave C). `retention_agent` responsibilities are covered by
+# customer_success_agent (renewal.due / payment.due handling).
+PLACEHOLDER_AGENTS: list[str] = []
 
 
 async def _placeholder_handler(event: dict) -> None:

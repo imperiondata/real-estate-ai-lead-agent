@@ -186,12 +186,20 @@ Registered on the CEO bus in `main.py` lifespan (`register_*(ceo)`), all `status
 - **`followup_arm`** (`app/workflows/followup_arm.py`) — arms `FollowUpState` on `lead.created`/`conversation.updated`.
 - **`lead_scoring`** (`app/agents/lead_scoring_handler.py`) — rescoring on `conversation.updated`/`lead.created`/`whatsapp.received` → publishes `lead.scored`.
 - **`crm_automation`** (`app/workflows/crm_automation.py`, Task 6.1) — on `lead.*` ensures sticky assignment + AE→EE `update_crm`, publishes `lead.assigned` (idempotent).
-- **`marketing_agent`** (`app/agents/marketing_agent.py`, 8.2) — on `cron.weekly_report`/`campaign.completed` builds segmentation report → `marketing.report.generated`.
-- **`customer_success_agent`** (`app/agents/customer_success_agent.py`, 8.3) — on `booking.confirmed`/`payment.*`/`renewal.due`/`document.pending` fires reminder via AE `notify_agent`. Covers former `retention_agent`.
+- **`marketing_agent`** (`app/agents/marketing_agent.py`, 8.2, Wave B.4) — on `cron.weekly_report`/`campaign.completed`/`market.alert.generated` builds segmentation report → `marketing.report.generated`. Folds competitor alerts into report under `market_alert` key.
+- **`customer_success_agent`** (`app/agents/customer_success_agent.py`, 8.3, Wave B.3) — on `booking.confirmed`/`payment.*`/`renewal.due`/`document.pending`/`customer.onboarded` sends WhatsApp via AE (or fallback `notify_admin`). Covers former `retention_agent`.
+- **`sales_agent`** (`app/agents/sales_agent.py`, Wave B.1) — on `lead.scored`/`lead.hot`/`conversation.updated` maps NBA→AE actions (notify/schedule/send). 10min Redis debounce. Objection detection lexicon (price/timing/location/trust/competitor); persists to `LeadMemory`.
 - **`kg_event_writer`** (`app/knowledge_graph/event_writers.py`, 7.4) — async Neo4j projections on core events (no-op when Neo4j down).
+- **AE templates** (`app/automation_engine/templates/`, Wave B.5) — `hot_lead_notify.py` / `visit_booking.py` return validated action_request dicts. Support `template_type="n8n"` + `workflow_id` for ops fan-out.
 - **Direct-invoked (not bus):** `WhatsAppAgent` (via `FEATURE_WHATSAPP_V3`), `SalesAgent` (via `POST /api/v1/leads/{id}/sales-ai`).
-- **Cron (scheduler):** `competitor_monitor_job` (`app/workflows/competitor_monitor.py`, 8.4) nightly 01:00 → `market.alert.generated` on `COMPETITOR_KEYWORDS` matches (publishes via short-lived Redis conn from the scheduler thread).
-- **Placeholders (skipped by CEO):** `pricing_agent`, `negotiation_agent`, `inventory_agent`, `legal_agent`, `finance_agent`, `onboarding_agent` (`app/agents/placeholders.py`).
+- **Cron (scheduler):** `competitor_monitor_job` (`app/workflows/competitor_monitor.py`, 8.4, Wave B.6) nightly 01:00 → `market.alert.generated` on `COMPETITOR_KEYWORDS` matches + writes `NotificationLog` rows for admin visibility.
+- **`negotiation_agent`** (`app/agents/negotiation_agent.py`, Wave C.1) — on `lead.negotiation.started`/`lead.negotiation.counter` checks budget alignment; submits `manager_approval` HITL when misaligned; publishes `negotiation.counter.sent`.
+- **`pricing_agent`** (`app/agents/pricing_agent.py`, Wave C.2) — on `pricing.query`/`lead.scored` queries `PricingRule` by location/budget; submits match via AE.
+- **`inventory_agent`** (`app/agents/inventory_agent.py`, Wave C.3) — on `inventory.query`/`inventory.hold` queries `InventoryUnit` (available status); submits inventory data via AE.
+- **`onboarding_agent`** (`app/agents/onboarding_agent.py`, Wave C.4) — on `customer.onboarded`/`booking.confirmed` sends WhatsApp checklist via AE.
+- **`finance_agent`** (`app/agents/finance_agent.py`, Wave C.5) — on `payment.query`/`finance.schedule` submits payment info via AE.
+- **`legal_agent`** (`app/agents/legal_agent.py`, Wave C.6) — on `document.required`/`legal.review` notifies admin of document needs.
+- **Placeholders (skipped by CEO):** none (all 6 promoted to active in Wave C).
 
 ## IREIOS 3.0 — Neo4j Knowledge Graph (Phase 7 + BD-5 reply path)
 
@@ -220,11 +228,14 @@ Outbound (alerts/escalation/background): app/execution_engine/outbound.py → EE
 - Evidence: `plans/IREIOS_3.0_EVIDENCE_PACK.md`
 - **Post-G2 Waves A–D (depth fill):** `plans/IREIOS_3.0_WAVE_A_D_EXPANSION.md` + changelog `plans/IREIOS_3.0_WAVE_A_D_CHANGELOG.md` + tests `tests/test_e14_wave_a.py`…`test_e17_wave_d.py`. Order: UNIFIED Steps **20–23** + Gate **G3**.
 
-## WhatsApp brochure / floor plan (current → Wave D.4 Approach B)
+## WhatsApp brochure / floor plan (Wave D.4 Approach B — IMPLEMENTED)
 
 - Trigger: `detect_tool_intent` in `app/agents/whatsapp_agent.py` on keywords (brochure / floor plan / layout…).
-- **Today:** deterministic **plain text** from lead fields (`generate_brochure` / `generate_floorplan`); TwiML/chat body; **no** AE double-send (`tests/test_e12_bus_wiring.py`).
-- **Planned (Wave D.4 Approach B):** host static PDF/image at public HTTPS (`BROCHURE_MEDIA_URL` / `FLOORPLAN_MEDIA_URL`); send as Twilio **`MediaUrl` document bubble** + short caption via AE W1 path; empty env → text fallback. Full steps: `plans/IREIOS_3.0_WAVE_A_D_EXPANSION.md` §4.4. Executor already accepts `media_url` (`whatsapp_executor.py`).
+- **Media URL:** `resolve_tool_media_url(tool)` reads `settings.BROCHURE_MEDIA_URL` / `FLOORPLAN_MEDIA_URL`. When configured, short caption replaces full text in tool reply; `media_url` passed to AE `send_whatsapp` parameters.
+- **TwiML:** `main.py` TwiML response includes `<Media>` element when media URL configured.
+- **Fallback:** Empty env → full `generate_brochure` / `generate_floorplan` text (pre-Wave D behavior).
+- **AE outbound:** `_dispatch_outbound` now accepts `media_url` parameter, forwarded to `WhatsAppExecutor`.
+- **Status:** Shipped in Wave D.4.
 
 ## IREIOS 3.0 — Event Bus / CEO / Execution Engine (Phase 1)
 

@@ -354,6 +354,14 @@ scheduler.add_job(crm_resync_job, "interval", minutes=5, id="crm_resync")
 from app.workflows.competitor_monitor import competitor_monitor_job
 scheduler.add_job(competitor_monitor_job, "cron", hour=1, minute=0, id="competitor_monitor")
 
+# Wave A.1: weekly marketing cron (publishes cron.weekly_report per client).
+from app.workflows.weekly_marketing_cron import weekly_marketing_cron_job
+scheduler.add_job(weekly_marketing_cron_job, "cron", day_of_week="mon", hour=8, minute=0, id="weekly_marketing_report")
+
+# Wave A.4: expire stale approvals every 15 minutes.
+from app.automation_engine.engine import expire_stale_approvals
+scheduler.add_job(expire_stale_approvals, "interval", minutes=15, id="expire_approvals", args=[24])
+
 @asynccontextmanager
 async def lifespan(app):
     """Start the follow-up scheduler and the IREIOS 3.0 event bus when the server boots, stop them on shutdown.
@@ -386,6 +394,24 @@ async def lifespan(app):
     register_customer_success(ceo)  # booking/payment/renewal -> reminders
     register_graph_writers(ceo)     # core events -> Neo4j async writers
 
+    # Wave B.1: Sales AI on the CEO bus — reacts to scored/hot leads.
+    from app.agents.sales_agent import register_sales_agent
+    register_sales_agent(ceo)
+
+    # Wave C: Promote 6 placeholders to real agents.
+    from app.agents.negotiation_agent import register_negotiation
+    from app.agents.pricing_agent import register_pricing
+    from app.agents.inventory_agent import register_inventory
+    from app.agents.onboarding_agent import register_onboarding
+    from app.agents.finance_agent import register_finance
+    from app.agents.legal_agent import register_legal
+    register_negotiation(ceo)
+    register_pricing(ceo)
+    register_inventory(ceo)
+    register_onboarding(ceo)
+    register_finance(ceo)
+    register_legal(ceo)
+
     # Phase 7.2: apply Neo4j schema (idempotent no-op when Neo4j unconfigured).
     from app.knowledge_graph.neo4j_client import neo4j_client
     try:
@@ -414,9 +440,17 @@ app = FastAPI(
 
 app.include_router(events_router)
 
+# Wave A.2: Lifecycle event producers (admin-gated).
+from app.api.lifecycle import router as lifecycle_router
+app.include_router(lifecycle_router)
+
 # Phase 7.3: Graph API routes (tenant-scoped; graceful no-op when Neo4j down).
 from app.knowledge_graph.graph_api import router as graph_router
 app.include_router(graph_router)
+
+# Wave D.1: Prediction / forecast routes (JWT, client-scoped, heuristic MVP).
+from app.api.predictions import router as predictions_router
+app.include_router(predictions_router)
 
 # TLS Enforcement (Redirect HTTP to HTTPS)
 if settings.IS_PRODUCTION or os.getenv("RENDER"):
@@ -899,7 +933,13 @@ async def whatsapp_webhook(
                 latency_ms = round((time.time() - request_start) * 1000)
                 logger.info(f"LATENCY | session={session_id} | {latency_ms}ms | status=delivered")
                 twiml = MessagingResponse()
-                twiml.message(reply_text)
+                msg = twiml.message(reply_text)
+                # Wave D.4: attach media URL when tool intent detected
+                rl = reply_text.lower()
+                if "brochure" in rl and settings.BROCHURE_MEDIA_URL:
+                    msg.media(settings.BROCHURE_MEDIA_URL)
+                elif "floor plan" in rl and settings.FLOORPLAN_MEDIA_URL:
+                    msg.media(settings.FLOORPLAN_MEDIA_URL)
                 return Response(content=str(twiml), media_type="application/xml")
             
             except asyncio.TimeoutError:

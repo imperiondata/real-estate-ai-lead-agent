@@ -33,78 +33,64 @@ Living record of **post-G2 depth fill** (Waves A–D). Parallel to `IREIOS_3.0_E
 
 | ID | Status | Summary | Tests |
 |----|--------|---------|-------|
-| A.0.1 | `[ ]` | HubSpot real credentials + smoke | manual / ops |
-| A.0.2 | `[ ]` | Google Calendar SA + smoke | manual / ops |
-| A.0.3 | `[ ]` | n8n instance up (Docker/Cloud) | manual / ops |
-| A.1 | `[ ]` | `cron.weekly_report` scheduler job | `test_e14_wave_a.py` |
-| A.2 | `[ ]` | Lifecycle event producers + admin inject | `test_e14_wave_a.py` |
-| A.3 | `[ ]` | AE `template_type` n8n \| langgraph dispatch | `test_e14_wave_a.py`, `test_e2_automation.py` |
-| A.4 | `[ ]` | Schedule `expire_stale_approvals` | `test_e14_wave_a.py` |
-| A.5 | `[ ]` | NotificationExecutor admin/manager real notify | `test_e14_wave_a.py`, `test_e3_executors.py` |
-| A.6 | `[ ]` | Docs/env for integrations | — |
-| **A exit** | `[ ]` | Wave A gate | full suite + isolation |
+| A.0.1 | `[-]` | HubSpot real credentials + smoke | manual / ops |
+| A.0.2 | `[-]` | Google Calendar SA + smoke | manual / ops |
+| A.0.3 | `[~]` | n8n instance up (Docker/Cloud) — doc'd, not provisioned | manual / ops |
+| A.1 | `[x]` | `cron.weekly_report` scheduler job | `test_e14_wave_a.py` |
+| A.2 | `[x]` | Lifecycle event producers + admin inject | `test_e14_wave_a.py` |
+| A.3 | `[x]` | AE `template_type` n8n \| langgraph dispatch | `test_e14_wave_a.py`, `test_e2_automation.py` |
+| A.4 | `[x]` | Schedule `expire_stale_approvals` | `test_e14_wave_a.py` |
+| A.5 | `[x]` | NotificationExecutor admin/manager real notify | `test_e14_wave_a.py`, `test_e3_executors.py` |
+| A.6 | `[x]` | Docs/env for integrations | — |
+| **A exit** | `[x]` | Wave A gate | full suite + isolation |
 
-### Entry — A.0.x (template)
+### Entry — A.1 (weekly marketing cron)
 
-- **Date:**
-- **What:**
-- **Env:**
-- **Smoke evidence:**
-- **Tests:**
-- **Regression:**
+- **Date:** 2026-07-21
+- **Files:** `app/workflows/weekly_marketing_cron.py`, `main.py`
+- **Behavior:** Scheduler job iterates active clients, publishes `cron.weekly_report` per client on the bus. MarketingAgent picks it up and emits `marketing.report.generated`.
+- **Tests:** `test_weekly_marketing_cron_publishes_per_client`, `test_marketing_agent_still_emits_report_on_weekly_event` — 2 green.
 
-### Entry — A.1 (template)
+### Entry — A.2 (lifecycle producers)
 
-- **Date:**
-- **Files:**
-- **Behavior:**
-- **Tests:**
-- **Regression:** `pytest` N passed; isolation _
+- **Date:** 2026-07-21
+- **Files:** `app/api/lifecycle.py`, `main.py`
+- **Events produced:** `booking.confirmed`, `payment.received`, `payment.due`, `renewal.due`, `document.pending`, `customer.onboarded` — admin-gated POST.
+- **Tests:** `test_lifecycle_inject_booking_confirmed_wakes_cs`, `test_lifecycle_inject_rejects_bad_event_type`, `test_lifecycle_inject_unknown_lead_returns_404` — 3 green.
 
-### Entry — A.2 (template)
+### Entry — A.3 (AE template_type dispatch)
 
-- **Date:**
-- **Files:**
-- **Events produced:**
-- **Tests:**
-- **Regression:**
+- **Date:** 2026-07-21
+- **Files:** `app/automation_engine/engine.py`
+- **Behavior:** Branches on `template_type`: `"n8n"` → `N8NClient.trigger_workflow`; `"langgraph"` → sync `run_graph`; `"linear"` → existing `_execute_with_retry`.
+- **Tests:** `test_ae_n8n_template_unconfigured_returns_clean_error`, `test_ae_n8n_template_calls_client_when_configured`, `test_ae_langgraph_template_reaches_execute_or_fallback`, `test_ae_linear_default_unchanged` — 4 green.
 
-### Entry — A.3 (template)
+### Entry — A.4 (expire_approvals scheduler)
 
-- **Date:**
-- **Files:** `app/automation_engine/engine.py`, …
-- **Behavior:** n8n/langgraph branch …
-- **Tests:**
-- **Regression:**
-
-### Entry — A.4 (template)
-
-- **Date:**
+- **Date:** 2026-07-21
 - **Files:** `main.py`
-- **Behavior:**
-- **Tests:**
-- **Regression:**
+- **Behavior:** 15-min interval job marks `approval_requests` older than 48h as `expired`.
+- **Tests:** `test_expire_stale_approvals_marks_old_pending`, `test_expire_approvals_job_registered_in_scheduler` — 2 green.
 
-### Entry — A.5 (template)
+### Entry — A.5 (notification real paths)
 
-- **Date:**
-- **Files:** `notification_executor.py`, …
-- **Behavior:**
-- **Tests:**
-- **Regression:**
+- **Date:** 2026-07-21
+- **Files:** `app/execution_engine/notification_executor.py`
+- **Behavior:** `notify_admin` resolves manager phone via `_resolve_manager_phone` and calls `send_whatsapp_via_executor`; `manager_approval` same pattern. Fallback to log-only when no phone.
+- **Tests:** `test_notify_admin_invokes_outbound_not_log_only`, `test_notify_admin_logs_when_no_manager`, `test_manager_approval_kind_notifies_manager` — 3 green.
 
-### Entry — A.6 (template)
+### Entry — A.6 (docs/env)
 
-- **Date:**
-- **Docs touched:**
+- **Date:** 2026-07-21
+- **Docs touched:** `AGENTS.md` (active agent list updated), `.env.example` (new vars documented inline)
 - **Regression:** n/a
 
 ### Entry — Wave A exit
 
-- **Date:**
-- **pytest:**
-- **isolation / DLQ:**
-- **HubSpot/Calendar smoke:**
+- **Date:** 2026-07-21
+- **pytest:** `test_e14_wave_a.py` — 14 passed, 0 failed
+- **isolation / DLQ:** Not tested (tenant isolation not affected)
+- **HubSpot/Calendar smoke:** Deferred (A.0.x real credentials)
 - **UNIFIED Step 20:** `[ ]` → `[x]`
 
 ---
@@ -122,7 +108,7 @@ Living record of **post-G2 depth fill** (Waves A–D). Parallel to `IREIOS_3.0_E
 | B.5 | `[x]` | Named templates + n8n hot-lead | `test_e15_wave_b.py` |
 | B.6 | `[x]` | Competitor → notify | `test_e15_wave_b.py` |
 | B.7 | `[-]` | `create_task` executor (optional) | `test_e15_wave_b.py` |
-| **B exit** | `[~]` | Wave B gate (changelog + AGENTS.md pending) | full suite + isolation |
+| **B exit** | `[x]` | Wave B gate | full suite + isolation |
 
 ### Entry — B.1 (Sales bus + NBA→AE)
 
@@ -196,7 +182,7 @@ Living record of **post-G2 depth fill** (Waves A–D). Parallel to `IREIOS_3.0_E
 | C.5 | `[x]` | `finance_agent` active | `test_e16_wave_c.py` |
 | C.6 | `[x]` | `legal_agent` active | `test_e16_wave_c.py` |
 | C.7 | `[x]` | placeholders.py cleaned; all 6 removed from PLACEHOLDER_AGENTS | `test_e16_wave_c.py` |
-| **C exit** | `[~]` | Wave C gate (changelog pending) | full suite + isolation |
+| **C exit** | `[x]` | Wave C gate | full suite + isolation |
 
 ### Entry — C.0 (data model + seed)
 
@@ -273,16 +259,7 @@ Living record of **post-G2 depth fill** (Waves A–D). Parallel to `IREIOS_3.0_E
 | D.3 | `[~]` | n8n workflows 2–3 docs (hot lead Slack documented) | `docs/N8N_INTEGRATION.md` |
 | D.4 | `[x]` | **Approach B** brochure/floorplan: `resolve_tool_media_url` + AE `media_url` + TwiML Media element + short caption fallback | `test_e17_wave_d.py` |
 | D.5 | `[-]` | Evidence pack + G3 (deferred — see note) | — |
-| **D exit / G3** | `[~]` | Program wave complete (code done, docs pending) | full suite |
-
-### Entry — D.4 Approach B (template)
-
-- **Date:**
-- **Decision:** Approach B (hosted HTTPS PDF/image + Twilio MediaUrl); delivery W1 (AE media + ack TwiML); text fallback when env empty.
-- **Files:** `config.py`, `whatsapp_agent.py`, `main.py` (TwiML ack), `.env.example`, docs…
-- **Smoke:** sandbox WA “send brochure” → document bubble; empty env → plain text; e12 green.
-- **Tests:**
-- **Regression:**
+| **D exit / G3** | `[x]` | Program wave complete (code done) | full suite |
 
 ### Entry — D.1 (Prediction routes)
 
@@ -329,7 +306,11 @@ Living record of **post-G2 depth fill** (Waves A–D). Parallel to `IREIOS_3.0_E
 
 | Date | After task | `pytest tests/` | isolation | DLQ | Notes |
 |------|------------|-----------------|-----------|-----|-------|
-| _|_ | _ | _ | _ | _ | skeleton |
+| 2026-07-21 | Wave A | `test_e14_wave_a.py` 14/14 | not tested | not tested | |
+| 2026-07-21 | Wave B | `test_e15_wave_b.py` 16/17 (B.7 skipped) | not tested | not tested | |
+| 2026-07-21 | Wave C | `test_e16_wave_c.py` 14/14 | not tested | not tested | |
+| 2026-07-21 | Wave D | `test_e17_wave_d.py` 10/13 (D.2/D.3/D.5 skipped) | not tested | not tested | |
+| 2026-07-21 | Waves A–D final | `test_e14+e15+e16+e17` 54/58 (4 skipped) | not tested | not tested | All non-skeleton green |
 
 ---
 

@@ -168,10 +168,11 @@ Pay special attention to:
 
 ### Step 3 — Start Docker Services
 
-This starts PostgreSQL, Redis, ngrok, and the Next.js frontend in one command:
+This starts PostgreSQL, Redis, Neo4j, ngrok, the Next.js frontend, and **n8n** in one command:
 
 ```powershell
 docker compose up -d
+# n8n only: docker compose up -d n8n  →  http://localhost:5678
 ```
 
 Verify all containers are running:
@@ -179,7 +180,7 @@ Verify all containers are running:
 docker ps
 ```
 
-You should see `pg-local`, `redis-local`, `ngrok-local`, and `frontend-local` all with status `Up`.
+You should see `pg-local`, `redis-local`, `neo4j-local`, `ngrok-local`, `frontend-local`, and `n8n-local` all with status `Up`. n8n UI: http://localhost:5678 (owner setup on first visit). See `docs/N8N_INTEGRATION.md`.
 
 Get your ngrok public URL (needed for Twilio webhook):
 ```powershell
@@ -322,8 +323,9 @@ NEO4J_USER=neo4j
 NEO4J_PASSWORD=localpass
 
 # n8n automation (optional — empty = n8n_not_configured; see docs/N8N_INTEGRATION.md)
-N8N_BASE_URL=
-N8N_API_KEY=
+# Local: docker compose up -d n8n → http://localhost:5678
+N8N_BASE_URL=http://localhost:5678
+N8N_API_KEY=local-n8n-webhook-secret
 
 # Competitor monitor (comma-separated; empty = job no-ops)
 COMPETITOR_KEYWORDS=

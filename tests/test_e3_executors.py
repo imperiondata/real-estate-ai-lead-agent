@@ -232,7 +232,13 @@ def test_crm_push_retries_on_429(monkeypatch):
 # --------------------------------------------------------------------------- #
 # Task 3.3 — Calendar + Notification executors
 # --------------------------------------------------------------------------- #
-def test_calendar_executor_success():
+def test_calendar_executor_success(monkeypatch):
+    from config import settings as _settings
+
+    # Stub path must stay deterministic even when local .env has real GCal.
+    monkeypatch.setattr(_settings, "GOOGLE_CALENDAR_ID", "")
+    monkeypatch.setattr(_settings, "GOOGLE_CALENDAR_CREDENTIALS_JSON", "")
+
     async def run():
         ex = CalendarExecutor()
         return await ex.execute({
@@ -246,6 +252,7 @@ def test_calendar_executor_success():
     assert res["status"] == "success"
     assert res["visit_id"].startswith("visit_")
     assert res["visit_date"] == "2026-08-01T10:00:00Z"
+    assert res.get("provider") == "stub"
 
 
 def test_notification_executor_unknown_kind_errors():

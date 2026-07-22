@@ -11,7 +11,7 @@ High-signal, repo-specific facts an agent would likely miss without help.
 | Start API | `uvicorn main:app --host 0.0.0.0 --port 8000 --reload` (venv active) |
 | Install deps | `pip install -r requirements.lock` (not `requirements.txt`) |
 | Start frontend | `cd frontend && npm run dev` |
-| Docker services | `docker compose up -d` (pg, redis, ngrok, frontend) |
+| Docker services | `docker compose up -d` (pg, redis, neo4j, ngrok, frontend, **n8n**) · n8n only: `docker compose up -d n8n` → http://localhost:5678 |
 | Seed local test clients | `python seed.py` → keys `secret-client-key-123` / `secret-client-key-456` |
 | Seed 1000 dummy leads + Neo4j | `python seed_dummy_leads.py` (`--count`, `--purge-only`, `--no-neo4j`) |
 | Project PG leads → Neo4j | `python project_leads_to_neo4j.py` (`--client-id`, `--source dummy_seed`) |
@@ -227,7 +227,7 @@ Outbound (alerts/escalation/background): app/execution_engine/outbound.py → EE
 
 ## Docs pointers
 
-- n8n optional / config-later: `docs/N8N_INTEGRATION.md` (code path shipped; instance ops-pending)
+- n8n: Compose service + AE path shipped; UI workflows still ops (`docs/N8N_INTEGRATION.md`). Brochure HTTPS URLs optional until set.
 - Frontend remaining work: `docs/FRONTEND_BACKLOG.md` (MockSSE cutover still open)
 - Evidence: `plans/IREIOS_3.0_EVIDENCE_PACK.md` (G2 + G3)
 - **Post-G2 Waves A–D (depth fill, G3 green):** living log `plans/IREIOS_3.0_WAVE_A_D_CHANGELOG.md`; how-to `plans/IREIOS_3.0_WAVE_A_D_EXPANSION.md`; tests `tests/test_e14_wave_a.py`…`test_e17_wave_d.py`. UNIFIED Steps **20–23** + Gate **G3** = `[x]`.

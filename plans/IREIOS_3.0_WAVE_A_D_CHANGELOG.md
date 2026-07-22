@@ -34,8 +34,8 @@ Living record of **post-G2 depth fill** (Waves A–D). Parallel to `IREIOS_3.0_E
 | ID | Status | Summary | Tests |
 |----|--------|---------|-------|
 | A.0.1 | `[-]` | HubSpot — **skipped** (demo stub OK; portal optional) | manual / ops |
-| A.0.2 | `[~]` | Google Calendar — env/config in local `.env` (smoke when ready) | manual / ops |
-| A.0.3 | `[~]` | n8n instance — code path shipped; instance ops-pending | manual / ops |
+| A.0.2 | `[x]` | Google Calendar — path fixed (Windows `/`); live smoke `provider=google_calendar` (2026-07-22) | manual smoke |
+| A.0.3 | `[~]` | n8n Docker **up** (`n8n-local:5678`) + `.env` set; **workflow still incomplete** (webhook 404 until UI setup) | manual / ops |
 | A.1 | `[x]` | `cron.weekly_report` scheduler job | `test_e14_wave_a.py` |
 | A.2 | `[x]` | Lifecycle event producers + admin inject | `test_e14_wave_a.py` |
 | A.3 | `[x]` | AE `template_type` n8n \| langgraph dispatch | `test_e14_wave_a.py`, `test_e2_automation.py` |
@@ -256,8 +256,8 @@ Living record of **post-G2 depth fill** (Waves A–D). Parallel to `IREIOS_3.0_E
 |----|--------|---------|-------|
 | D.1 | `[x]` | Revenue / cancel / inventory / cashflow routes + `prediction_service` helpers | `test_e17_wave_d.py` |
 | D.2 | `[-]` | Memory auto-write on WA turn (deferred — see note) | `test_e17_wave_d.py` |
-| D.3 | `[~]` | n8n workflows 2–3 docs (hot lead Slack documented) | `docs/N8N_INTEGRATION.md` |
-| D.4 | `[x]` | **Approach B** brochure/floorplan: `resolve_tool_media_url` + AE `media_url` + TwiML Media element + short caption fallback | `test_e17_wave_d.py` |
+| D.3 | `[~]` | n8n: instance running; **workflows incomplete** (create webhook + Header Auth; then CSV/DLQ) | `docs/N8N_INTEGRATION.md` |
+| D.4 | `[x]` | **Approach B** code shipped; **HTTPS media URLs still empty** (plain-text fallback until ops sets env) | `test_e17_wave_d.py` |
 | D.5 | `[-]` | Evidence pack + G3 (deferred — see note) | — |
 | **D exit / G3** | `[x]` | Program wave complete — code + gates (pytest/isolation/DLQ). D.2/D.5/A.0 ops still deferred | full suite |
 
@@ -314,6 +314,34 @@ Living record of **post-G2 depth fill** (Waves A–D). Parallel to `IREIOS_3.0_E
 | 2026-07-21 | Waves A–D final | `test_e14+e15+e16+e17` 54/58 (4 skipped) | not tested | not tested | All non-skeleton green |
 | 2026-07-21 | P0 stabilize | full `tests/` **332 passed, 7 skipped** | **PASS** | **1/1 DLQ recovered** | seed.py ASCII fix; `ensure_test_client` in conftest; e14/e15/e5/e12 FK harden; remove duplicate `events_router` mount; e1b OpenAPI route check |
 | 2026-07-21 | Post-G3 brochure polish | e17+e12+e5+e6+e15 green | — | — | `take_outbound_media_url` staging; HTTPS reject; Sales NBA media; chat JSON `media_url`; no reply-text scrape |
+| 2026-07-22 | Integration audit (no HubSpot) | full `tests/` **333 passed, 7 skipped** | — | — | n8n compose+env; GCal live smoke; tests hardened for live env; brochure URLs still empty |
+
+---
+
+## Post-G3 integration audit (2026-07-22)
+
+**Infra up:** `pg-local`, `redis-local`, `neo4j-local`, `n8n-local`, `ngrok-local`, `frontend-local` · API `/health` 200 · `seed.py` run.
+
+| Integration | Status | Evidence | Still incomplete? |
+|-------------|--------|----------|-------------------|
+| **Postgres / Redis** | `[x]` | compose Up; redis PING | — |
+| **Neo4j** | `[x]` | `/api/v1/graph/health` `available:true` schema v1 | — |
+| **Google Calendar** | `[x]` | `CalendarExecutor` → `provider=google_calendar` + real `html_link` | Share calendar with SA if events stop appearing |
+| **n8n instance** | `[~]` | UI http://localhost:5678 HTTP 200; `N8N_*` set; client `configured=True` | **Yes** — owner setup + active webhook `ireios_hot_lead_slack` + Header Auth `X-N8N-API-KEY`; trigger currently `n8n_http_404` |
+| **n8n workflows 2–3** | `[ ]` | docs only | **Yes** — marketing CSV, DLQ alert |
+| **Brochure / floor plan media** | `[~]` | Approach B code green; empty env → text fallback | **Yes** — set public **HTTPS** `BROCHURE_MEDIA_URL` / `FLOORPLAN_MEDIA_URL` + Twilio smoke |
+| **HubSpot** | `[-]` | intentionally skipped (demo stub) | optional later |
+| **Twilio live WA** | depends on `.env` | not re-audited this pass | sandbox smoke when ready |
+| **FE MockSSE** | `[ ]` | `docs/FRONTEND_BACKLOG.md` | **Yes** — Mayank |
+| **D.2 memory / B.7 create_task / task3_runner** | `[-]`/`[ ]` | deferred leftovers | **Yes** |
+| **Dual-path 10.2/10.3 delete** | `[-]` | stay deferred | **Yes** (do not mark done) |
+
+**Code fixes this audit (push-ready with compose/docs):**
+- `docker-compose.yml` — `n8n` service
+- `n8n_client.py` — explicit `""` ctor args no longer fall through to settings
+- Calendar/n8n unit tests monkeypatch stub path when local `.env` is live
+- `test_e1b_sse` isolated stream/group (no steal from live uvicorn consumer group)
+- Local `.env` only: GCal path used forward slashes (Windows `\r` in `\real_estate…`); **do not commit `.env`**
 
 ---
 
@@ -326,5 +354,5 @@ Living record of **post-G2 depth fill** (Waves A–D). Parallel to `IREIOS_3.0_E
 | Monolith dual-path delete | Expansion 10.2/10.3 |
 | Full competitor crawl | Keyword MVP only |
 | HubSpot live portal | Skipped — demo stub until private-app token |
-| n8n live instance | Ops-pending — code path ready |
+| n8n **workflows** (instance is up) | Owner account + activate webhook + Slack/Set node — see `docs/N8N_INTEGRATION.md` |
 | Brochure HTTPS media files | Ops — set `BROCHURE_*` / `FLOORPLAN_*` when hosted |

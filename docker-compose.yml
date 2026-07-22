@@ -1,6 +1,6 @@
 services:
   postgres:
-    image: postgres:18-alpine
+    image: postgres:18
     container_name: pg-local
     environment:
       POSTGRES_USER: realestate
@@ -13,7 +13,7 @@ services:
     restart: always
 
   redis:
-    image: redis:alpine
+    image: redis:8.8.0
     container_name: redis-local
     ports:
       - "127.0.0.1:6379:6379"
@@ -22,7 +22,7 @@ services:
     restart: always
 
   neo4j:
-    image: neo4j:5-community
+    image: neo4j:2026.06
     container_name: neo4j-local
     environment:
       NEO4J_AUTH: neo4j/localpass
@@ -35,7 +35,7 @@ services:
     restart: always
 
   ngrok:
-    image: ngrok/ngrok:latest
+    image: ngrok/ngrok:3
     container_name: ngrok-local
     command:
       - "http"
@@ -47,7 +47,7 @@ services:
     restart: always
 
   frontend:
-    image: node:24-alpine
+    image: node:24
     container_name: frontend-local
     working_dir: /app
     volumes:
@@ -59,7 +59,30 @@ services:
     command: sh -c "npm install && npm run dev"
     restart: always
 
+  # Ops plane (optional). UI: http://localhost:5678 — create owner account on first visit.
+  # AE client: N8N_BASE_URL=http://localhost:5678 + N8N_API_KEY matching webhook Header Auth.
+  # See docs/N8N_INTEGRATION.md
+  n8n:
+    image: n8nio/n8n:2.31.5
+    container_name: n8n-local
+    ports:
+      - "127.0.0.1:5678:5678"
+    environment:
+      N8N_HOST: localhost
+      N8N_PORT: 5678
+      N8N_PROTOCOL: http
+      N8N_SECURE_COOKIE: "false"
+      WEBHOOK_URL: http://localhost:5678/
+      GENERIC_TIMEZONE: Asia/Kolkata
+      TZ: Asia/Kolkata
+      # Persist encrypted credentials across restarts (local dev only — change in prod)
+      N8N_ENCRYPTION_KEY: ${N8N_ENCRYPTION_KEY:-ireios-local-n8n-encryption-key}
+    volumes:
+      - n8ndata:/home/node/.n8n
+    restart: always
+
 volumes:
   pgdata:
   redisdata:
   neo4jdata:
+  n8ndata:

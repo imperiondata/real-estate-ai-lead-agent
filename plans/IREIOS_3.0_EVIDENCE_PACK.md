@@ -23,11 +23,12 @@ Detail: `plans/IREIOS_3.0_WAVE_A_D_CHANGELOG.md` · plan: `plans/IREIOS_3.0_WAVE
 - [x] **pytest** full suite green after P0 stabilize (`ensure_test_client`, seed ASCII, e1b OpenAPI route check)
 - [x] **gate_isolation_test.py** PASS
 - [x] **gate_dlq_drill.py** + **dlq_replay.py** 1/1 recovered
-### A.0 integrations (ops)
-- [x] HubSpot — **skippable**; demo stub when `CRM_API_KEY` default (non-prod)
-- [~] Google Calendar — code real when `GOOGLE_CALENDAR_*` set; smoke when env ready
-- [~] n8n — AE client + `template_type=n8n` shipped; instance/workflows ops-pending
-- [~] Brochure HTTPS media — code shipped; set `BROCHURE_MEDIA_URL` / `FLOORPLAN_MEDIA_URL` when hosted
+### A.0 integrations (ops) — audit 2026-07-22
+- [x] HubSpot — **skipped**; demo stub OK
+- [x] Google Calendar — live smoke `provider=google_calendar` (fix SA JSON path with `/` on Windows)
+- [~] n8n — Docker `n8n-local` **up** + `N8N_*` set; **workflow incomplete** (webhook 404 until UI owner + active path + Header Auth)
+- [~] Brochure HTTPS media — code shipped; **`BROCHURE_MEDIA_URL` / `FLOORPLAN_MEDIA_URL` still empty** (text fallback)
+- [x] Neo4j — `/api/v1/graph/health` available + schema v1
 - [ ] `task3_runner.py` live stress when Gemini quota allows
 
 ## Data, graph, memory

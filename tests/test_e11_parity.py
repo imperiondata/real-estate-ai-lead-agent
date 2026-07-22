@@ -180,8 +180,10 @@ def test_competitor_job_noop_without_keywords(monkeypatch):
 # --------------------------------------------------------------------------- #
 # CalendarExecutor — stub fallback contract
 # --------------------------------------------------------------------------- #
-def test_calendar_executor_stub_fallback():
+def test_calendar_executor_stub_fallback(monkeypatch):
     from app.execution_engine.calendar_executor import CalendarExecutor
+    monkeypatch.setattr(settings, "GOOGLE_CALENDAR_ID", "")
+    monkeypatch.setattr(settings, "GOOGLE_CALENDAR_CREDENTIALS_JSON", "")
     ex = CalendarExecutor()
     res = asyncio.run(ex.execute({"entity_id": "lead:1",
                                   "parameters": {"visit_date": "2026-08-01T10:00:00"}}))

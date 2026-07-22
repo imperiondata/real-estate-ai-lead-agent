@@ -39,6 +39,45 @@ When `N8N_BASE_URL` / `N8N_API_KEY` are empty, `N8NClient` returns
 3. **Weekly marketing segment** — on `cron.weekly_report` / `marketing.report.generated`, push CSV to Drive.
 4. **HITL email** — on `approval.requested`, email manager with deep link to `/api/v1/approvals/{id}/approve`.
 
+## Local Docker (recommended for credentials + webhooks)
+
+```powershell
+docker compose up -d n8n
+# UI: http://localhost:5678  (create owner email/password on first visit)
+```
+
+| Item | Value |
+|------|--------|
+| Image | `n8nio/n8n` service `n8n` in `docker-compose.yml` |
+| UI / API base | `http://localhost:5678` |
+| Data volume | `n8ndata` → `/home/node/.n8n` (workflows + credentials survive restart) |
+| Encryption key | `N8N_ENCRYPTION_KEY` (compose default for local; set in `.env` for prod) |
+| Webhooks | `http://localhost:5678/webhook/<path>` (production URL once workflow is **Active**) |
+
+**Create credentials in the UI**
+
+1. Open http://localhost:5678 → finish owner setup.
+2. **Credentials** → add Slack / Gmail / etc. as needed (stored encrypted in the volume).
+3. New workflow → **Webhook** node:
+   - Method: POST  
+   - Path: e.g. `ireios_hot_lead_slack`  
+   - Authentication: **Header Auth**  
+   - Header name: `X-N8N-API-KEY`  
+   - Header value: same string as `.env` `N8N_API_KEY` (e.g. `local-n8n-webhook-secret`)
+4. Add Slack (or Set/Respond) node → **Activate** the workflow.
+5. Point IREIOS at the instance:
+
+```env
+N8N_BASE_URL=http://localhost:5678
+N8N_API_KEY=local-n8n-webhook-secret
+```
+
+Restart uvicorn after changing `.env`. AE calls  
+`POST {N8N_BASE_URL}/webhook/{workflow_id}` with header `X-N8N-API-KEY`.
+
+**From another container** (if API ever runs in Compose): use  
+`N8N_BASE_URL=http://n8n:5678` instead of localhost.
+
 ## Env
 
 ```env
@@ -57,14 +96,17 @@ N8N_API_KEY=shared-secret-matching-n8n-header-auth
 
 n8n is **orchestration around** the OS, not a replacement for the CEO/AE/EE spine.
 
-## Status (post-G3)
+## Status (post-G3 + audit 2026-07-22)
 
 | Piece | Status |
 |-------|--------|
 | Client scaffold | **Shipped** — `app/automation_engine/n8n_client.py` |
 | AE `template_type=n8n` dispatch | **Shipped** (Wave A.3) — `engine.py` branches; fallback linear / `fallback_action` |
 | Named template helper | **Shipped** — `hot_lead_notify.py` supports `workflow_id` |
-| Live n8n instance + workflows | **Ops-pending** — not required for core product path |
+| Docker Compose service | **Shipped** — `n8n` in `docker-compose.yml` → http://localhost:5678 |
+| Live n8n **instance** | **Running** when `docker compose up -d n8n` (audit: HTTP 200) |
+| Live n8n **workflows** | **INCOMPLETE** — create owner account, activate webhook + Header Auth; until then AE trigger returns `n8n_http_404` |
+| Workflows 2–3 (CSV / DLQ) | **Not started** |
 
 ### Workflow 1: `ireios_hot_lead_slack`
 

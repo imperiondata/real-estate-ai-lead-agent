@@ -26,8 +26,13 @@ class N8NClient:
     """Async trigger client for n8n workflows."""
 
     def __init__(self, base_url: Optional[str] = None, api_key: Optional[str] = None):
-        self.base_url = (base_url or settings.N8N_BASE_URL or "").rstrip("/")
-        self.api_key = api_key or settings.N8N_API_KEY or ""
+        # None → settings; explicit "" stays empty (tests + forced unconfigured).
+        self.base_url = (
+            (settings.N8N_BASE_URL or "") if base_url is None else (base_url or "")
+        ).rstrip("/")
+        self.api_key = (
+            (settings.N8N_API_KEY or "") if api_key is None else (api_key or "")
+        )
 
     @property
     def configured(self) -> bool:

@@ -99,17 +99,21 @@ def test_events_routes_registered():
 def test_sse_delivers_tenant_scoped_events():
     """Mirrors the SSE handler: only the authed tenant's events are delivered.
 
-    Uses the running bus directly (same subscribe/filter logic as the
-    endpoint) to avoid the httpx streaming-close quirk while still exercising
-    the real delivery + tenant-isolation path.
+    Uses a dedicated bus instance (unique stream/group) so a live uvicorn
+    consumer on the production group cannot steal messages mid-test.
     """
-    import main  # noqa: F401
-
     if not _redis_ok():
         pytest.skip("Redis not reachable at redis://localhost:6379/0")
 
+    from app.clients.event_bus_client import EventBusClient
+
     async def run():
-        await event_bus.start()
+        bus = EventBusClient(
+            stream="ireios:test:e1b_sse",
+            group="e1b-sse-cg",
+            consumer="e1b-sse-test",
+        )
+        await bus.start()
         try:
             tenant_id = "Client_1"
             received = []
@@ -118,22 +122,21 @@ def test_sse_delivers_tenant_scoped_events():
                 if envelope.get("tenant_id") == tenant_id:
                     received.append(envelope)
 
-            event_bus.subscribe("*", _handler)
+            bus.subscribe("*", _handler)
             try:
-                await event_bus.publish("lead.created", "Client_1", "e1", {"n": 1}, source="stub")
-                await event_bus.publish("lead.created", "Client_2", "e2", {"n": 2}, source="stub")
-                # Poll for delivery (tolerant of Redis/contention latency).
-                for _ in range(30):
+                await bus.publish("lead.created", "Client_1", "e1", {"n": 1}, source="stub")
+                await bus.publish("lead.created", "Client_2", "e2", {"n": 2}, source="stub")
+                for _ in range(50):
                     if len(received) >= 1:
                         break
                     await asyncio.sleep(0.1)
             finally:
-                event_bus.unsubscribe("*", _handler)
+                bus.unsubscribe("*", _handler)
 
             assert len(received) == 1, received
             assert received[0]["entity_id"] == "e1"
         finally:
-            await event_bus.stop()
+            await bus.stop()
 
     asyncio.run(run())
 

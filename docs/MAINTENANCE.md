@@ -79,7 +79,9 @@ cd frontend; npm run dev
 | `FEATURE_WHATSAPP_V3` | `true` | `true` |
 | `FOLLOWUP_ENGINE` | `v3` | `v3` (`legacy` = emergency only) |
 | `NEO4J_URI` | `bolt://localhost:7687` | real or empty (no-op graph) |
-| `N8N_*` | empty OK | set when n8n instance is up |
+| `N8N_*` | `http://localhost:5678` + webhook secret when `docker compose up -d n8n` | real host + secret; empty = `n8n_not_configured`. **Workflow still required** in UI or AE gets `n8n_http_404` |
+| `GOOGLE_CALENDAR_*` | path with **forward slashes** on Windows (`D:/…/sa.json`) | SA must have calendar shared; empty = stub `visit_*` |
+| `BROCHURE_MEDIA_URL` / `FLOORPLAN_*` | empty = text fallback (**incomplete** for PDF bubble) | public HTTPS only |
 | `GOOGLE_CALENDAR_*` | empty OK | set for real Calendar events (else synthetic `visit_id`) |
 | `BROCHURE_MEDIA_URL` / `FLOORPLAN_MEDIA_URL` | empty OK | public **HTTPS** PDFs; empty = text fallback |
 | `CRM_API_*` | demo default OK | HubSpot skippable; real private-app token for live contacts |

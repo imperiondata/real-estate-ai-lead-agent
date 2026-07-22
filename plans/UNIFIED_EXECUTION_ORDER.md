@@ -329,13 +329,17 @@ If production breaks mid-program:
 
 **Gates G1 / G2 / G3 are complete** (bugs + expansion Phases 0–10 + Waves A–D code).
 
-**Do next (ops / product polish — pick any order):**
+**Integration audit 2026-07-22 (HubSpot skipped):** GCal **live** · Neo4j **live** · n8n **container up, workflows incomplete** · brochure **URLs empty**.
 
-| Priority | Work | Owner / notes |
-|----------|------|----------------|
-| 1 | Live integrations smoke | Google Calendar (env set), brochure HTTPS URLs, n8n instance — HubSpot **skippable** (demo stub) |
-| 2 | FE MockSSE cutover | Mayank — `docs/FRONTEND_BACKLOG.md` |
-| 3 | Optional leftovers | D.2 memory auto-write, B.7 create_task, `task3_runner` evidence |
-| — | Dual-path module delete (10.2/10.3) | **Still deferred** — keep `agent.py` / `crm_sync.py` / `follow_up.py` as libraries |
+**Still incomplete — do next:**
 
-Detail: `plans/IREIOS_3.0_WAVE_A_D_CHANGELOG.md`, `docs/MAINTENANCE.md`, `docs/N8N_INTEGRATION.md`.
+| Priority | Work | Status |
+|----------|------|--------|
+| 1 | n8n UI: owner setup → webhook `ireios_hot_lead_slack` + Header Auth → AE smoke | `[~]` instance only |
+| 2 | Host HTTPS brochure/floorplan PDFs → set `BROCHURE_MEDIA_URL` / `FLOORPLAN_MEDIA_URL` → Twilio smoke | `[ ]` |
+| 3 | FE MockSSE cutover | Mayank — `docs/FRONTEND_BACKLOG.md` |
+| 4 | Optional leftovers | D.2 memory, B.7 create_task, `task3_runner` |
+| — | HubSpot live portal | `[-]` skip |
+| — | Dual-path module delete (10.2/10.3) | **Still deferred** |
+
+Detail: `plans/IREIOS_3.0_WAVE_A_D_CHANGELOG.md` § Post-G3 integration audit, `docs/N8N_INTEGRATION.md`.

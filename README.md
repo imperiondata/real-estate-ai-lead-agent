@@ -321,10 +321,28 @@ NEO4J_URI=bolt://localhost:7687
 NEO4J_USER=neo4j
 NEO4J_PASSWORD=localpass
 
-# n8n automation (optional — empty = n8n_not_configured)
+# n8n automation (optional — empty = n8n_not_configured; see docs/N8N_INTEGRATION.md)
 N8N_BASE_URL=
 N8N_API_KEY=
+
+# Competitor monitor (comma-separated; empty = job no-ops)
+COMPETITOR_KEYWORDS=
+
+# Google Calendar (empty = synthetic visit_id stub)
+GOOGLE_CALENDAR_ID=
+GOOGLE_CALENDAR_CREDENTIALS_JSON=
+GOOGLE_CALENDAR_TIMEZONE=Asia/Kolkata
+
+# WhatsApp brochure / floor plan PDF (public HTTPS; empty = plain-text fallback)
+BROCHURE_MEDIA_URL=
+FLOORPLAN_MEDIA_URL=
+
+# HubSpot CRM optional (crm_sync os.getenv; default demo key = fake UUID in non-prod)
+# CRM_API_URL=https://api.hubapi.com/crm/v3/objects/contacts
+# CRM_API_KEY=
 ```
+
+Full template: `.env.example`. Ops notes: `docs/MAINTENANCE.md`.
 
 After API start with Neo4j up: `GET http://localhost:8000/api/v1/graph/health` → `available: true`.
 

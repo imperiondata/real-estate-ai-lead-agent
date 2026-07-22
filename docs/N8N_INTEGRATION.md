@@ -1,4 +1,4 @@
-# n8n Integration (Future / Config-Later)
+# n8n Integration (optional / config-later)
 
 ## Purpose
 
@@ -34,7 +34,7 @@ When `N8N_BASE_URL` / `N8N_API_KEY` are empty, `N8NClient` returns
 
 ## Recommended first workflows (when enabling)
 
-1. **`lead.hot` → Slack** — consume bus or poll `GET /api/v1/cs/at-risk`; notify sales channel.
+1. **`lead.hot` → Slack** — webhook `ireios_hot_lead_slack` (see below).
 2. **DLQ depth alert** — if pending `dlq_events` > N, page on-call.
 3. **Weekly marketing segment** — on `cron.weekly_report` / `marketing.report.generated`, push CSV to Drive.
 4. **HITL email** — on `approval.requested`, email manager with deep link to `/api/v1/approvals/{id}/approve`.
@@ -42,8 +42,9 @@ When `N8N_BASE_URL` / `N8N_API_KEY` are empty, `N8NClient` returns
 ## Env
 
 ```env
-N8N_BASE_URL=https://n8n.example.com
-N8N_API_KEY=...
+N8N_BASE_URL=http://localhost:5678
+# or https://yourname.app.n8n.cloud
+N8N_API_KEY=shared-secret-matching-n8n-header-auth
 ```
 
 ## What must stay in IREIOS (not n8n)
@@ -56,29 +57,40 @@ N8N_API_KEY=...
 
 n8n is **orchestration around** the OS, not a replacement for the CEO/AE/EE spine.
 
-## Status
+## Status (post-G3)
 
-- Client scaffold: **shipped** (`app/automation_engine/n8n_client.py`)
-- AE `template_type=n8n` dispatch: **shipped** (Wave A.3) — `engine.py` branches on `template_type`, calls `N8NClient.trigger_workflow` or falls back to linear EE.
-- **Workflow 1: `ireios_hot_lead_slack`** — webhook path `/webhook/ireios-hot-lead-slack`.
-  Trigger: `template_type="n8n"`, `workflow_id="ireios_hot_lead_slack"` from `hot_lead_notify.py` template.
-  Payload:
-  ```json
-  {
-    "action_type": "notify_agent",
-    "tenant_id": "Client_1",
-    "entity_id": "42",
-    "parameters": { "kind": "hot_lead", "lead_name": "...", "lead_phone": "...", "score": 0.95 },
-    "template_type": "n8n",
-    "workflow_id": "ireios_hot_lead_slack"
-  }
-  ```
-  Action: Post to sales Slack channel.
-- **Workflow 2 (recommended): Weekly marketing CSV** — subscribe to `marketing.report.generated` via n8n Redis Streams trigger or HTTP webhook from marketing_agent optional second publish. Push CSV to Google Drive / email.
-- **Workflow 3 (recommended): DLQ depth alert** — cron in n8n polling `GET /api/v1/admin/dlq-count` (admin-gated) or subscribe to Redis Streams DLQ events. Alert ops if count > threshold.
-- **Live workflows: not provisioned** — webhook endpoints are accepted by n8n but the instance is not stood up yet. Deploy as part of Wave D.3 config-later.
-- **Owner:** backend ops when first workflow is approved
+| Piece | Status |
+|-------|--------|
+| Client scaffold | **Shipped** — `app/automation_engine/n8n_client.py` |
+| AE `template_type=n8n` dispatch | **Shipped** (Wave A.3) — `engine.py` branches; fallback linear / `fallback_action` |
+| Named template helper | **Shipped** — `hot_lead_notify.py` supports `workflow_id` |
+| Live n8n instance + workflows | **Ops-pending** — not required for core product path |
+
+### Workflow 1: `ireios_hot_lead_slack`
+
+- Webhook path: `/webhook/ireios_hot_lead_slack`
+- Trigger from IREIOS: `template_type="n8n"`, `workflow_id="ireios_hot_lead_slack"`
+- Payload shape (example):
+
+```json
+{
+  "action_type": "notify_agent",
+  "tenant_id": "Client_1",
+  "entity_id": "42",
+  "parameters": { "kind": "hot_lead", "lead_name": "...", "lead_phone": "...", "score": 0.95 },
+  "template_type": "n8n",
+  "workflow_id": "ireios_hot_lead_slack"
+}
+```
+
+- n8n side: Webhook (POST) + Header Auth `X-N8N-API-KEY` + Slack (or log-only Set node for smoke)
+- Activate workflow before testing
+
+### Workflow 2–3 (recommended later)
+
+- Weekly marketing CSV on `marketing.report.generated`
+- DLQ depth alert (cron or stream)
 
 ## Practicality vs LangGraph
 
-Prefer **n8n** for Slack/email/Drive/partner connectors. Prefer **LangGraph** (or existing HITL pause) for in-process multi-step AI. Do not put WhatsApp TwiML or the 6-field gate in n8n. Full decision table: Wave plan §0.3 Q1.
+Prefer **n8n** for Slack/email/Drive/partner connectors. Prefer **LangGraph** (or existing HITL pause) for in-process multi-step AI. Do not put WhatsApp TwiML or the 6-field gate in n8n.

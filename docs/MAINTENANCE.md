@@ -79,11 +79,14 @@ cd frontend; npm run dev
 | `FEATURE_WHATSAPP_V3` | `true` | `true` |
 | `FOLLOWUP_ENGINE` | `v3` | `v3` (`legacy` = emergency only) |
 | `NEO4J_URI` | `bolt://localhost:7687` | real or empty (no-op graph) |
-| `N8N_*` / `GOOGLE_CALENDAR_*` | empty OK | set when integrating |
+| `N8N_*` | empty OK | set when n8n instance is up |
+| `GOOGLE_CALENDAR_*` | empty OK | set for real Calendar events (else synthetic `visit_id`) |
+| `BROCHURE_MEDIA_URL` / `FLOORPLAN_MEDIA_URL` | empty OK | public **HTTPS** PDFs; empty = text fallback |
+| `CRM_API_*` | demo default OK | HubSpot skippable; real private-app token for live contacts |
 
 Full lists: `.env.example`, `AGENTS.md` → Config / Expansion env vars.
 
-**Never commit** real Twilio, Gemini, admin, or DB passwords.
+**Never commit** real Twilio, Gemini, admin, DB passwords, Calendar SA JSON, or personal calendar IDs (keep them in local `.env` only).
 
 ---
 
@@ -321,6 +324,8 @@ python seed_dummy_leads.py --purge-only
 | `escalation_cron_job` | ~1 min | Hot lead manager/director |
 | `crm_resync_job` | ~5 min | Debounced CRM field push |
 | `competitor_monitor_job` | 01:00 | No-op if `COMPETITOR_KEYWORDS` empty |
+| `weekly_marketing_report` | Mon 08:00 | Publishes `cron.weekly_report` per active client |
+| `expire_approvals` | ~15 min | Marks stale HITL `approval_requests` expired |
 
 Restart uvicorn to pick up code; scheduler lives in the API process (not a separate worker today).
 
@@ -332,10 +337,10 @@ Restart uvicorn to pick up code; scheduler lives in the API process (not a separ
 |-------------|--------|--------------|
 | Gemini | `GEMINI_API_KEY`, `GEMINI_MODEL` | Chat fails / quota errors |
 | Twilio WA | `TWILIO_*`; `TEST_MODE` skips send | DLQ / logs |
-| HubSpot CRM | `CRM_API_URL` + key; else demo stub | DLQ `hubspot_crm` |
+| HubSpot CRM | `CRM_API_URL` + key; else demo stub (skippable) | DLQ `hubspot_crm` |
 | Neo4j | `NEO4J_*` | Graph no-op |
-| n8n | `N8N_*` | `n8n_not_configured` |
-| Google Calendar | `GOOGLE_CALENDAR_*` | Synthetic `visit_id` stub |
+| n8n | `N8N_*` | `n8n_not_configured` (code path shipped; instance ops-pending) |
+| Google Calendar | `GOOGLE_CALENDAR_*` set → real events; empty → synthetic `visit_id` stub |
 | Brochure / floor plan PDF | `BROCHURE_MEDIA_URL` / `FLOORPLAN_MEDIA_URL` (public **HTTPS**) | Text-only fallback when empty |
 | Stripe | webhook + keys | Billing routes only |
 | AWS secrets | optional boto path in `config` | Falls back to env |

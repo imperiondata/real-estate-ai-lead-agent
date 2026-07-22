@@ -33,9 +33,9 @@ Living record of **post-G2 depth fill** (Waves A–D). Parallel to `IREIOS_3.0_E
 
 | ID | Status | Summary | Tests |
 |----|--------|---------|-------|
-| A.0.1 | `[-]` | HubSpot real credentials + smoke | manual / ops |
-| A.0.2 | `[-]` | Google Calendar SA + smoke | manual / ops |
-| A.0.3 | `[~]` | n8n instance up (Docker/Cloud) — doc'd, not provisioned | manual / ops |
+| A.0.1 | `[-]` | HubSpot — **skipped** (demo stub OK; portal optional) | manual / ops |
+| A.0.2 | `[~]` | Google Calendar — env/config in local `.env` (smoke when ready) | manual / ops |
+| A.0.3 | `[~]` | n8n instance — code path shipped; instance ops-pending | manual / ops |
 | A.1 | `[x]` | `cron.weekly_report` scheduler job | `test_e14_wave_a.py` |
 | A.2 | `[x]` | Lifecycle event producers + admin inject | `test_e14_wave_a.py` |
 | A.3 | `[x]` | AE `template_type` n8n \| langgraph dispatch | `test_e14_wave_a.py`, `test_e2_automation.py` |
@@ -279,12 +279,12 @@ Living record of **post-G2 depth fill** (Waves A–D). Parallel to `IREIOS_3.0_E
 - **Date:** 2026-07-21
 - **Status:** `[~]` Hot-lead Slack workflow documented in `docs/N8N_INTEGRATION.md` (webhook `ireios_hot_lead_slack`). Weekly marketing CSV and DLQ depth alert remain config-later until n8n instance is provisioned.
 
-### Entry — D.4 (Brochure Approach B)
+### Entry — D.4 (Brochure Approach B + post-G3 polish)
 
 - **Date:** 2026-07-21
-- **Files:** `config.py` (BROCHURE_MEDIA_URL, FLOORPLAN_MEDIA_URL), `app/agents/whatsapp_agent.py` (resolve_tool_media_url, caption fallback, media_url in AE dispatch), `main.py` (TwiML Media element)
-- **Behavior:** `resolve_tool_media_url` reads env for public HTTPS URL. When configured, short caption replaces full text in tool reply; `media_url` passed to AE `send_whatsapp` parameters; TwiML response includes `<Media>` element. Empty env → full text fallback (today's behavior).
-- **Tests:** 5 tests (url resolves, none fallback, http allowed, short caption, TwiML Media) — 5 green.
+- **Files:** `config.py`, `whatsapp_agent.py` (`resolve_tool_media_url`, `take_outbound_media_url`), `main.py` (TwiML Media from staged URL), `sales_agent.py` (NBA media), chat JSON `media_url`
+- **Behavior:** HTTPS-only media resolve (non-HTTPS rejected). Default path stages URL for TwiML `<Media>` (no reply-text scrape, no AE double-send). Sales `send_brochure` attaches `media_url`. Empty env → plain-text generators. Events `brochure.sent` / `floorplan.sent` when media present.
+- **Tests:** e17 media suite + e12 no-double-send — green.
 
 ### Entry — D.5 / G3 (Evidence pack — partial; gates closed)
 
@@ -325,3 +325,6 @@ Living record of **post-G2 depth fill** (Waves A–D). Parallel to `IREIOS_3.0_E
 | FE MockSSE cutover | `docs/FRONTEND_BACKLOG.md` — Mayank |
 | Monolith dual-path delete | Expansion 10.2/10.3 |
 | Full competitor crawl | Keyword MVP only |
+| HubSpot live portal | Skipped — demo stub until private-app token |
+| n8n live instance | Ops-pending — code path ready |
+| Brochure HTTPS media files | Ops — set `BROCHURE_*` / `FLOORPLAN_*` when hosted |

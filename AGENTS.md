@@ -32,7 +32,7 @@ High-signal, repo-specific facts an agent would likely miss without help.
 - **Backend:** FastAPI + Gemini 3.1 Flash Lite + Twilio WhatsApp + PostgreSQL + Redis + FAISS RAG
 - **Frontend:** Next.js 16.2.6 with React 19.2.4, Tailwind CSS v4, TypeScript. Route groups: `(public)` and `(dashboard)` with per-group layouts.
 - **Static dashboard:** HTML/JS/CSS served by FastAPI at `/dashboard`
-- **Scheduler (APScheduler):** 4 jobs — follow-up checker (1min), nightly backup (2am), nightly cleanup (3am), escalation checker (1min)
+- **Scheduler (APScheduler):** follow-up checker (1min), nightly backup (2am), nightly cleanup (3am), escalation checker (1min), CRM resync (5min), competitor monitor (01:00), weekly marketing report (Mon 08:00), expire_approvals (15min)
 - **App entrypoint:** `main.py` — FastAPI app, lifespan starts scheduler, webhook handlers, metrics
 - **Event Bus (IREIOS 3.0):** Redis Streams (`EVENT_STREAM_KEY`, default `ireios:events`) with consumer-group delivery; client in `app/clients/event_bus_client.py` (`EventBusClient`). Runtime: `Event → CEO → Agent/Workflow → Automation Engine → Execution Engine → Event`. Wired into lifespan at Task 1.7.
 
@@ -171,13 +171,17 @@ IS_PRODUCTION=false
 - `FEATURE_WHATSAPP_V3` (**default `true`** — production) — WhatsApp/chat routes use `WhatsAppAgent`; set `false` to roll back to `app.agents.qualification.process_chat` only.
 - `FOLLOWUP_ENGINE` (**default `v3`** — production) — `legacy|v3|shadow`. Prod = `v3` (AE→EE). `legacy` is emergency rollback only.
 - `NEO4J_URI` / `NEO4J_USER` / `NEO4J_PASSWORD` — Neo4j (Phase 7). Empty = graph no-op. Local: `bolt://localhost:7687` / `neo4j`/`localpass`.
-- `N8N_BASE_URL` / `N8N_API_KEY` — n8n (optional). Empty = `n8n_not_configured`. See **`docs/N8N_INTEGRATION.md`**.
+- `N8N_BASE_URL` / `N8N_API_KEY` — n8n optional ops plane (AE `template_type=n8n` shipped). Empty = `n8n_not_configured`. See **`docs/N8N_INTEGRATION.md`**.
 - `COMPETITOR_KEYWORDS` — comma-separated watch-list for the competitor monitor (empty = job no-ops).
 - `GOOGLE_CALENDAR_ID` / `GOOGLE_CALENDAR_CREDENTIALS_JSON` / `GOOGLE_CALENDAR_TIMEZONE` — real Google Calendar for `CalendarExecutor`. Empty = synthetic `visit_id` stub fallback (AE contract unchanged).
+- `BROCHURE_MEDIA_URL` / `FLOORPLAN_MEDIA_URL` — public **HTTPS** media for WhatsApp Approach B. Empty = plain-text brochure/floorplan. Non-HTTPS rejected.
+- HubSpot: `CRM_API_URL` / `CRM_API_KEY` via `crm_sync` `os.getenv` (not Settings). Default demo key = fake UUID in non-prod; skippable until a portal exists.
 
 ## Production Go-Live Checklist (config-later flags)
 
-Flip these in `.env` at deploy (see `.env.example` footer): `IS_PRODUCTION=true`, `TEST_MODE=false`, `FOLLOW_UP_TEST_MODE=false`, `FOLLOW_UP_DLQ_TEST=false`, real `TWILIO_*`. Optional integrations: `NEO4J_*`, `N8N_*`, `GOOGLE_CALENDAR_*`, `COMPETITOR_KEYWORDS`. Everything degrades gracefully when an integration is left unconfigured.
+Flip these in `.env` at deploy (see `.env.example` footer): `IS_PRODUCTION=true`, `TEST_MODE=false`, `FOLLOW_UP_TEST_MODE=false`, `FOLLOW_UP_DLQ_TEST=false`, real `TWILIO_*`. Optional: `NEO4J_*`, `N8N_*`, `GOOGLE_CALENDAR_*`, `BROCHURE_*`/`FLOORPLAN_*`, `COMPETITOR_KEYWORDS`, real `CRM_API_*` (HubSpot skippable). Everything degrades gracefully when an integration is left unconfigured.
+
+**Dual-path note:** Expansion 10.2/10.3 module delete is **deferred**. Root `agent.py`, `crm_sync.py`, `follow_up.py` remain shared libraries for v3 wrappers (not a second product path).
 
 ## IREIOS 3.0 — Active agents / workflows (full parity)
 
@@ -223,10 +227,10 @@ Outbound (alerts/escalation/background): app/execution_engine/outbound.py → EE
 
 ## Docs pointers
 
-- n8n future integration: `docs/N8N_INTEGRATION.md`
-- Frontend remaining work: `docs/FRONTEND_BACKLOG.md`
-- Evidence: `plans/IREIOS_3.0_EVIDENCE_PACK.md`
-- **Post-G2 Waves A–D (depth fill):** `plans/IREIOS_3.0_WAVE_A_D_EXPANSION.md` + changelog `plans/IREIOS_3.0_WAVE_A_D_CHANGELOG.md` + tests `tests/test_e14_wave_a.py`…`test_e17_wave_d.py`. Order: UNIFIED Steps **20–23** + Gate **G3**.
+- n8n optional / config-later: `docs/N8N_INTEGRATION.md` (code path shipped; instance ops-pending)
+- Frontend remaining work: `docs/FRONTEND_BACKLOG.md` (MockSSE cutover still open)
+- Evidence: `plans/IREIOS_3.0_EVIDENCE_PACK.md` (G2 + G3)
+- **Post-G2 Waves A–D (depth fill, G3 green):** living log `plans/IREIOS_3.0_WAVE_A_D_CHANGELOG.md`; how-to `plans/IREIOS_3.0_WAVE_A_D_EXPANSION.md`; tests `tests/test_e14_wave_a.py`…`test_e17_wave_d.py`. UNIFIED Steps **20–23** + Gate **G3** = `[x]`.
 
 ## WhatsApp brochure / floor plan (Approach B — shipped + post-G3 polish)
 

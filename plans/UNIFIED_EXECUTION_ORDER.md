@@ -325,8 +325,17 @@ If production breaks mid-program:
 
 ---
 
-## 10. Immediate next action
+## 10. Immediate next action (post-G3)
 
-**Step 1 — Bug Phase 0**, starting with **P0.1** in `plans/BUG_AUDIT_AND_PHASED_FIX_PLAN.md`.
+**Gates G1 / G2 / G3 are complete** (bugs + expansion Phases 0–10 + Waves A–D code).
 
-Do not open Expansion Task 1.1 until Gate **G1** is complete.
+**Do next (ops / product polish — pick any order):**
+
+| Priority | Work | Owner / notes |
+|----------|------|----------------|
+| 1 | Live integrations smoke | Google Calendar (env set), brochure HTTPS URLs, n8n instance — HubSpot **skippable** (demo stub) |
+| 2 | FE MockSSE cutover | Mayank — `docs/FRONTEND_BACKLOG.md` |
+| 3 | Optional leftovers | D.2 memory auto-write, B.7 create_task, `task3_runner` evidence |
+| — | Dual-path module delete (10.2/10.3) | **Still deferred** — keep `agent.py` / `crm_sync.py` / `follow_up.py` as libraries |
+
+Detail: `plans/IREIOS_3.0_WAVE_A_D_CHANGELOG.md`, `docs/MAINTENANCE.md`, `docs/N8N_INTEGRATION.md`.

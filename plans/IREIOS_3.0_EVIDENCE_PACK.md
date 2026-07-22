@@ -23,7 +23,11 @@ Detail: `plans/IREIOS_3.0_WAVE_A_D_CHANGELOG.md` · plan: `plans/IREIOS_3.0_WAVE
 - [x] **pytest** full suite green after P0 stabilize (`ensure_test_client`, seed ASCII, e1b OpenAPI route check)
 - [x] **gate_isolation_test.py** PASS
 - [x] **gate_dlq_drill.py** + **dlq_replay.py** 1/1 recovered
-- [~] Live HubSpot / GCal / n8n instance credentials (A.0 ops)
+### A.0 integrations (ops)
+- [x] HubSpot — **skippable**; demo stub when `CRM_API_KEY` default (non-prod)
+- [~] Google Calendar — code real when `GOOGLE_CALENDAR_*` set; smoke when env ready
+- [~] n8n — AE client + `template_type=n8n` shipped; instance/workflows ops-pending
+- [~] Brochure HTTPS media — code shipped; set `BROCHURE_MEDIA_URL` / `FLOORPLAN_MEDIA_URL` when hosted
 - [ ] `task3_runner.py` live stress when Gemini quota allows
 
 ## Data, graph, memory
@@ -32,9 +36,10 @@ Detail: `plans/IREIOS_3.0_WAVE_A_D_CHANGELOG.md` · plan: `plans/IREIOS_3.0_WAVE
 - [x] ConversationMemory APIs
 
 ## Integrations
-- [x] n8n client scaffold + purpose doc: `docs/N8N_INTEGRATION.md`
-- [x] Google Calendar executor stub/real config-later
+- [x] n8n client + AE dispatch + purpose doc: `docs/N8N_INTEGRATION.md` (instance optional)
+- [x] Google Calendar executor: real when env set; synthetic `visit_id` stub when empty
 - [x] Twilio via WhatsAppExecutor for production send paths listed above
+- [x] Brochure Approach B media path (HTTPS env optional)
 
 ## Quality gates
 - [x] `tests/test_e12_bus_wiring.py`, `tests/test_e13_bd_closeout.py`
@@ -48,6 +53,7 @@ Detail: `plans/IREIOS_3.0_WAVE_A_D_CHANGELOG.md` · plan: `plans/IREIOS_3.0_WAVE
 3. Chat or Twilio sandbox message
 4. SSE stream shows `conversation.updated` / `lead.created` / `lead.scored`
 5. Neo4j Browser optional: `MATCH (l:Lead) RETURN l LIMIT 25`
+6. Optional: brochure PDF URLs + Calendar visit + n8n webhook
 
 ## Go-live flags
 ```env
@@ -58,4 +64,6 @@ FOLLOW_UP_DLQ_TEST=false
 FEATURE_WHATSAPP_V3=true
 FOLLOWUP_ENGINE=v3
 NEO4J_URI=bolt://...   # optional but recommended
+# optional:
+# GOOGLE_CALENDAR_*, N8N_*, BROCHURE_MEDIA_URL, FLOORPLAN_MEDIA_URL, CRM_API_*
 ```

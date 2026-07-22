@@ -88,23 +88,21 @@ python dlq_replay.py
 - Human-in-the-loop multi-step **inside** IREIOS → LangGraph (or HITL pause already in AE).  
 - Anything that needs Slack/email/Drive/non-Python connectors → **n8n**.
 
-#### Q2 — Brochure / floor plan status (WhatsApp) as of now
-
-**Implemented (Phase 5): text-only MVP.** **Wave D Task D.4 upgrades to Approach B** (hosted PDF/image + Twilio `MediaUrl` document bubble). See §4.4 for full implementation.
+#### Q2 — Brochure / floor plan (WhatsApp) — **AS SHIPPED (post-G3)**
 
 | Item | Detail |
 |------|--------|
 | **Module** | `app/agents/whatsapp_agent.py` |
-| **Trigger** | After qualification reply path, `detect_tool_intent(user_message)` (`L39–46`) |
-| **Keywords — brochure** | `brochure`, `send details`, `property details`, `more info`, `share details` |
-| **Keywords — floor plan** | `floor plan`, `floorplan`, `layout`, `floor map`, `plan` |
-| **Gate** | Intent match **and** `lead.whatsapp_opt_in` (`L225`) |
-| **What is shared today** | **Generated plain-text** from lead fields via `generate_brochure` / `generate_floorplan` (`L53–85`). **No** PDF, **no** `MediaUrl` yet. |
-| **Delivery path today** | Tool text = **HTTP/TwiML response body** — **must not** AE double-send (`L221–223`, `tests/test_e12_bus_wiring.py`). Out-of-band only if `dispatch_via_ae=True`. |
-| **Bus signal today** | `{brochure\|floorplan}.generated` preview when not AE-dispatching (`L237–248`) |
-| **Executor already ready** | `WhatsAppExecutor` accepts `media_url` → Twilio `media_url=[...]` (`whatsapp_executor.py` ~L47, L60, L99–100) — tools simply never set it |
-| **Sales NBA** | `send_brochure` action exists (`sales_agent.py`) but does not attach media |
-| **Chosen upgrade** | **Approach B** — host static PDF once (HTTPS), send as WhatsApp **document attachment** via `MediaUrl` + short caption. Not plain link-only; not per-lead PDF generation. Full steps → **§4.4 Task D.4**. |
+| **Trigger** | `detect_tool_intent` after qualify path |
+| **Keywords** | brochure / send details / … ; floor plan / layout / … |
+| **Gate** | Intent + `lead.whatsapp_opt_in` |
+| **Media** | `resolve_tool_media_url` → HTTPS-only `BROCHURE_MEDIA_URL` / `FLOORPLAN_MEDIA_URL` |
+| **Default delivery** | Short caption + `take_outbound_media_url()` → TwiML `<Media>` in `main.py` (no reply-text scrape; **no** AE double-send — e12) |
+| **Out-of-band / Sales** | AE `send_whatsapp` with `media_url` when configured; Sales NBA `send_brochure` attaches media |
+| **Fallback** | Empty env → full plain-text `generate_brochure` / `generate_floorplan` |
+| **Chat API** | May return `media_url` in JSON |
+| **Events** | `brochure.sent` / `floorplan.sent` when media present |
+| **Historical design notes** | Full Approach B task detail remains in §4.4 (implementation reference). |
 
 ### 0.4 UNIFIED_EXECUTION_ORDER append (when starting Wave A)
 

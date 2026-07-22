@@ -350,32 +350,10 @@ The `e` prefix guarantees the two suites never collide and can be collected/run 
 
 ---
 
----
-
-## Phase 5 status (Tasks 5.1–5.9 — WhatsApp Agent, brochure/floorplan, scoring)
-
-| ID | Status | Summary | Tests |
-|---|---|---|---|
-| 5.1 | `[ ]` | Feature flag + event publish from webhooks | `tests/test_e5_whatsapp_agent.py` |
-| 5.2 | `[ ]` | WhatsAppAgent.fetch_context | same |
-| 5.3 | `[ ]` | Pre-checks + analyze helpers | same |
-| 5.4 | `[ ]` | RAG + LLM + extract_lead_info tool | same |
-| 5.5 | `[ ]` | Brochure & floor plan tools | same |
-| 5.6 | `[ ]` | decide → AE + async scoring event | same |
-| 5.7 | `[ ]` | Enable v3 path behind flag | same |
-| 5.8 | `[ ]` | Default flag + keep legacy fallback | same |
-| 5.9 | `[ ]` | Phase 5 exit gate | same |
-
----
-
-## Phase 6 status (Tasks 6.1–6.4 — CRM automation + Sales AI)
-
-| ID | Status | Summary | Tests |
-|---|---|---|---|
-| 6.1 | `[ ]` | CRMAutomationWorkflow | `tests/test_e6_crm_sales.py` |
-| 6.2 | `[ ]` | SalesAgent | same |
-| 6.3 | `[ ]` | create_task executor | same |
-| 6.4 | `[ ]` | Phase 6 exit gate | same |
+> **Note (post-G3):** Duplicate “all `[ ]`” Phase 5/6 skeleton tables were removed.
+> Authoritative Phase 5–10 status is earlier in this file + `UNIFIED_EXECUTION_ORDER.md`.
+> Post-G2 depth fill (Waves A–D): `plans/IREIOS_3.0_WAVE_A_D_CHANGELOG.md`.
+> Placeholders: empty after Wave C (six agents active). Dual-path 10.2/10.3 remains `[-]` deferred.
 
 ---
 
@@ -420,11 +398,11 @@ The `e` prefix guarantees the two suites never collide and can be collected/run 
 
 | ID | Status | Summary | Tests |
 |---|---|---|---|
-| 10.1 | `[x]` | Placeholder agents (6 remaining: pricing/negotiation/inventory/legal/finance/onboarding) | `ireios_evidence.py` |
-| 10.2 | `[ ]` | Remove dual-path WhatsApp (v3 is now default; legacy kept for rollback) | n/a |
-| 10.3 | `[ ]` | Decommission crm_sync / follow_up direct usage | n/a |
-| 10.4 | `[x]` | Evidence pack (`ireios_evidence.py`) | `ireios_evidence.py` |
-| 10.5 | `[x]` | Final gate (commands) | G2 |
+| 10.1 | `[x]` | Placeholders registered at G2; **Wave C emptied list** (6 agents active) | `test_e10_phase10.py`, `test_e16_wave_c.py` |
+| 10.2 | `[-]` | Dual-path WhatsApp module delete — **deferred** (v3 default; `agent.py` remains library) | n/a |
+| 10.3 | `[-]` | crm_sync / follow_up decommission — **deferred** (shared by EE/v3) | n/a |
+| 10.4 | `[x]` | Evidence pack (`ireios_evidence.py` + G2/G3 pack) | `ireios_evidence.py` |
+| 10.5 | `[x]` | Final gate (commands) | G2 / G3 |
 
 ---
 
@@ -450,7 +428,7 @@ agents; Neo4j is a full build; Google Calendar + n8n wired (config-later).
   - `customer_success_agent` (8.3) → AE `notify_agent` reminders
   - `kg_event_writer` (7.4) → Neo4j async writes
   - `competitor_monitor_job` (8.4) nightly cron → `market.alert.generated`
-  - Placeholders trimmed to 6 genuine Layer-2 names.
+  - Placeholders initially 6 Layer-2 names at G2; **Wave C promoted all 6 to active** (`PLACEHOLDER_AGENTS=[]`).
 - **D — integrations:** `n8n_client` already complete (config-later); `CalendarExecutor`
   now does real Google Calendar (`GOOGLE_CALENDAR_*` settings) with synthetic-`visit_id`
   stub fallback (AE contract unchanged). `google-api-python-client`/`google-auth` already present.
@@ -474,3 +452,10 @@ agents; Neo4j is a full build; Google Calendar + n8n wired (config-later).
 | BD-6 | `[x]` | Docs: `docs/N8N_INTEGRATION.md`, `docs/FRONTEND_BACKLOG.md`; tests `test_e12`/`test_e13`; evidence pack; gates |
 
 Regression: **189** targeted unit tests passed; `gate_isolation_test.py` PASS; `gate_dlq_drill` + `dlq_replay` 1/1.
+
+---
+
+## Post-G2 / Gate G3 (Waves A–D)
+
+Living status: **`plans/IREIOS_3.0_WAVE_A_D_CHANGELOG.md`**.  
+UNIFIED Steps **20–23** + **G3** = `[x]`. Placeholders empty (Wave C). Brochure Approach B + media polish shipped. HubSpot skippable (demo stub). n8n/Calendar/brochure HTTPS = ops env when ready.

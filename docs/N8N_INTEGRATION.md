@@ -34,12 +34,22 @@ When `N8N_BASE_URL` / `N8N_API_KEY` are empty, `N8NClient` returns
 
 ## Recommended first workflows (when enabling)
 
+Full closeout plan (payloads, lane split, ordered tasks): **`plans/PHASE3_AUTOMATIONS_CLOSEOUT.md`**.
+
 1. **`lead.hot` → Slack** — Redis Streams filter **or** webhook `ireios_hot_lead_slack` (see below). Prefer catalog name `lead.hot`.
-2. **`site_visit.scheduled` → Slack/Gmail fan-out** — EE publishes after CalendarExecutor success (do not expect publish inside the executor file).
+2. **`site_visit.scheduled` → Slack/Gmail fan-out** — EE publishes after CalendarExecutor success (do not expect publish inside the executor file). Do **not** double-create Google events if `provider=google_calendar`.
 3. **`session.completed` → CRM note** (PR #10 alias) — optional; prefer `lead.qualified` for field upsert.
-4. **DLQ depth alert** — if pending `dlq_events` > N, page on-call.
-5. **Weekly marketing segment** — on `marketing.report.generated`, push CSV to Drive.
-6. **HITL email** — on `approval.requested`, deep link to `/api/v1/approvals/{id}/approve`.
+4. **HITL email/Slack** — on `approval.requested`, manager notify with `/api/v1/approvals/{id}/approve|reject`.
+5. **`lead.qualified` → external CRM** (n8n HubSpot/SF nodes) — Python HubSpot portal stays skipped.
+6. **Weekly marketing segment** — on `marketing.report.generated`, push CSV to Drive.
+7. **DLQ depth alert** — n8n cron if pending `dlq_events` > N.
+
+### What n8n must NOT own
+
+- WhatsApp 15s TwiML / 6-field gate / RAG  
+- Follow-up Day0→7 FSM / 10m–30m escalation cron / competitor monitor job  
+- Tenant isolation / JWT issuance  
+- Treating `lead.escalated` / `session.completed` as separate product events — they are **dual-publish aliases** of catalog signals (see below)
 
 ## Dual-publish aliases (PR #10 — n8n bus hooks)
 
@@ -53,7 +63,7 @@ Backend **dual-publishes** catalog + review aliases so n8n names from PR review 
 
 **n8n rule:** subscribe to **one** of `lead.hot` **or** `lead.escalated` per workflow — never both (double Slack). Aliases may be retired later; catalog names stay.
 
-### Out of scope / deferred (do not re-request on this PR)
+### Out of scope / deferred
 
 | Item | Status |
 |------|--------|
@@ -159,6 +169,121 @@ n8n is **orchestration around** the OS, not a replacement for the CEO/AE/EE spin
 - Weekly marketing CSV on `marketing.report.generated`
 - DLQ depth alert (cron or stream)
 
+## Canonical payloads (closeout target — backend BA-1…BA-4)
+
+Bus envelope (all events): `event_id`, `event_type`, `tenant_id` (`Client_<id>`), `entity_id`, `source`, `timestamp`, `correlation_id`, `payload`.
+
+### `lead.hot` (notification / escalation — catalog event)
+
+Prefer `lead.hot` + `payload.trigger`. If using the PR #10 alias `lead.escalated`, subscribe to **one** of the two — never both.
+
+```json
+{
+  "event_type": "lead.hot",
+  "tenant_id": "Client_1",
+  "entity_id": "123",
+  "source": "agent | lead_scoring_handler",
+  "payload": {
+    "lead_id": 123,
+    "session_id": "1_+919999999999",
+    "name": "John Doe",
+    "phone": "+919999999999",
+    "location": "Baner",
+    "budget": "80L",
+    "property_type": "2BHK",
+    "lead_temperature": "hot",
+    "conversion_probability": 85,
+    "score": 85,
+    "trigger": "hot_threshold | human_handoff",
+    "reason": "HOT threshold crossed | Explicit human agent requested.",
+    "assigned_agent": "Sneha",
+    "chat_context": "User: ...\nAgent: ..."
+  }
+}
+```
+
+| Chat / audit wording | What bus emits |
+|----------------------|----------------|
+| `human.requested` | `lead.hot` + `lead.escalated` with `trigger=human_handoff` |
+| `lead.escalated` (as sole name) | Dual-published with `lead.hot` (same payload) — pick one in n8n |
+| `session.completed` | Dual-published on close (plus keep `lead.qualified` for fields) |
+
+**Shipped:** `app/events/lead_hot.py` dual-publish + scoring/handoff/qualify-close paths (PR #10 + BA closeout).
+
+### `lead.qualified` (CRM fields + transcript)
+
+Emitted from `main.py` `_emit_turn_events` when 6-field gate complete. Closeout adds `chat_context` (BA-2):
+
+```json
+{
+  "event_type": "lead.qualified",
+  "tenant_id": "Client_1",
+  "entity_id": "123",
+  "payload": {
+    "lead_id": 123,
+    "session_id": "1_+919999999999",
+    "name": "John Doe",
+    "phone": "+919999999999",
+    "location": "Baner",
+    "budget": "80L",
+    "property_type": "2BHK",
+    "intent": "buy",
+    "lead_temperature": "hot",
+    "conversion_probability": 85,
+    "chat_context": "User: Hi...\nAgent: Great..."
+  }
+}
+```
+
+### `site_visit.scheduled` (calendar — EE after `CalendarExecutor`)
+
+Python owns Google create when `GOOGLE_CALENDAR_*` set. n8n = invite email / Slack only.
+
+```json
+{
+  "event_type": "site_visit.scheduled",
+  "tenant_id": "Client_1",
+  "entity_id": "123",
+  "source": "execution_engine",
+  "payload": {
+    "lead_id": 123,
+    "visit_id": "...",
+    "visit_date": "2026-08-01T10:00:00+05:30",
+    "name": "John Doe",
+    "phone": "+919999999999",
+    "location": "Baner",
+    "provider": "google_calendar | stub",
+    "html_link": "https://calendar.google.com/..."
+  }
+}
+```
+
+**Do not** rely on a dummy `GET /api/v1/calendar/availability` that always returns `available: true` without `provider`. Optional authenticated freebusy API is BA-5 only if needed.
+
+### `approval.requested` (HITL)
+
+Already published from `app/automation_engine/hitl.py`. Closeout BA-4 adds relative `approve_path` / `reject_path`.
+
+### `marketing.report.generated`
+
+Shipped from `marketing_agent`. Use for Drive CSV workflow.
+
+## Ingest: Redis Streams vs AE webhook
+
+| Mode | When to use |
+|------|-------------|
+| **Redis Streams** on `ireios:events` (filter `event_type`) | Preferred for bus-native events (`lead.hot`, `lead.qualified`, `site_visit.scheduled`, …) |
+| **Webhook** `POST {N8N_BASE_URL}/webhook/{workflow_id}` + `X-N8N-API-KEY` | When AE submits `template_type=n8n` (e.g. hot_lead template) |
+
+Pick **one primary** per workflow with backend owner to avoid double Slack messages.
+
 ## Practicality vs LangGraph
 
 Prefer **n8n** for Slack/email/Drive/partner connectors. Prefer **LangGraph** (or existing HITL pause) for in-process multi-step AI. Do not put WhatsApp TwiML or the 6-field gate in n8n.
+
+## Python email vs n8n email
+
+| Kind | Owner | Purpose |
+|------|--------|---------|
+| Critical / Twilio failure fallback | Python notification paths | Disaster recovery |
+| Business ops (digests, rich HTML, Slack blocks, manager HITL formatting) | n8n | Day-to-day ops routing |

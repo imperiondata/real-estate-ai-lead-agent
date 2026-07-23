@@ -319,4 +319,22 @@ Former `retention_agent` duties are covered by `customer_success_agent`.
 | Competitor Monitor | cron | `market.alert.generated` |
 | Follow-Up Scheduler | cron + lead activity | `followup.sent` |
 | Automation Engine | action_request | success/fail/approval events |
-| Lead Scoring | `whatsapp.response.generated` | `lead.scored`, `lead.hot` |
+| Lead Scoring | `whatsapp.response.generated` / `conversation.updated` | `lead.scored`, `lead.hot` (closeout: ensure `lead.hot` actually published) |
+
+---
+
+## 12. n8n side-plane (not CEO agents)
+
+n8n is **outside** the in-process CEO table. It consumes the same bus (or AE webhooks).
+
+| n8n workflow | Bus / trigger | Notes |
+|--------------|---------------|--------|
+| Hot lead Slack | `lead.hot` | `payload.trigger` = threshold \| handoff — **not** separate event types |
+| Visit fan-out | `site_visit.scheduled` | Email/Slack only; Google create = `CalendarExecutor` |
+| HITL notify | `approval.requested` | Deep links to `/api/v1/approvals/{id}/…` |
+| External CRM | `lead.qualified` | `chat_context` on payload (closeout BA-2) |
+| Marketing CSV | `marketing.report.generated` | Drive / email |
+| DLQ alert | n8n cron | Not a bus event |
+
+**Do not** move follow-up FSM, escalation cron, or WA TwiML into n8n.  
+Contracts: `docs/N8N_INTEGRATION.md`, `plans/PHASE3_AUTOMATIONS_CLOSEOUT.md`.

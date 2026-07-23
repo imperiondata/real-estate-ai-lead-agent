@@ -220,16 +220,18 @@ Registered on the CEO bus in `main.py` lifespan (`register_*(ceo)`), all `status
 
 ```text
 Twilio → /api/v1/whatsapp → lock/dedupe → process_unified_lead
-  → WhatsAppAgent (graph context + qualify + score + tools)
+  → WhatsAppAgent (graph context + qualify + score + memory extract_and_store + tools)
   → TwiML reply
-  → _emit_turn_events → Redis Streams → CEO agents (CRM/score/KG/arm)
+  → _emit_turn_events → Redis Streams → CEO agents (CRM/score/KG/arm/Sales)
 Follow-ups: FOLLOWUP_ENGINE=v3 → AE → WhatsAppExecutor
 Outbound (alerts/escalation/background): app/execution_engine/outbound.py → EE
+Sales hot escalate: notify_agent + create_task → agent_tasks
 ```
 
 ## Docs pointers
 
 - n8n: Compose service + AE path shipped; UI workflows still ops (`docs/N8N_INTEGRATION.md`). Brochure HTTPS URLs optional until set.
+- **Post-G3 automations closeout (Step 24):** `plans/PHASE3_AUTOMATIONS_CLOSEOUT.md` on branch `phase3_automations`. Canonical bus only (`lead.hot` + `trigger`, not invented event names). Backend hardens emits/payloads; Maitri owns n8n UI chains. HubSpot Python stays skipped.
 - Frontend remaining work: `docs/FRONTEND_BACKLOG.md` (MockSSE cutover still open)
 - Evidence: `plans/IREIOS_3.0_EVIDENCE_PACK.md` (G2 + G3)
 - **Post-G2 Waves A–D (depth fill, G3 green):** living log `plans/IREIOS_3.0_WAVE_A_D_CHANGELOG.md`; how-to `plans/IREIOS_3.0_WAVE_A_D_EXPANSION.md`; tests `tests/test_e14_wave_a.py`…`test_e17_wave_d.py`. UNIFIED Steps **20–23** + Gate **G3** = `[x]`.
@@ -247,7 +249,7 @@ Outbound (alerts/escalation/background): app/execution_engine/outbound.py → EE
 
 - **Event Bus:** `app/clients/event_bus_client.py` (`EventBusClient`, `event_bus` singleton) — Redis Streams only. `start()` before scheduler, `stop()` after, in `main.py` lifespan. CEO subscribes as a single `"*"` wildcard handler.
 - **CEO:** `app/orchestrator/ceo_orchestrator.py` (`ceo` singleton) routes events to `agent_registry` subscribers; skips `placeholder` agents; publishes `{agent_id}.failed` on handler error.
-- **Execution Engine:** `app/execution_engine/execution_engine.py` (`execution_engine` singleton) + `BaseExecutor`/`NoopExecutor` in `base_executor.py`. `dispatch` returns `{"status":"error","error":"no_executor"}` for unknown actions and writes a `DLQEvent` (via injectable `session_factory`, default `database.SessionLocal`) on any failure. `resolve_client_id` maps `Client_<id>` tenant ids to integer `client_id`.
+- **Execution Engine:** `app/execution_engine/execution_engine.py` (`execution_engine` singleton) + `BaseExecutor`/`NoopExecutor` in `base_executor.py`. `dispatch` returns `{"status":"error","error":"no_executor"}` for unknown actions and writes a `DLQEvent` (via injectable `session_factory`, default `database.SessionLocal`) on any failure. `resolve_client_id` maps `Client_<id>` tenant ids to integer `client_id`. Registered: `send_whatsapp`, `update_crm`, `schedule_visit`, `notify_agent`, **`create_task`** (`TaskExecutor` → `agent_tasks`).
 - **BaseAgent:** `app/agents/base_agent.py` runs `fetch_context → analyze → decide`; `process_event` forwards any action to `app.automation_engine.engine.submit` (Phase 1 stub → EE; Phase 2 adds approval/retry).
 - `EventBusClient.publish` raises loudly if called before `start()` or if Redis is down.
 

@@ -17,9 +17,9 @@
 Detail: `plans/IREIOS_3.0_WAVE_A_D_CHANGELOG.md` · plan: `plans/IREIOS_3.0_WAVE_A_D_EXPANSION.md` · UNIFIED Steps 20–23 + G3.
 
 - [x] **Wave A:** weekly marketing cron, lifecycle inject API, AE n8n/langgraph branch, expire_approvals job, NotificationExecutor real notify paths
-- [x] **Wave B:** Sales bus + objections, CS WhatsApp, marketing market.alert, AE templates, competitor → NotificationLog (B.7 create_task deferred)
+- [x] **Wave B:** Sales bus + objections, CS WhatsApp, marketing market.alert, AE templates, competitor → NotificationLog; **B.7 create_task** (`agent_tasks` + EE)
 - [x] **Wave C:** inventory/pricing models + seed; 6 agents active; placeholders empty
-- [x] **Wave D:** prediction routes; brochure Approach B; n8n docs partial (D.2 memory deferred)
+- [x] **Wave D:** prediction routes; brochure Approach B; **D.2 memory auto-write**; n8n workflows still ops
 - [x] **pytest** full suite green after P0 stabilize (`ensure_test_client`, seed ASCII, e1b OpenAPI route check)
 - [x] **gate_isolation_test.py** PASS
 - [x] **gate_dlq_drill.py** + **dlq_replay.py** 1/1 recovered
@@ -27,9 +27,12 @@ Detail: `plans/IREIOS_3.0_WAVE_A_D_CHANGELOG.md` · plan: `plans/IREIOS_3.0_WAVE
 - [x] HubSpot — **skipped**; demo stub OK
 - [x] Google Calendar — live smoke `provider=google_calendar` (fix SA JSON path with `/` on Windows)
 - [~] n8n — Docker `n8n-local` **up** + `N8N_*` set; **workflow incomplete** (webhook 404 until UI owner + active path + Header Auth)
-- [~] Brochure HTTPS media — code shipped; **`BROCHURE_MEDIA_URL` / `FLOORPLAN_MEDIA_URL` still empty** (text fallback)
+- [x] Brochure HTTPS media — jsDelivr `docs/demo/*.pdf` GET 200 `application/pdf`; resolve_tool_media_url OK (2026-07-23)
 - [x] Neo4j — `/api/v1/graph/health` available + schema v1
+- [x] D.2 memory auto-write + B.7 create_task (2026-07-23)
 - [ ] `task3_runner.py` live stress when Gemini quota allows
+- [ ] Dual-path module delete 10.2/10.3 — **deferred**
+- [ ] n8n workflow automations (incl. optional Calendar nodes) — later
 
 ## Data, graph, memory
 - [x] Neo4j schema v1; `/api/v1/graph/health` available when configured

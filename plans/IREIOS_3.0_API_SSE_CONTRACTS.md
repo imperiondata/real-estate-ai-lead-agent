@@ -43,9 +43,9 @@ Each event is one SSE `data:` line with a JSON **bus envelope**:
 }
 ```
 
-Common `event_type` values (non-exhaustive): `lead.created`, `lead.scored`, `lead.hot`, `lead.escalated` (alias of `lead.hot`), `lead.qualified`, `lead.assigned`, `conversation.updated`, `session.completed` (PR #10 alias on close), `whatsapp.sent`, `approval.requested`, `site_visit.scheduled`.
+Common `event_type` values (non-exhaustive): `lead.created`, `lead.scored`, `lead.hot`, `lead.escalated` (alias of `lead.hot`), `lead.qualified`, `lead.assigned`, `conversation.updated`, `session.completed` (PR #10 alias on close), `whatsapp.sent`, `approval.requested`, `site_visit.scheduled`, `marketing.report.generated`.
 
-n8n dual-publish / alias rules: `docs/N8N_INTEGRATION.md`. Prefer catalog names long-term; pick one of `lead.hot`|`lead.escalated` per workflow.
+n8n dual-publish / alias rules: `docs/N8N_INTEGRATION.md`. Prefer catalog names long-term; pick one of `lead.hot`|`lead.escalated` per workflow. Closeout payloads: `docs/N8N_INTEGRATION.md` § Canonical payloads and `plans/PHASE3_AUTOMATIONS_CLOSEOUT.md`.
 
 ---
 

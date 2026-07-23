@@ -202,6 +202,7 @@ async def _nba_to_ae_action(lead: Lead, client_id: int, recommendation: dict) ->
     """Map a Sales NBA recommendation to an AE action request when applicable."""
     action = recommendation.get("action")
     if action == "escalate_hot":
+        reason = recommendation.get("rationale", "Hot lead — auto-escalated by Sales AI")
         await ae_submit({
             "action_type": "notify_agent",
             "tenant_id": f"Client_{client_id}",
@@ -209,7 +210,21 @@ async def _nba_to_ae_action(lead: Lead, client_id: int, recommendation: dict) ->
             "parameters": {
                 "kind": "hot_lead",
                 "lead_id": lead.id,
-                "reason": recommendation.get("rationale", "Hot lead — auto-escalated by Sales AI"),
+                "reason": reason,
+            },
+            "source": "sales_agent",
+        })
+        # B.7: internal task so humans see a durable work item even if notify fails.
+        await ae_submit({
+            "action_type": "create_task",
+            "tenant_id": f"Client_{client_id}",
+            "entity_id": str(lead.id),
+            "parameters": {
+                "lead_id": lead.id,
+                "title": f"Call hot lead {lead.name or lead.id}",
+                "description": reason,
+                "assignee": lead.assigned_agent or None,
+                "source": "sales_agent",
             },
             "source": "sales_agent",
         })

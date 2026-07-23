@@ -63,25 +63,50 @@ class ConversationMemory:
         return "\n".join(parts)
 
     def extract_and_store(self, db: Session, *, lead: Lead, client_id: int,
-                          user_message: str) -> list:
-        """Store a few deterministic memory facts derived from the lead row.
+                          user_message: str = "") -> list:
+        """Store deterministic memory facts from the lead row (idempotent).
 
-        Returns the LeadMemory rows created. Best-effort; never raises.
+        Skips keys whose latest stored value already matches. Best-effort;
+        never raises. ``user_message`` reserved for future NLP extractors.
         """
         created = []
-        facts = {
-            "name": lead.name,
-            "location": lead.location,
-            "budget": lead.budget,
-            "property_type": lead.property_type,
-            "intent": lead.intent,
-        }
-        for k, v in facts.items():
-            if v:
+        try:
+            facts = {
+                "name": lead.name,
+                "location": lead.location,
+                "budget": lead.budget,
+                "property_type": lead.property_type,
+                "intent": lead.intent,
+            }
+            for k, v in facts.items():
+                if not v:
+                    continue
+                val = str(v)
+                existing = self.recall(
+                    db, lead_id=lead.id, client_id=client_id, key=k
+                )
+                if existing and (existing[0].value or "") == val:
+                    continue
                 created.append(self.remember(
-                    db, lead_id=lead.id, client_id=client_id, key=k, value=str(v),
+                    db, lead_id=lead.id, client_id=client_id, key=k, value=val,
                     session_id=lead.session_id, memory_type="fact",
                 ))
+            # Optional lightweight preference signal from user text (non-blocking).
+            msg = (user_message or "").strip().lower()
+            if msg and any(w in msg for w in ("prefer", "looking for", "want a", "need a")):
+                snippet = (user_message or "").strip()[:240]
+                existing_pref = self.recall(
+                    db, lead_id=lead.id, client_id=client_id, key="last_preference_utterance"
+                )
+                if not existing_pref or (existing_pref[0].value or "") != snippet:
+                    created.append(self.remember(
+                        db, lead_id=lead.id, client_id=client_id,
+                        key="last_preference_utterance", value=snippet,
+                        session_id=lead.session_id, memory_type="preference",
+                    ))
+        except Exception as exc:  # noqa: BLE001
+            logger.debug("extract_and_store skipped: %s", exc)
+            return []
         return created
 
 

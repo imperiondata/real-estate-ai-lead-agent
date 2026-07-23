@@ -269,6 +269,16 @@ class WhatsAppAgent:
         # Post-turn graph sync so location/name changes in this turn land same-turn.
         self._upsert_lead_snapshot(lead, client_id)
 
+        # D.2: best-effort conversation memory (never blocks reply path).
+        try:
+            from app.memory.conversation_memory import conversation_memory
+
+            conversation_memory.extract_and_store(
+                db, lead=lead, client_id=client_id, user_message=user_message or ""
+            )
+        except Exception as e:  # noqa: BLE001
+            logger.debug("memory auto-write skipped: %s", e)
+
         # Clear any stale staged media from a prior turn in this context.
         _stage_outbound_media_url(None)
 

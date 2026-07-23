@@ -36,7 +36,11 @@ def run_migration():
         "CREATE TABLE IF NOT EXISTS inventory_units (id SERIAL PRIMARY KEY, client_id INTEGER REFERENCES clients(id) ON DELETE CASCADE, project_name VARCHAR NOT NULL, tower VARCHAR, unit_code VARCHAR NOT NULL, bhk VARCHAR, location VARCHAR, list_price INTEGER, status VARCHAR DEFAULT 'available', carpet_sqft INTEGER, meta_json JSONB, created_at TIMESTAMP WITH TIME ZONE DEFAULT now());",
         "CREATE INDEX IF NOT EXISTS ix_inventory_units_client ON inventory_units (client_id);",
         "CREATE TABLE IF NOT EXISTS pricing_rules (id SERIAL PRIMARY KEY, client_id INTEGER REFERENCES clients(id) ON DELETE CASCADE, location VARCHAR, bhk VARCHAR, min_budget INTEGER, max_budget INTEGER, list_price INTEGER, notes TEXT, created_at TIMESTAMP WITH TIME ZONE DEFAULT now());",
-        "CREATE INDEX IF NOT EXISTS ix_pricing_rules_client ON pricing_rules (client_id);"
+        "CREATE INDEX IF NOT EXISTS ix_pricing_rules_client ON pricing_rules (client_id);",
+        "CREATE TABLE IF NOT EXISTS agent_tasks (id SERIAL PRIMARY KEY, client_id INTEGER REFERENCES clients(id) ON DELETE CASCADE, lead_id INTEGER REFERENCES leads(id) ON DELETE SET NULL, title VARCHAR NOT NULL, description TEXT, status VARCHAR DEFAULT 'open', assignee VARCHAR, source VARCHAR, meta_json JSONB, created_at TIMESTAMP WITH TIME ZONE DEFAULT now(), updated_at TIMESTAMP WITH TIME ZONE DEFAULT now());",
+        "CREATE INDEX IF NOT EXISTS ix_agent_tasks_client ON agent_tasks (client_id);",
+        "CREATE INDEX IF NOT EXISTS ix_agent_tasks_lead ON agent_tasks (lead_id);",
+        "CREATE INDEX IF NOT EXISTS ix_agent_tasks_status ON agent_tasks (client_id, status);",
     ]
 
     for query in migrations:

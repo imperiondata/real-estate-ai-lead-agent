@@ -232,6 +232,7 @@ Sales hot escalate: notify_agent + create_task → agent_tasks
 
 - n8n: Compose service + AE path shipped; UI workflows still ops (`docs/N8N_INTEGRATION.md`). Brochure HTTPS URLs optional until set.
 - **Post-G3 automations closeout (Step 24):** `plans/PHASE3_AUTOMATIONS_CLOSEOUT.md` on branch `phase3_automations`. Canonical bus only (`lead.hot` + `trigger`, not invented event names). Backend hardens emits/payloads; Maitri owns n8n UI chains. HubSpot Python stays skipped.
+- **BA-1…BA-7 shipped:** `app/events/lead_hot.py` publishes `lead.hot` (score + handoff, Redis debounce); `_emit_turn_events` adds `chat_context`; EE merges params into success events; HITL `approve_path`/`reject_path`; `GET/POST /api/v1/calendar/*` (confirm → AE). n8n primary = Redis Streams. Tests: `tests/test_e18_automations_closeout.py`.
 - Frontend remaining work: `docs/FRONTEND_BACKLOG.md` (MockSSE cutover still open)
 - Evidence: `plans/IREIOS_3.0_EVIDENCE_PACK.md` (G2 + G3)
 - **Post-G2 Waves A–D (depth fill, G3 green):** living log `plans/IREIOS_3.0_WAVE_A_D_CHANGELOG.md`; how-to `plans/IREIOS_3.0_WAVE_A_D_EXPANSION.md`; tests `tests/test_e14_wave_a.py`…`test_e17_wave_d.py`. UNIFIED Steps **20–23** + Gate **G3** = `[x]`.

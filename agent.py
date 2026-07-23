@@ -874,7 +874,7 @@ async def process_chat(session_id: str, user_message: str, db: DBSession, client
         asyncio.create_task(
             trigger_hot_lead_notification(lead.id, "Explicit human agent requested.", severity=SEVERITY_HANDOFF)
         )
-        # PR #10: bus lead.hot + alias lead.escalated; session.completed on close
+        # PR #10 / BA-1: bus lead.hot + alias lead.escalated; session.completed on close
         try:
             from types import SimpleNamespace
 
@@ -888,6 +888,7 @@ async def process_chat(session_id: str, user_message: str, db: DBSession, client
                 ) or ""
             except Exception:
                 pass
+            # Snapshot before create_task — session may expire the ORM row.
             _snap = SimpleNamespace(
                 id=lead.id,
                 session_id=session_id,

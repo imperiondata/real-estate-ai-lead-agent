@@ -382,12 +382,16 @@ Living record of **post-G2 depth fill** (Waves A–D). Parallel to `IREIOS_3.0_E
 | HubSpot Python | **Stay skipped**; CRM upsert via n8n on `lead.qualified` |
 | Enrich bus + live n8n workflows | **Accept** |
 
-### Critical code gap confirmed
+### Critical code gap — **closed 2026-07-23 (BA-1…BA-7)**
 
-- `SalesAgent` subscribes to `lead.hot` (`app/agents/sales_agent.py`) but **no production publisher** exists; hot path only calls `trigger_hot_lead_notification` (`agent.py`).
-- `_emit_turn_events` has no `chat_context` yet (`main.py`).
-- EE `site_visit.scheduled` publishes executor result only (thin payload).
+| Gap | Fix |
+|-----|-----|
+| No `lead.hot` publisher | `app/events/lead_hot.py` + scoring handler + handoff |
+| No `chat_context` | `main.py` `_emit_turn_events(db=…)` |
+| Thin `site_visit.scheduled` | EE `_publish_success` merge params+result |
+| HITL no deep links | `hitl.py` approve/reject paths |
+| Calendar HTTP for n8n | `app/api/calendar.py` (stub labeled; confirm→AE) |
 
-### Next implementation (not done here)
+**Regression:** full `tests/` **352 passed, 4 skipped**; isolation PASS; DLQ 1/1. Suite: `tests/test_e18_automations_closeout.py`.
 
-BA-1…BA-4 backend → Maitri WF-1…WF-6 → BA-7 gate → G4. **No code/push in this docs pass.**
+**Still open (Maitri):** n8n WF-1…WF-6 UI activation → Gate G4.

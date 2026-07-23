@@ -100,7 +100,8 @@ async def _emit_turn_events(
 ) -> None:
     """Publish lifecycle events so CEO bus agents (scoring/CRM/KG/arm) run on real traffic.
 
-    PR #10: when ``db`` is set, attaches ``chat_context`` for n8n / scoring.
+    PR #10 / BA-2: when ``db`` is set, attaches ``chat_context`` for n8n / scoring.
+    Qualify-close also dual-publishes ``session.completed`` (PR #10 alias).
     """
     if lead is None or not getattr(lead, "id", None):
         return
@@ -128,6 +129,7 @@ async def _emit_turn_events(
         "intent": lead.intent,
         "lead_temperature": getattr(lead, "lead_temperature", None),
         "conversion_probability": getattr(lead, "conversion_probability", None),
+        "budget_alignment_status": getattr(lead, "budget_alignment_status", None),
         "chat_context": chat_context,
     }
     channel_event = "whatsapp.received" if source_channel == "whatsapp" else (
@@ -467,6 +469,10 @@ app.include_router(graph_router)
 # Wave D.1: Prediction / forecast routes (JWT, client-scoped, heuristic MVP).
 from app.api.predictions import router as predictions_router
 app.include_router(predictions_router)
+
+# Automations closeout BA-5: calendar availability + AE-backed confirm for n8n.
+from app.api.calendar import router as calendar_router
+app.include_router(calendar_router)
 
 # TLS Enforcement (Redirect HTTP to HTTPS)
 if settings.IS_PRODUCTION or os.getenv("RENDER"):

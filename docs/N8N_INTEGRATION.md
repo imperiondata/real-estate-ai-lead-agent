@@ -129,20 +129,29 @@ N8N_API_KEY=shared-secret-matching-n8n-header-auth
 
 n8n is **orchestration around** the OS, not a replacement for the CEO/AE/EE spine.
 
-## Status (post-G3 + PR #10 bus hooks)
+## Status (post-G3 + BA closeout + PR #10 bus hooks)
 
 | Piece | Status |
 |-------|--------|
 | Client scaffold | **Shipped** — `app/automation_engine/n8n_client.py` |
 | AE `template_type=n8n` dispatch | **Shipped** (Wave A.3) |
 | Named template helper | **Shipped** — `hot_lead_notify.py` supports `workflow_id` |
-| Docker Compose service | **Shipped** — `n8n` in `docker-compose.yml` |
+| Docker Compose service | **Shipped** — `n8n` in `docker-compose.yml` → http://localhost:5678 |
 | Bus: `lead.hot` + alias `lead.escalated` | **Shipped** — scoring + handoff (`app/events/lead_hot.py`) |
 | Bus: `session.completed` | **Shipped** — handoff + full qualify close |
 | Bus: `site_visit.scheduled` | **Shipped** — EE success map (not CalendarExecutor) |
 | Turn `chat_context` | **Shipped** — `_emit_turn_events` |
+| Calendar REST (BA-5) | **Shipped** — `GET/POST /api/v1/calendar/*` (confirm → AE) |
+| HITL approve/reject paths | **Shipped** |
 | Live n8n **workflows** | **INCOMPLETE** — Maitri activates WF UI |
 | Workflows CSV / DLQ | **Not started** |
+
+### Ingest mode (BA-6 locked)
+
+| Mode | Role |
+|------|------|
+| **Redis Streams on `ireios:events` (primary)** | Filter one of `lead.hot` **or** `lead.escalated` (not both). |
+| AE webhook `template_type=n8n` | **Fallback only** when n8n cannot reach Redis. Do not enable both for the same alert. |
 
 ### Workflow 1: `ireios_hot_lead_slack`
 
@@ -208,7 +217,7 @@ Prefer `lead.hot` + `payload.trigger`. If using the PR #10 alias `lead.escalated
 | `lead.escalated` (as sole name) | Dual-published with `lead.hot` (same payload) — pick one in n8n |
 | `session.completed` | Dual-published on close (plus keep `lead.qualified` for fields) |
 
-**Shipped:** `app/events/lead_hot.py` dual-publish + scoring/handoff/qualify-close paths (PR #10 + BA closeout).
+**Shipped:** `app/events/lead_hot.py` dual-publish + `lead_scoring_handler` (`hot_threshold`) + handoff/qualify-close. Redis debounce 30m per `(client, lead, trigger)`.
 
 ### `lead.qualified` (CRM fields + transcript)
 

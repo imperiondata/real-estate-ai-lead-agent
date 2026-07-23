@@ -77,8 +77,8 @@
 | **22** | Wave A–D | **Wave C** — 6 placeholders → active agents | Wave C exit gate | same §3 | `[x]` |
 | **23** | Wave A–D | **Wave D** — forecast/memory/n8n + brochure **Approach B** (MediaUrl PDF) | Wave D exit gate §4.7 | same §4 | `[x]` |
 | **G3** | Gate | **Waves A–D complete** | Depth-fill close | pytest full + isolation + DLQ green; evidence pack Wave section; changelog | `[x]` |
-| **24** | Automations closeout | **Bus hooks + n8n contracts** (no new product scope) | Step 24 exit in `plans/PHASE3_AUTOMATIONS_CLOSEOUT.md` §8 | `[~]` |
-| **G4** | Gate | **Automations production-ready** | BA-7 green + n8n WF-1 live smoke + docs flipped | `[ ]` |
+| **24** | Automations closeout | **Bus hooks + n8n contracts** (no new product scope) | Step 24 exit in `plans/PHASE3_AUTOMATIONS_CLOSEOUT.md` §8 | `[x]` backend; n8n WF-1 still ops |
+| **G4** | Gate | **Automations production-ready** | BA-7 green + n8n WF-1 live smoke + docs flipped | `[~]` BA-7 done; WF-1 pending Maitri |
 
 **Expansion Task 0.1** (doc freeze) is already done; do not re-open it as a blocking step.
 
@@ -340,12 +340,13 @@ If production breaks mid-program:
 
 | ID | Work | Owner | Status |
 |----|------|-------|--------|
-| BA-1 | Publish canonical **`lead.hot`** (score + handoff); never invent `lead.escalated` / `human.requested` | Aritro | `[ ]` |
-| BA-2 | Add **`chat_context`** via `summarize_recent` on `_emit_turn_events` | Aritro | `[ ]` |
-| BA-3 | Rich **`site_visit.scheduled`** payload (merge EE params + result) | Aritro | `[ ]` |
-| BA-4 | HITL `approval.requested` deep-link path fields | Aritro | `[ ]` |
-| BA-5 | Optional calendar REST wrapping AE (no always-true stub) | Aritro | `[ ]` optional |
-| BA-7 | Full pytest + isolation + DLQ | Aritro | `[ ]` |
+| BA-1 | Publish canonical **`lead.hot`** (score + handoff); never invent `lead.escalated` / `human.requested` | Aritro | `[x]` |
+| BA-2 | Add **`chat_context`** via `summarize_recent` on `_emit_turn_events` | Aritro | `[x]` |
+| BA-3 | Rich **`site_visit.scheduled`** payload (merge EE params + result) | Aritro | `[x]` |
+| BA-4 | HITL `approval.requested` deep-link path fields | Aritro | `[x]` |
+| BA-5 | Calendar REST wrapping AE (labeled stub / freebusy) | Aritro | `[x]` |
+| BA-6 | Redis-primary n8n ingest (no dual-fanout default) | Aritro | `[x]` docs |
+| BA-7 | Full pytest + isolation + DLQ | Aritro | `[x]` 352 pass / isolation / DLQ 1/1 |
 | WF-1 | n8n `ireios_hot_lead_slack` active on `lead.hot` | Maitri | `[~]` instance only |
 | WF-2…6 | Visit fan-out, HITL email, CRM-via-n8n, marketing CSV, DLQ alert | Maitri | `[ ]` |
 

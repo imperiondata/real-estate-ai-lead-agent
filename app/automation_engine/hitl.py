@@ -61,17 +61,35 @@ async def request_approval(
         result = _row_to_dict(row)
 
     # Notify managers / dashboard via the bus (fire-and-forget).
+    # BA-4: relative approve/reject paths for n8n deep links.
+    approval_id = result["id"]
+    ent = entity_id or action_request.get("entity_id")
+    params = action_request.get("parameters") or {}
+    bus_payload = {
+        "approval_id": approval_id,
+        "correlation_id": correlation_id,
+        "action_type": action_type,
+        "entity_id": ent,
+        "parameters_summary": params if isinstance(params, dict) else {},
+        "approve_path": f"/api/v1/approvals/{approval_id}/approve",
+        "reject_path": f"/api/v1/approvals/{approval_id}/reject",
+    }
+    try:
+        from config import settings as _settings
+
+        api_base = getattr(_settings, "PUBLIC_API_BASE", None) or getattr(
+            _settings, "API_PUBLIC_BASE_URL", None
+        ) or ""
+        if api_base:
+            bus_payload["api_base_hint"] = str(api_base).rstrip("/")
+    except Exception:  # noqa: BLE001
+        pass
     try:
         await event_bus.publish(
             "approval.requested",
             f"Client_{client_id}" if client_id is not None else "system",
-            entity_id or action_request.get("entity_id", "approval"),
-            {
-                "approval_id": result["id"],
-                "correlation_id": correlation_id,
-                "action_type": action_type,
-                "entity_id": entity_id or action_request.get("entity_id"),
-            },
+            ent or "approval",
+            bus_payload,
             source="hitl",
         )
     except Exception as exc:  # noqa: BLE001 - never block the pause path

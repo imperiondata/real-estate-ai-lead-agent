@@ -22,15 +22,16 @@ from app.clients.event_bus_client import event_bus
 
 
 async def main(args) -> None:
-    await event_bus.start()
+    import redis.asyncio as aioredis
+    from config import settings
+    redis = aioredis.from_url(settings.REDIS_URL, decode_responses=True)
     try:
         payload = json.loads(args.payload) if args.payload else {}
-        event_id = await event_bus.publish(
-            args.event_type, args.tenant_id, args.entity_id, payload, source="stub"
-        )
-        print(f"published event_id={event_id} type={args.event_type} tenant={args.tenant_id}")
+        envelope = event_bus.build_envelope(args.event_type, args.tenant_id, args.entity_id, payload, source="stub")
+        await redis.xadd(settings.EVENT_STREAM_KEY, {"data": json.dumps(envelope, default=str)})
+        print(f"published event_id={envelope['event_id']} type={args.event_type} tenant={args.tenant_id}")
     finally:
-        await event_bus.stop()
+        await redis.aclose()
 
 
 def parse() -> argparse.Namespace:

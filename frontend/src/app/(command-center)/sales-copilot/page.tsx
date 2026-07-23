@@ -1,7 +1,16 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import { generateMockTimeline, TimelineEvent } from '@/lib/api/mockTimelineService';
+// Removed mock timeline import; using real types below.
+type TimelineEvent = {
+  id: string;
+  type: string;
+  title: string;
+  description: string;
+  timestamp: string;
+  actor: string;
+  amount?: number;
+};
 import { MessageCircle, DollarSign, Calendar, UserPlus, Cpu, AlertCircle, Search, Filter } from 'lucide-react';
 
 export default function SalesCopilotPage() {
@@ -9,8 +18,32 @@ export default function SalesCopilotPage() {
   const [filter, setFilter] = useState<string>('all');
 
   useEffect(() => {
-    // Load mock timeline data
-    setEvents(generateMockTimeline());
+    const fetchTimeline = async () => {
+      try {
+        const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
+        const res = await fetch(`${apiUrl}/api/v1/events/leads/1/timeline?api_key=secret-client-key-123`, {
+          // Send cookies if available
+          credentials: 'omit' // use api_key for now to bypass CORS cookie issues during dev
+        });
+        if (res.ok) {
+          const data = await res.json();
+          const mappedEvents = data.events.map((evt: any) => ({
+            id: evt.event_id,
+            type: evt.event_type,
+            title: evt.event_type.replace(/_/g, ' ').toUpperCase(),
+            description: evt.payload?.action_type || evt.source || 'Timeline event recorded.',
+            timestamp: evt.timestamp || new Date().toISOString(),
+            actor: evt.payload?.agent_type || 'System',
+          }));
+          setEvents(mappedEvents);
+        } else {
+          console.error("Failed to fetch timeline");
+        }
+      } catch (err) {
+        console.error("Error fetching timeline:", err);
+      }
+    };
+    fetchTimeline();
   }, []);
 
   const filteredEvents = events.filter(e => {

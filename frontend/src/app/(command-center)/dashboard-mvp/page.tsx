@@ -2,7 +2,7 @@
 
 import React, { useEffect, useState } from 'react';
 import { useCommandCenterStore } from '@/lib/store/useCommandCenterStore';
-import { mockSSEService, mockForecastData, mockChartData } from '@/lib/api/mockService';
+import { mockForecastData, mockChartData } from '@/lib/api/mockService';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import { TrendingUp, Users, DollarSign, Activity, AlertTriangle, Info, BellRing, Bot } from 'lucide-react';
 
@@ -18,13 +18,41 @@ export default function ExecutiveDashboardPage() {
     // Initial fetch of forecast API
     setForecast(mockForecastData.forecast);
 
-    // Subscribe to SSE Mock
-    const unsubscribe = mockSSEService.subscribe((msg) => {
-      if (msg.type === 'kpi_update') setKpis(msg.data);
-      if (msg.type === 'alert_update') setAlerts(msg.data);
+    // Live SSE Connection
+    const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
+    const eventSource = new EventSource(`${apiUrl}/api/v1/events/stream?api_key=secret-client-key-123`, {
+      withCredentials: false // using api key for dev
     });
 
-    return () => unsubscribe();
+    eventSource.onmessage = (event) => {
+      try {
+        const data = JSON.parse(event.data);
+        
+        // Artificial demo mapping: map real event stream into frontend UI state
+        if (data.event_type === 'lead.created') {
+          setKpis(prev => ({ ...prev, pipelineValue: prev.pipelineValue + 150000, leadVelocity: prev.leadVelocity + 1 }));
+          setAlerts(prev => [{ id: data.event_id, type: 'info', message: `New Lead Created (${data.entity_id})`, timestamp: new Date().toLocaleTimeString() }, ...prev].slice(0, 5));
+        } else if (data.event_type === 'approval.requested') {
+          setAlerts(prev => [{ id: data.event_id, type: 'warning', message: 'Approval Requested', timestamp: new Date().toLocaleTimeString() }, ...prev].slice(0, 5));
+        } else if (data.event_type === 'lead.scored') {
+          setAlerts(prev => [{ id: data.event_id, type: 'info', message: `Lead Scored`, timestamp: new Date().toLocaleTimeString() }, ...prev].slice(0, 5));
+        } else if (data.event_type === 'marketing.report.generated') {
+          setKpis(prev => ({ ...prev, totalRevenue: prev.totalRevenue + 50000 }));
+          setAlerts(prev => [{ id: data.event_id, type: 'info', message: 'Marketing Report Generated', timestamp: new Date().toLocaleTimeString() }, ...prev].slice(0, 5));
+        } else {
+          // Generic fallback for other events
+          setAlerts(prev => [{ id: data.event_id || Date.now().toString(), type: 'info', message: `Event: ${data.event_type}`, timestamp: new Date().toLocaleTimeString() }, ...prev].slice(0, 5));
+        }
+      } catch (err) {
+        console.error("SSE parsing error:", err);
+      }
+    };
+
+    eventSource.onerror = (err) => {
+      console.error("EventSource error:", err);
+    };
+
+    return () => eventSource.close();
   }, [activeProjectId]);
 
   const formatCurrency = (value: number) => {

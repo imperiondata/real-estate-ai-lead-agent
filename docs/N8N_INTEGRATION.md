@@ -34,10 +34,33 @@ When `N8N_BASE_URL` / `N8N_API_KEY` are empty, `N8NClient` returns
 
 ## Recommended first workflows (when enabling)
 
-1. **`lead.hot` → Slack** — webhook `ireios_hot_lead_slack` (see below).
-2. **DLQ depth alert** — if pending `dlq_events` > N, page on-call.
-3. **Weekly marketing segment** — on `cron.weekly_report` / `marketing.report.generated`, push CSV to Drive.
-4. **HITL email** — on `approval.requested`, email manager with deep link to `/api/v1/approvals/{id}/approve`.
+1. **`lead.hot` → Slack** — Redis Streams filter **or** webhook `ireios_hot_lead_slack` (see below). Prefer catalog name `lead.hot`.
+2. **`site_visit.scheduled` → Slack/Gmail fan-out** — EE publishes after CalendarExecutor success (do not expect publish inside the executor file).
+3. **`session.completed` → CRM note** (PR #10 alias) — optional; prefer `lead.qualified` for field upsert.
+4. **DLQ depth alert** — if pending `dlq_events` > N, page on-call.
+5. **Weekly marketing segment** — on `marketing.report.generated`, push CSV to Drive.
+6. **HITL email** — on `approval.requested`, deep link to `/api/v1/approvals/{id}/approve`.
+
+## Dual-publish aliases (PR #10 — n8n bus hooks)
+
+Backend **dual-publishes** catalog + review aliases so n8n names from PR review work without breaking Sales/KG:
+
+| Business signal | Catalog (prefer long-term) | Alias (PR #10 / n8n) | Code |
+|-----------------|----------------------------|----------------------|------|
+| Hot score or handoff | `lead.hot` (`payload.trigger` = `hot_threshold` \| `human_handoff`) | `lead.escalated` (same payload) | `app/events/lead_hot.py` |
+| Session closed (handoff / full qualify) | keep using `lead.qualified` for fields | `session.completed` (+ `chat_context`, `close_reason`) | same module |
+| Site visit booked | `site_visit.scheduled` | — (no alias) | **EE** after `CalendarExecutor` (`registry.py`) |
+
+**n8n rule:** subscribe to **one** of `lead.hot` **or** `lead.escalated` per workflow — never both (double Slack). Aliases may be retired later; catalog names stay.
+
+### Out of scope / deferred (do not re-request on this PR)
+
+| Item | Status |
+|------|--------|
+| Always-true dummy `GET /calendar/availability` | **Rejected** (lies to n8n). Optional honest freebusy later is not scheduled. |
+| `event_bus.publish` inside `calendar_executor.py` | **Not needed** — EE owns success publish (single event). Executor is pure I/O. |
+| Dual-path delete of root `agent.py` / `crm_sync.py` / `follow_up.py` (Phase 10.2/10.3) | **Deferred** — shared libraries for v3; not a second product path (`AGENTS.md`). |
+| HubSpot Python live portal | Skipped; external CRM via n8n nodes OK. |
 
 ## Local Docker (recommended for credentials + webhooks)
 
@@ -96,17 +119,20 @@ N8N_API_KEY=shared-secret-matching-n8n-header-auth
 
 n8n is **orchestration around** the OS, not a replacement for the CEO/AE/EE spine.
 
-## Status (post-G3 + audit 2026-07-22)
+## Status (post-G3 + PR #10 bus hooks)
 
 | Piece | Status |
 |-------|--------|
 | Client scaffold | **Shipped** — `app/automation_engine/n8n_client.py` |
-| AE `template_type=n8n` dispatch | **Shipped** (Wave A.3) — `engine.py` branches; fallback linear / `fallback_action` |
+| AE `template_type=n8n` dispatch | **Shipped** (Wave A.3) |
 | Named template helper | **Shipped** — `hot_lead_notify.py` supports `workflow_id` |
-| Docker Compose service | **Shipped** — `n8n` in `docker-compose.yml` → http://localhost:5678 |
-| Live n8n **instance** | **Running** when `docker compose up -d n8n` (audit: HTTP 200) |
-| Live n8n **workflows** | **INCOMPLETE** — create owner account, activate webhook + Header Auth; until then AE trigger returns `n8n_http_404` |
-| Workflows 2–3 (CSV / DLQ) | **Not started** |
+| Docker Compose service | **Shipped** — `n8n` in `docker-compose.yml` |
+| Bus: `lead.hot` + alias `lead.escalated` | **Shipped** — scoring + handoff (`app/events/lead_hot.py`) |
+| Bus: `session.completed` | **Shipped** — handoff + full qualify close |
+| Bus: `site_visit.scheduled` | **Shipped** — EE success map (not CalendarExecutor) |
+| Turn `chat_context` | **Shipped** — `_emit_turn_events` |
+| Live n8n **workflows** | **INCOMPLETE** — Maitri activates WF UI |
+| Workflows CSV / DLQ | **Not started** |
 
 ### Workflow 1: `ireios_hot_lead_slack`
 

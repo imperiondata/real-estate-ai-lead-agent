@@ -96,11 +96,26 @@ async def _emit_turn_events(
     source_channel: str,
     is_new_lead: bool,
     message: str = "",
+    db: Optional[DBSession] = None,
 ) -> None:
-    """Publish lifecycle events so CEO bus agents (scoring/CRM/KG/arm) run on real traffic."""
+    """Publish lifecycle events so CEO bus agents (scoring/CRM/KG/arm) run on real traffic.
+
+    PR #10: when ``db`` is set, attaches ``chat_context`` for n8n / scoring.
+    """
     if lead is None or not getattr(lead, "id", None):
         return
     lead_id = lead.id
+    chat_context = ""
+    if db is not None:
+        try:
+            chat_context = (
+                conversation_memory.summarize_recent(
+                    db, session_id=scoped_session_id, turns=10
+                )
+                or ""
+            )[:4000]
+        except Exception as exc:  # noqa: BLE001
+            logger.debug("chat_context summarize skipped: %s", exc)
     base = {
         "lead_id": lead_id,
         "session_id": scoped_session_id,
@@ -113,6 +128,7 @@ async def _emit_turn_events(
         "intent": lead.intent,
         "lead_temperature": getattr(lead, "lead_temperature", None),
         "conversion_probability": getattr(lead, "conversion_probability", None),
+        "chat_context": chat_context,
     }
     channel_event = "whatsapp.received" if source_channel == "whatsapp" else (
         "chat.received" if source_channel in ("chat", "web", "api") else f"{source_channel}.received"
@@ -581,6 +597,7 @@ async def chat_endpoint(session_id: str, message: str, current_client: models.Cl
             source_channel="chat",
             is_new_lead=is_new_lead,
             message=message,
+            db=db,
         )
         media_url = None
         try:
@@ -780,6 +797,7 @@ async def process_unified_lead(payload: LeadIngestionPayload, db: DBSession, cli
         source_channel=payload.source or "api",
         is_new_lead=is_new_lead,
         message=payload.message or "",
+        db=db,
     )
     return reply
 

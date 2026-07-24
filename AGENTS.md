@@ -183,6 +183,8 @@ Flip these in `.env` at deploy (see `.env.example` footer): `IS_PRODUCTION=true`
 
 **Dual-path note:** Expansion 10.2/10.3 module delete is **deferred**. Root `agent.py`, `crm_sync.py`, `follow_up.py` remain shared libraries for v3 wrappers (not a second product path).
 
+**PR #10 bus hooks (n8n):** `app/events/lead_hot.py` dual-publishes catalog `lead.hot` + alias `lead.escalated`; `session.completed` on handoff/full-qualify close; turn events include `chat_context`. `site_visit.scheduled` is published by **EE** after `CalendarExecutor` (executor has no `event_bus.publish` — by design). See `docs/N8N_INTEGRATION.md` § Dual-publish aliases.
+
 ## IREIOS 3.0 — Active agents / workflows (full parity)
 
 Registered on the CEO bus in `main.py` lifespan (`register_*(ceo)`), all `status="active"`:

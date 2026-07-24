@@ -161,7 +161,7 @@ Names are stable contracts across backend, AE/EE, Neo4j writers, and FE.
 | `chat.received` | Website chat message | CEO → WhatsApp/Chat AI |
 | `lead.qualified` | Enough fields for qualification | CRM automation, Predictive, Sales |
 | `lead.scored` | Score/temperature updated | Sales, Dashboard |
-| `lead.hot` | High-intent threshold | Notification, Sales |
+| `lead.hot` | High-intent threshold **or** human handoff | Notification, Sales, n8n |
 | `lead.crm_synced` | CRM executor success | KG, Dashboard |
 | `followup.sent` | Scheduled follow-up sent | Memory, Timeline |
 | `whatsapp.response.generated` | Agent finished reply analysis (async side work) | Lead scoring handler |
@@ -175,6 +175,19 @@ Payload envelope (all events):
 ```text
 event_id, event_type, tenant_id, entity_id, source, timestamp, correlation_id, payload
 ```
+
+### 4.3 PR #10 dual-publish aliases (n8n convenience)
+
+Not separate long-term catalog entries — **mirrors** of primary events for workflows that used review names:
+
+| Alias | Mirrors | Notes |
+|-------|---------|--------|
+| `lead.escalated` | `lead.hot` | Same payload; `payload.trigger` = `hot_threshold` \| `human_handoff` |
+| `session.completed` | session close path (alongside `lead.qualified` for fields) | `close_reason` + `chat_context` |
+
+`site_visit.scheduled` is published by the **Execution Engine** after `CalendarExecutor` success (`register_event`), not by the executor itself.
+
+Ops detail: `docs/N8N_INTEGRATION.md` § Dual-publish aliases.
 
 ---
 

@@ -1,6 +1,13 @@
 """IREIOS 3.0 — Phase 3.3 / D: Calendar Executor (Google Calendar + stub fallback).
 
-Schedules a site visit and publishes readiness for ``site_visit.scheduled``.
+Schedules a site visit (Google Calendar API or synthetic stub).
+
+**Bus ownership (PR #10):** this executor does **not** call ``event_bus.publish``.
+It returns a result dict only. The Execution Engine success map
+(``register_event("schedule_visit", "site_visit.scheduled")`` in
+``app/execution_engine/registry.py``) publishes ``site_visit.scheduled`` after
+a successful dispatch — AE → EE → Event. Do not add a second publish here
+(would double-fire n8n / KG).
 
 When ``GOOGLE_CALENDAR_CREDENTIALS_JSON`` (service-account key file) and
 ``GOOGLE_CALENDAR_ID`` are configured, a real Google Calendar event is created

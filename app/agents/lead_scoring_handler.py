@@ -3,6 +3,8 @@
 CEO-registered active agent that (re)scores a lead on conversation activity
 and publishes `lead.scored` so downstream agents (crm_automation, sales,
 kg writers) can react. Deterministic — reuses `whatsapp_agent.score_lead`.
+
+PR #10: when HOT rule met, dual-publishes ``lead.hot`` + alias ``lead.escalated``.
 """
 from __future__ import annotations
 
@@ -11,6 +13,7 @@ from typing import Optional
 
 from app.agents.whatsapp_agent import score_lead
 from app.clients.event_bus_client import event_bus
+from app.events.lead_hot import is_hot, publish_lead_hot
 from database import SessionLocal
 from models import Lead
 
@@ -43,12 +46,21 @@ def _lead_id(envelope: dict) -> Optional[int]:
 
 
 async def lead_scoring_handler(envelope: dict) -> None:
-    """Score the lead and publish lead.scored with the score breakdown."""
+    """Score the lead; publish lead.scored; if hot, lead.hot + lead.escalated.
+
+    HOT rule: conversion_probability >= 82 OR lead_temperature == hot.
+    """
     client_id = _resolve_client_id(envelope.get("tenant_id"))
     lead_id = _lead_id(envelope)
     if client_id is None or lead_id is None:
         return
 
+    payload_in = envelope.get("payload") or {}
+    session_id = payload_in.get("session_id")
+    chat_context = payload_in.get("chat_context") or ""
+
+    scores = {}
+    lead_snapshot = None
     db = SessionLocal()
     try:
         lead = db.query(Lead).filter(Lead.id == lead_id, Lead.client_id == client_id).first()
@@ -58,6 +70,10 @@ async def lead_scoring_handler(envelope: dict) -> None:
         for k, v in scores.items():
             setattr(lead, k, v)
         db.commit()
+        db.refresh(lead)
+        lead_snapshot = lead
+        if not session_id:
+            session_id = lead.session_id
     finally:
         db.close()
 
@@ -71,6 +87,26 @@ async def lead_scoring_handler(envelope: dict) -> None:
         )
     except Exception as e:  # noqa: BLE001
         logger.warning("failed to publish lead.scored: %s", e)
+
+    if lead_snapshot is not None and is_hot(
+        conversion_probability=scores.get(
+            "conversion_probability", lead_snapshot.conversion_probability
+        ),
+        lead_temperature=scores.get(
+            "lead_temperature", lead_snapshot.lead_temperature
+        ),
+    ):
+        prob = scores.get("conversion_probability", lead_snapshot.conversion_probability)
+        await publish_lead_hot(
+            client_id=client_id,
+            lead=lead_snapshot,
+            trigger="hot_threshold",
+            reason=f"HOT threshold crossed (conversion_probability={prob})",
+            session_id=session_id,
+            chat_context=chat_context,
+            score=prob,
+            source="lead_scoring_handler",
+        )
 
 
 def register_lead_scoring(ceo) -> None:

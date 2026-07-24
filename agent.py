@@ -874,6 +874,56 @@ async def process_chat(session_id: str, user_message: str, db: DBSession, client
         asyncio.create_task(
             trigger_hot_lead_notification(lead.id, "Explicit human agent requested.", severity=SEVERITY_HANDOFF)
         )
+        # PR #10: bus lead.hot + alias lead.escalated; session.completed on close
+        try:
+            from types import SimpleNamespace
+
+            from app.events.lead_hot import publish_lead_hot, publish_session_completed
+            from app.memory.conversation_memory import conversation_memory
+
+            _chat_ctx = ""
+            try:
+                _chat_ctx = conversation_memory.summarize_recent(
+                    db, session_id=session_id, turns=10
+                ) or ""
+            except Exception:
+                pass
+            _snap = SimpleNamespace(
+                id=lead.id,
+                session_id=session_id,
+                name=lead.name,
+                phone=lead.phone,
+                location=lead.location,
+                budget=lead.budget,
+                property_type=lead.property_type,
+                intent=lead.intent,
+                lead_temperature=lead.lead_temperature,
+                conversion_probability=lead.conversion_probability,
+                assigned_agent=lead.assigned_agent,
+            )
+            asyncio.create_task(
+                publish_lead_hot(
+                    client_id=client_id,
+                    lead=_snap,
+                    trigger="human_handoff",
+                    reason="Explicit human agent requested.",
+                    session_id=session_id,
+                    chat_context=_chat_ctx,
+                    source="agent",
+                )
+            )
+            asyncio.create_task(
+                publish_session_completed(
+                    client_id=client_id,
+                    lead=_snap,
+                    session_id=session_id,
+                    close_reason="human_handoff",
+                    chat_context=_chat_ctx,
+                    source="agent",
+                )
+            )
+        except Exception as _bus_exc:  # noqa: BLE001
+            logger.debug("handoff bus publish skipped: %s", _bus_exc)
 
         handoff_reply = "I completely understand. I have paused my automated responses and alerted our human team. An expert will review our chat and reach out to you shortly!"
         db.add(Message(session_id=session_id, client_id=client_id, role="assistant", content=handoff_reply))
@@ -1430,6 +1480,7 @@ async def process_chat(session_id: str, user_message: str, db: DBSession, client
     # =================================================================
     # UNIVERSAL QUALIFICATION OVERRIDE (Fires closing template safely)
     # =================================================================
+    _just_closed_qualified = False
     if is_fully_qualified_now and session.status != "closed":
         loc = lead.location
         vdate = lead.visit_date
@@ -1440,6 +1491,7 @@ async def process_chat(session_id: str, user_message: str, db: DBSession, client
             final_text = f"Fantastic! Everything is set for your visit to {loc} on {vdate}. Our team will be in touch to confirm. Looking forward to seeing you! 🏡"
 
         session.status = "closed"
+        _just_closed_qualified = True
         if f_state:
             f_state.follow_up_status = "completed"
             f_state.next_follow_up_at = None
@@ -1447,6 +1499,46 @@ async def process_chat(session_id: str, user_message: str, db: DBSession, client
         logger.info(f"🏆 LEAD FULLY QUALIFIED: {lead.phone} | Session {session_id}")
 
     db.commit()
+
+    if _just_closed_qualified:
+        try:
+            from types import SimpleNamespace
+
+            from app.events.lead_hot import publish_session_completed
+            from app.memory.conversation_memory import conversation_memory
+
+            _q_ctx = ""
+            try:
+                _q_ctx = conversation_memory.summarize_recent(
+                    db, session_id=session_id, turns=10
+                ) or ""
+            except Exception:
+                pass
+            _q_snap = SimpleNamespace(
+                id=lead.id,
+                session_id=session_id,
+                name=lead.name,
+                phone=lead.phone,
+                location=lead.location,
+                budget=lead.budget,
+                property_type=lead.property_type,
+                intent=lead.intent,
+                lead_temperature=lead.lead_temperature,
+                conversion_probability=lead.conversion_probability,
+                assigned_agent=lead.assigned_agent,
+            )
+            asyncio.create_task(
+                publish_session_completed(
+                    client_id=client_id,
+                    lead=_q_snap,
+                    session_id=session_id,
+                    close_reason="fully_qualified",
+                    chat_context=_q_ctx,
+                    source="agent",
+                )
+            )
+        except Exception as _sc_exc:  # noqa: BLE001
+            logger.debug("session.completed publish skipped: %s", _sc_exc)
 
     # P5.1: if this lead was already synced to the CRM at create time, flag a
     # debounced re-sync so post-qualification fields (budget/location/visit_date/

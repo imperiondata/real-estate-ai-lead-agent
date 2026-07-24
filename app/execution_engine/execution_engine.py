@@ -124,12 +124,24 @@ class ExecutionEngine:
             return
         if self.bus is None:
             return
+        # Merge action parameters + executor result so n8n/KG get demographics
+        # on site_visit.scheduled (CalendarExecutor stays pure I/O — EE owns publish).
+        params = action_request.get("parameters") or {}
+        if not isinstance(params, dict):
+            params = {}
+        merged = {**params, **(result or {})}
+        entity_id = action_request.get("entity_id", action_type)
+        if merged.get("lead_id") is None and entity_id is not None:
+            try:
+                merged["lead_id"] = int(entity_id)
+            except (TypeError, ValueError):
+                merged.setdefault("lead_id", entity_id)
         try:
             await self.bus.publish(
                 event_type,
                 action_request.get("tenant_id", "system"),
-                action_request.get("entity_id", action_type),
-                result,
+                entity_id,
+                merged,
                 source="execution_engine",
                 correlation_id=action_request.get("correlation_id"),
             )

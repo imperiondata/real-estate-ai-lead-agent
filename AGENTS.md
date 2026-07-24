@@ -76,6 +76,18 @@ High-signal, repo-specific facts an agent would likely miss without help.
 
 ---
 
+## Negotiation UI (Non-blocking)
+
+- **Dual-layer detection:** Layer 1 (keyword intercept in `agent.py`) + Layer 2 (budget misalignment in `whatsapp_agent.py`)
+- **No HITL pause:** AI continues chatting uninterrupted; lead flagged as `is_negotiating = True`
+- **Frontend badge:** "🤝 Open for Negotiation" purple badge on CRM KanbanBoard
+- **Claim button expanded:** Visible on ANY column (not just "New") when `is_negotiating = True`
+- **Debounce:** 5-minute Redis debounce per lead (TTL 300s) to prevent event spam
+- **Phrases:** `negotiate, negotiation, discount, reduce price, lower price, too expensive, can you reduce, final price, best price, cheaper, afford, budget is tight` (expandable in `agent.py`)
+- **Events:** `lead.negotiation.started` with `trigger` = `user_phrase` | `budget_misaligned`
+
+---
+
 ## Follow-Up Scheduler
 
 - State machine: `Day 0 → Day 1 → Day 3 → Day 7 → closure message`
@@ -199,7 +211,7 @@ Registered on the CEO bus in `main.py` lifespan (`register_*(ceo)`), all `status
 - **AE templates** (`app/automation_engine/templates/`, Wave B.5) — `hot_lead_notify.py` / `visit_booking.py` return validated action_request dicts. Support `template_type="n8n"` + `workflow_id` for ops fan-out.
 - **Direct-invoked (not bus):** `WhatsAppAgent` (via `FEATURE_WHATSAPP_V3`), `SalesAgent` (via `POST /api/v1/leads/{id}/sales-ai`).
 - **Cron (scheduler):** `competitor_monitor_job` (`app/workflows/competitor_monitor.py`, 8.4, Wave B.6) nightly 01:00 → `market.alert.generated` on `COMPETITOR_KEYWORDS` matches + writes `NotificationLog` rows for admin visibility.
-- **`negotiation_agent`** (`app/agents/negotiation_agent.py`, Wave C.1) — on `lead.negotiation.started`/`lead.negotiation.counter` checks budget alignment; submits `manager_approval` HITL when misaligned; publishes `negotiation.counter.sent`.
+- **`negotiation_agent`** (`app/agents/negotiation_agent.py`, Wave C.1) — on `lead.negotiation.started`/`lead.negotiation.counter` checks budget alignment; submits `notify_admin` (no HITL pause) when misaligned; publishes `negotiation.counter.sent`. Sets `lead.is_negotiating = True` for frontend badge.
 - **`pricing_agent`** (`app/agents/pricing_agent.py`, Wave C.2) — on `pricing.query`/`lead.scored` queries `PricingRule` by location/budget; submits match via AE.
 - **`inventory_agent`** (`app/agents/inventory_agent.py`, Wave C.3) — on `inventory.query`/`inventory.hold` queries `InventoryUnit` (available status); submits inventory data via AE.
 - **`onboarding_agent`** (`app/agents/onboarding_agent.py`, Wave C.4) — on `customer.onboarded`/`booking.confirmed` sends WhatsApp checklist via AE.

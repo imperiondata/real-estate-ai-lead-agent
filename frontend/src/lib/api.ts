@@ -38,6 +38,7 @@ export interface Lead {
   conversion_status: string
   followup_stage: string
   funnel_stage: string
+  is_negotiating: boolean
 }
 
 export interface LeadsResponse {

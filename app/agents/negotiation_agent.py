@@ -53,10 +53,9 @@ async def handler(envelope: dict) -> None:
                 "tenant_id": f"Client_{client_id}",
                 "entity_id": str(lead_id),
                 "parameters": {
-                    "kind": "manager_approval",
+                    "kind": "notify_admin",
                     "lead_id": lead_id,
-                    "requires_approval": True,
-                    "message": f"Negotiation required for lead {lead_id} — budget {budget_raw} needs manager review",
+                    "message": f"Lead {lead_id} is open for negotiation (Budget: {budget_raw}). Flagged on dashboard.",
                 },
                 "source": "negotiation_agent",
             })

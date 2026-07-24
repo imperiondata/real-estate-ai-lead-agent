@@ -41,6 +41,7 @@ def run_migration():
         "CREATE INDEX IF NOT EXISTS ix_agent_tasks_client ON agent_tasks (client_id);",
         "CREATE INDEX IF NOT EXISTS ix_agent_tasks_lead ON agent_tasks (lead_id);",
         "CREATE INDEX IF NOT EXISTS ix_agent_tasks_status ON agent_tasks (client_id, status);",
+        "ALTER TABLE leads ADD COLUMN IF NOT EXISTS is_negotiating BOOLEAN DEFAULT FALSE;",
     ]
 
     for query in migrations:

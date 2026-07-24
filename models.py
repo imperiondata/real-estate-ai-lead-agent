@@ -112,6 +112,9 @@ class Lead(Base):
     confidence_score = Column(Integer, default=100)
     requires_manual_review = Column(Boolean, default=False)
 
+    # --- NEGOTIATION UI FLAG ---
+    is_negotiating = Column(Boolean, default=False)  # True when lead shows negotiation intent
+
     session = relationship("Session", back_populates="lead")
     client = relationship("Client", back_populates="leads")
 

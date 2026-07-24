@@ -266,6 +266,28 @@ class WhatsAppAgent:
             setattr(lead, k, v)
         db.commit()
 
+        # --- NEGOTIATION EVENT (Layer 2: budget alignment) ---
+        # Fires even if Layer 1 already published (debounce prevents duplicates).
+        # Catches implicit negotiation needs (budget mismatch without explicit phrase).
+        if scores.get("budget_alignment_status") and scores["budget_alignment_status"] not in ("aligned", "unknown"):
+            if not lead.is_negotiating:
+                lead.is_negotiating = True
+                db.commit()
+
+            try:
+                from app.events.negotiation import publish_negotiation_started
+                await publish_negotiation_started(
+                    client_id=client_id,
+                    lead_id=lead.id,
+                    session_id=session_id,
+                    trigger="budget_misaligned",
+                    budget=lead.budget or "",
+                    budget_alignment_status=scores["budget_alignment_status"],
+                    source="whatsapp_agent_v3",
+                )
+            except Exception as e:
+                logger.debug("negotiation event publish skipped: %s", e)
+
         # Post-turn graph sync so location/name changes in this turn land same-turn.
         self._upsert_lead_snapshot(lead, client_id)
 

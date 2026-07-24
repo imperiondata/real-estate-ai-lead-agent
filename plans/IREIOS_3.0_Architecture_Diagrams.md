@@ -162,6 +162,7 @@ Names are stable contracts across backend, AE/EE, Neo4j writers, and FE.
 | `lead.qualified` | Enough fields for qualification | CRM automation, Predictive, Sales |
 | `lead.scored` | Score/temperature updated | Sales, Dashboard |
 | `lead.hot` | High-intent threshold **or** explicit human handoff | Notification, Sales, n8n |
+| `lead.negotiation.started` | User mentions negotiation OR budget misaligned | Negotiation agent, HITL, Dashboard |
 | `lead.crm_synced` | CRM executor success | KG, Dashboard |
 | `followup.sent` | Scheduled follow-up sent | Memory, Timeline |
 | `whatsapp.response.generated` | Agent finished reply analysis (async side work) | Lead scoring handler |
@@ -176,7 +177,7 @@ Payload envelope (all events):
 event_id, event_type, tenant_id, entity_id, source, timestamp, correlation_id, payload
 ```
 
-### 4.3 Payload conventions (automations closeout)
+### 4.3 Payload conventions (automations closeout + negotiation)
 
 Do **not** add parallel product event types for the same business signal. Prefer richer `payload` + dual-publish aliases where shipped:
 
@@ -186,6 +187,7 @@ Do **not** add parallel product event types for the same business signal. Prefer
 | `lead.qualified` / `conversation.updated` | Optional `chat_context` (transcript summary). Close also dual-publishes `session.completed`. |
 | `site_visit.scheduled` | Merge EE result + schedule params: `visit_id`, `visit_date`, `name`, `phone`, `provider`, `html_link`. |
 | `approval.requested` | Include `approval_id` + relative approve/reject paths for n8n. |
+| `lead.negotiation.started` | `payload.trigger` = `user_phrase` \| `budget_misaligned`; includes `budget`, `budget_alignment_status`, `message[:200]`. Sets `lead.is_negotiating = True` (UI badge). No HITL pause — human agent claims from dashboard. |
 
 ### 4.4 PR #10 dual-publish aliases (n8n convenience)
 

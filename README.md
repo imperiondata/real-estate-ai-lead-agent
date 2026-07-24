@@ -240,7 +240,7 @@ curl -UseBasicParsing http://localhost:8000/health
 
 ---
 
-### Twilio Sandbox — Connect Your WhatsApp### Twilio Sandbox — Connect Your WhatsApp
+### Twilio Sandbox — Connect Your WhatsApp
 
 1. On your WhatsApp, send `join <word>-<word>` to `+14155238886`
    (the exact words are shown in your Twilio console under Messaging → Try it out → Send a WhatsApp message)
@@ -352,7 +352,7 @@ After API start with Neo4j up: `GET http://localhost:8000/api/v1/graph/health` �
 
 ```powershell
 # Terminal A — live stream (seed client key from seed.py)
-curl -N "http://localhost:8000/api/v1/events/stream?api_key=secret-client-key-123"
+curl.exe -N "http://localhost:8000/api/v1/events/stream?api_key=secret-client-key-123"
 
 # Terminal B — inject a demo event (no WhatsApp/LLM required)
 python publish_stub_event.py --event-type lead.created --tenant-id Client_1 --payload "{\"name\":\"demo\"}"

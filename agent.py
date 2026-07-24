@@ -932,6 +932,40 @@ async def process_chat(session_id: str, user_message: str, db: DBSession, client
         finalize_turn(db, session, lead, f_state)
         return handoff_reply
 
+    # -----------------------------------
+    # NEGOTIATION INTERCEPT (Layer 1: keyword detection)
+    # -----------------------------------
+    # Detects explicit user negotiation intent. Sets is_negotiating = True
+    # and publishes lead.negotiation.started. Does NOT short-circuit —
+    # conversation continues to LLM.
+    # PHRASE EXPANSION: Add domain-specific phrases here as user patterns
+    # emerge. Consider moving to a shared lexicon (app/agents/negotiation_lexicon.py)
+    # if phrase list grows beyond 15 entries.
+    _NEGOTIATION_PHRASES = [
+        "negotiate", "negotiation", "discount", "reduce price",
+        "lower price", "too expensive", "can you reduce", "final price",
+        "best price", "cheaper", "afford", "budget is tight",
+    ]
+    if any(phrase in msg_clean for phrase in _NEGOTIATION_PHRASES):
+        if not lead.is_negotiating:
+            lead.is_negotiating = True
+            db.commit()
+
+        from app.events.negotiation import publish_negotiation_started
+        asyncio.create_task(
+            publish_negotiation_started(
+                client_id=client_id,
+                lead_id=lead.id,
+                session_id=session_id,
+                trigger="user_phrase",
+                message=user_message[:200],
+                budget=lead.budget or "",
+                budget_alignment_status=getattr(lead, "budget_alignment_status", "unknown"),
+                source="agent",
+            )
+        )
+        # DO NOT RETURN — let the conversation continue to the LLM
+
     # LIMIT CONTEXT: last 6 turns (12 messages) — keeps enough history for the full
     # conversation to remain coherent. CRM fields are always protected by the DB summary
     # so they are never lost even if the extraction turn scrolls out of the window.

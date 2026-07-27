@@ -81,15 +81,19 @@ class Settings(BaseSettings):
     # limit so we can return TwiML (real reply or interim) before Twilio retries.
     # On exceed: return interim "Just checking..." and await the *same* in-flight
     # turn (no cancel / no second Gemini call). See main.py _session_turn_locked.
-    WHATSAPP_WEBHOOK_TIMEOUT: float = 12.0
+    WHATSAPP_WEBHOOK_TIMEOUT: float = 13.0
 
-    # Per Gemini send_message hard cap (seconds). Keep <= WHATSAPP_WEBHOOK_TIMEOUT
-    # so the LLM cannot outlive the webhook race window by itself.
-    LLM_TIMEOUT_SECONDS: float = 10.0
+    # Per Gemini send_message hard cap (seconds). MAY exceed WHATSAPP_WEBHOOK_TIMEOUT:
+    # race only decides interim vs TwiML; the turn is not cancelled, so a slower
+    # Gemini (12–20s) can still finish and EE-push. Do not retry pure TimeoutError.
+    LLM_TIMEOUT_SECONDS: float = 22.0
 
     # Pre-LLM context budgets (seconds) — keep tight so RAG/Neo4j cannot burn the race window.
     RAG_TIMEOUT_SECONDS: float = 2.0
     GRAPH_CONTEXT_TIMEOUT_SECONDS: float = 0.5
+
+    # Shown in WA fallback / system prompt escalate lines (E.164 or local display).
+    CLIENT_SUPPORT_NUMBER: str = "+91 9876543210"
 
     # AWS Secrets Manager
     AWS_REGION: str = ""

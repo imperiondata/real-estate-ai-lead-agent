@@ -18,7 +18,9 @@ Use this when debugging latency, interim WhatsApp messages, scheduler behavior, 
 | Scheduler cadence | `main.py` lifespan `scheduler.add_job(...)` |
 
 **Invariant (WhatsApp):**  
-`LLM_TIMEOUT_SECONDS` ≤ `WHATSAPP_WEBHOOK_TIMEOUT` < Twilio HTTP limit (~15s).
+`WHATSAPP_WEBHOOK_TIMEOUT` < Twilio HTTP limit (~15s).  
+`LLM_TIMEOUT_SECONDS` **may exceed** the race window (P3.6 await-inflight — Gemini is not cancelled when interim fires).  
+Do **not** retry pure `TimeoutError` on the main LLM call.
 
 ---
 
@@ -26,8 +28,9 @@ Use this when debugging latency, interim WhatsApp messages, scheduler behavior, 
 
 | Name | Default | Unit | Purpose | Defined | Consumed |
 |------|---------|------|---------|---------|----------|
-| `WHATSAPP_WEBHOOK_TIMEOUT` | `12.0` | s | Race window for WA TwiML reply vs interim | `config.py` ~84 | `main.py` ~1091–1093 |
-| `LLM_TIMEOUT_SECONDS` | `10.0` | s | Hard cap per Gemini `send_message` | `config.py` ~88 | `agent.py` ~1170–1198 |
+| `WHATSAPP_WEBHOOK_TIMEOUT` | `13.0` | s | Race window for WA TwiML reply vs interim | `config.py` ~84 | `main.py` ~1091–1093 |
+| `LLM_TIMEOUT_SECONDS` | `22.0` | s | Hard cap per Gemini `send_message` (may exceed race) | `config.py` ~88 | `agent.py` LLM loop |
+| `CLIENT_SUPPORT_NUMBER` | `+91 9876543210` | str | Fatal fallback / escalate display number | `config.py` | `agent.py`, `main.py` |
 | `RAG_TIMEOUT_SECONDS` | `2.0` | s | FAISS/RAG retrieve budget | `config.py` ~91 | `agent.py` ~1089–1091 |
 | `GRAPH_CONTEXT_TIMEOUT_SECONDS` | `0.5` | s | Neo4j context soft-timeout on WA path | `config.py` ~92 | `whatsapp_agent.py` ~241–245 |
 | `FOLLOW_UP_DELAY_MINUTES` | `30` | min | Prod Day-0 follow-up delay (also documented in comments) | `config.py` ~41 | follow-up arm / helpers |
@@ -44,21 +47,22 @@ Also documented in `.env.example` (~66–73).
 Budget stack under one user message (typical order):
 
 ```text
-Graph soft ≤ 0.5s  +  RAG ≤ 2s  +  Gemini ≤ 10s  +  tool routing
-        ≤ WHATSAPP_WEBHOOK_TIMEOUT (12s) race
-        < Twilio ~15s HTTP
+Graph soft ≤ 0.5s  +  RAG ≤ 2s  +  Gemini ≤ 22s  +  tool routing
+        race decision at WHATSAPP_WEBHOOK_TIMEOUT (13s)
+        < Twilio ~15s HTTP for first TwiML
+        (Gemini may finish after interim via EE push)
 ```
 
 | Timing | Value | Description | Location |
 |--------|-------|-------------|----------|
-| **Webhook race** | **12s** (env) | `asyncio.wait({task}, timeout=…)`. Fast → TwiML reply. Slow → interim + await same task (no cancel). | `main.py` ~1091–1123 |
+| **Webhook race** | **13s** (env) | `asyncio.wait({task}, timeout=…)`. Fast → TwiML reply. Slow → interim + await same task (no cancel). | `main.py` ~1091–1123 |
 | **Session turn lock TTL** | **45s** | Redis lock held for full turn (`_session_turn_locked`) | `main.py` ~640 |
 | **Session turn lock wait** | **30s** | `blocking_timeout` acquiring lock | `main.py` ~640 |
 | **Legacy background lock TTL** | **45s** | `background_process_and_push` | `main.py` ~723 |
 | **Legacy background lock wait** | **10s** | Skip if another worker holds lock | `main.py` ~723 |
 | **Interim dedup TTL** | **120s** | Redis `interim_sent:{MessageSid}` — one “Just checking…” per SID | `main.py` ~1133 |
-| **LLM send** | **10s** (env) | `asyncio.wait_for(chat.send_message, …)` | `agent.py` ~1170–1198 |
-| **LLM retries** | **3** attempts | Exponential sleep `0.5 * 2**attempt` between failures | `agent.py` ~1160–1232 |
+| **LLM send** | **22s** (env) | `asyncio.wait_for(chat.send_message, …)`; may exceed race | `agent.py` LLM loop |
+| **LLM retries** | **3** attempts for transient errors only | **No retry** on `TimeoutError` / `CancelledError` | `agent.py` LLM loop |
 | **Name extract** | **2.0s** | Parallel Gemini call; skipped if `lead.name` set / TEST_MODE / short greets | `agent.py` ~1141–1155 |
 | **RAG retrieve** | **2.0s** (env) | `to_thread(retrieve)` | `agent.py` ~1089–1091 |
 | **Graph context soft** | **0.5s** (env) | `to_thread(_graph_extra_context)` | `whatsapp_agent.py` ~239–245 |
@@ -220,9 +224,9 @@ SMS does **not** use the WA race/interim pattern; it awaits `process_unified_lea
 ### “Just checking that for you…” fires too often
 1. Check logs: `TIMEOUT | … action=await_inflight_push` and `llm_main_call` latency.  
 2. Raise `WHATSAPP_WEBHOOK_TIMEOUT` carefully (stay **&lt; 15**).  
-3. Ensure `LLM_TIMEOUT_SECONDS` ≤ race window.  
+3. Raise `LLM_TIMEOUT_SECONDS` if Gemini often needs 12–20s (default 22s; inflight can finish after interim).  
 4. Confirm graph/RAG soft budgets not stuck (Neo4j down should soft-timeout, not hang).  
-5. Remember: slow path **awaits same Gemini call** (P3.6) — interim is UX only, not a second bill.
+5. Remember: slow path **awaits same Gemini call** (P3.6) — interim is UX only, not a second bill. TimeoutError is not retried.
 
 ### Follow-ups too fast/slow
 - Prod: `FOLLOW_UP_TEST_MODE=false`, `FOLLOW_UP_DELAY_MINUTES=30`.  

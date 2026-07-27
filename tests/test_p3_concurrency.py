@@ -84,6 +84,15 @@ class TestWhatsAppRaceNoCancel:
         assert "_graph_extra_context_soft" in wa
         assert "_emit_turn_events_deferred" in MAIN_SRC
 
+    def test_llm_timeout_not_retried(self):
+        """Pure TimeoutError must short-circuit (no 3× full-budget burn)."""
+        assert "timeout_no_retry" in AGENT_SRC
+        assert "is_timeout" in AGENT_SRC
+
+    def test_client_support_number_setting(self):
+        assert "CLIENT_SUPPORT_NUMBER" in CONFIG_SRC
+        assert "CLIENT_SUPPORT_NUMBER" in AGENT_SRC
+
 
 # ---------------------------------------------------------------------------
 # P3.1 — Interim TwiML deduplication per MessageSid

@@ -21,9 +21,9 @@ Auth → get_client_by_api_key() → resolves client_id
       ↓
 Fast-path intercepts (instant replies, guardrails)
       ↓
-asyncio.create_task(_session_turn_locked) + race WHATSAPP_WEBHOOK_TIMEOUT (default 12s)
+asyncio.create_task(_session_turn_locked) + race WHATSAPP_WEBHOOK_TIMEOUT (default 13s)
   ├── session_lock + private DB session (full turn)
-  ├── Neo4j graph context (soft ≤0.5s) + RAG (≤2s) + Gemini (LLM_TIMEOUT ≤10s)
+  ├── Neo4j graph context (soft ≤0.5s) + RAG (≤2s) + Gemini (LLM_TIMEOUT default 22s)
   └── extract_lead_info() tool → saves to Lead table
       ↓
 Fast: TwiML reply  |  Slow: interim "Just checking…" + await same task → EE push

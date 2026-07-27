@@ -102,10 +102,10 @@ High-signal, repo-specific facts an agent would likely miss without help.
 
 ## Webhook Flow & Timeouts
 
-- **WhatsApp race window:** `WHATSAPP_WEBHOOK_TIMEOUT` (default **12s**, under Twilio ~15s HTTP limit). Starts `_session_turn_locked` as an `asyncio.Task`, then `asyncio.wait({task}, timeout=…)`.
+- **WhatsApp race window:** `WHATSAPP_WEBHOOK_TIMEOUT` (default **13s**, under Twilio ~15s HTTP limit). Starts `_session_turn_locked` as an `asyncio.Task`, then `asyncio.wait({task}, timeout=…)`.
   - **Fast path:** task finishes in window → real Gemini reply as TwiML.
   - **Slow path:** returns interim `"Just checking that for you..."` and schedules `_await_inflight_and_push` — **does not cancel** the task and **does not** re-run `process_unified_lead` (single Gemini call; final reply via AE→EE).
-- **LLM hard cap:** `LLM_TIMEOUT_SECONDS` (default **10s**) on `chat.send_message` in `agent.py`. Keep ≤ webhook timeout so the model alone cannot outlive the race window.
+- **LLM hard cap:** `LLM_TIMEOUT_SECONDS` (default **22s**) on `chat.send_message`. **May exceed** the race window so a slow Gemini can still finish after interim. Pure `TimeoutError` is **not** retried (avoids 3× budget burn).
 - **Pre-LLM budgets:** `RAG_TIMEOUT_SECONDS` (default **2.0s**), `GRAPH_CONTEXT_TIMEOUT_SECONDS` (default **0.5s**, soft-timeout via `asyncio.to_thread` + `wait_for` in WhatsAppAgent).
 - **Post-turn off critical path (prod):** After reply text is ready, score / negotiation Layer 2 / graph upsert / memory and `_emit_turn_events` run as fire-and-forget tasks with private `SessionLocal`. When `TEST_MODE=true` those tasks are awaited so unit tests stay deterministic.
 - **`_session_turn_locked`:** owns a private `SessionLocal` + holds `session_lock:{session_id}` for the **full** turn (including after interim return) so concurrent messages cannot interleave mid-Gemini. Request-scoped `db` is only used for WebhookLog dedupe.

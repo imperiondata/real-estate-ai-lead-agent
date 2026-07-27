@@ -60,13 +60,14 @@ a `DLQEvent` is inserted with `target_endpoint="hubspot_crm"`.
 `DLQEvent` is inserted with `target_endpoint="ml_followup_scheduler"`.
 
 `main.py` WhatsApp path races `_session_turn_locked` against `WHATSAPP_WEBHOOK_TIMEOUT`
-(default 12s, under Twilio ~15s). On exceed it returns interim TwiML and
+(default 13s, under Twilio ~15s). On exceed it returns interim TwiML and
 `_await_inflight_and_push` delivers the **same** turn via EE (no cancel / no second
 Gemini call). If that push fails, a `DLQEvent` is inserted with
-`target_endpoint="twilio_outbound"`. LLM hard cap: `LLM_TIMEOUT_SECONDS` (default 10s).
+`target_endpoint="twilio_outbound"`. LLM hard cap: `LLM_TIMEOUT_SECONDS` (default 22s;
+may exceed race so inflight can finish). Pure LLM `TimeoutError` is not retried.
 Pre-LLM: `RAG_TIMEOUT_SECONDS=2.0`, `GRAPH_CONTEXT_TIMEOUT_SECONDS=0.5`. Post-turn
 score/memory/graph + bus `_emit_turn_events` are deferred off the reply path (awaited
-only when `TEST_MODE=true`).
+only when `TEST_MODE=true`). Support number: `CLIENT_SUPPORT_NUMBER`.
 
 DLQ replay is run manually via `python dlq_replay.py`. It processes all `pending`
 events and marks successfully replayed ones as `resolved`.

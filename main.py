@@ -624,10 +624,15 @@ async def chat_endpoint(session_id: str, message: str, current_client: models.Cl
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
-_WA_FALLBACK_BODY = (
-    "I'm experiencing a brief connectivity issue. Please try again in a moment, "
-    "or reach our team directly at +91 9876543210."
-)
+def _wa_support_number() -> str:
+    return (getattr(settings, "CLIENT_SUPPORT_NUMBER", None) or "+91 9876543210").strip()
+
+
+def _wa_fallback_body() -> str:
+    return (
+        "I'm experiencing a brief connectivity issue. Please try again in a moment, "
+        f"or reach our team directly at {_wa_support_number()}."
+    )
 
 
 async def _session_turn_locked(session_id: str, body: str, client_id: int) -> str:
@@ -670,7 +675,7 @@ async def _await_inflight_and_push(task: asyncio.Task, session_id: str, client_i
         result = await _send_whatsapp_via_ee(
             client_id,
             session_id,
-            reply_text or _WA_FALLBACK_BODY,
+            reply_text or _wa_fallback_body(),
             session_id,
             source="inflight_push",
         )
@@ -683,7 +688,7 @@ async def _await_inflight_and_push(task: asyncio.Task, session_id: str, client_i
             result = await _send_whatsapp_via_ee(
                 client_id,
                 session_id,
-                _WA_FALLBACK_BODY,
+                _wa_fallback_body(),
                 session_id,
                 source="inflight_fallback",
             )
@@ -703,7 +708,7 @@ async def _await_inflight_and_push(task: asyncio.Task, session_id: str, client_i
                         target_endpoint="twilio_outbound",
                         payload={
                             "session_id": session_id,
-                            "body": _WA_FALLBACK_BODY,
+                            "body": _wa_fallback_body(),
                             "to": f"whatsapp:{session_id}",
                         },
                         error_trace=str(fallback_err),
@@ -744,7 +749,7 @@ async def background_process_and_push(session_id: str, Body: str, client_id: int
                 result = await _send_whatsapp_via_ee(
                     client_id,
                     session_id,
-                    reply_text or _WA_FALLBACK_BODY,
+                    reply_text or _wa_fallback_body(),
                     session_id,
                     source="background_push",
                 )
@@ -757,7 +762,7 @@ async def background_process_and_push(session_id: str, Body: str, client_id: int
                     result = await _send_whatsapp_via_ee(
                         client_id,
                         session_id,
-                        _WA_FALLBACK_BODY,
+                        _wa_fallback_body(),
                         session_id,
                         source="background_fallback",
                     )
@@ -776,7 +781,7 @@ async def background_process_and_push(session_id: str, Body: str, client_id: int
                             target_endpoint="twilio_outbound",
                             payload={
                                 "session_id": session_id,
-                                "body": _WA_FALLBACK_BODY,
+                                "body": _wa_fallback_body(),
                                 "to": f"whatsapp:{session_id}",
                             },
                             error_trace=str(fallback_err),
@@ -1141,7 +1146,9 @@ async def whatsapp_webhook(
     except Exception as e:
         logger.warning(f"FALLBACK | session={session_id if 'session_id' in locals() else 'unknown'} | reason={type(e).__name__} | detail={str(e)[:120]}")
         twiml = MessagingResponse()
-        twiml.message("I'm experiencing a brief connectivity issue. Let me connect you with our expert at +91 9876543210.")
+        twiml.message(
+            f"I'm experiencing a brief connectivity issue. Let me connect you with our expert at {_wa_support_number()}."
+        )
         return Response(content=str(twiml), media_type="application/xml")
 
 

@@ -1131,9 +1131,13 @@ async def process_chat(session_id: str, user_message: str, db: DBSession, client
     user_message_for_llm = user_message_for_llm + lang_instruction
 
     # Start Gemini Chat with retrieved history
+    _support = (getattr(settings, "CLIENT_SUPPORT_NUMBER", None) or "+91 9876543210").strip()
+    system_instruction = REAL_ESTATE_SYSTEM_PROMPT.replace(
+        "+91 [CLIENT_SUPPORT_NUMBER]", _support
+    ).replace("[CLIENT_SUPPORT_NUMBER]", _support)
     chat = client.aio.chats.create(
         model=settings.GEMINI_MODEL,
-        config={"system_instruction": REAL_ESTATE_SYSTEM_PROMPT, "tools": [extract_lead_tool]},
+        config={"system_instruction": system_instruction, "tools": [extract_lead_tool]},
         history=sanitized_history
     )
 
@@ -1157,8 +1161,14 @@ async def process_chat(session_id: str, user_message: str, db: DBSession, client
                 )
             )
 
-    # Send the history + new message to Gemini (with retry logic for API reliability)
+    # Send the history + new message to Gemini.
+    # Retry only transient API failures — never retry asyncio.TimeoutError (would
+    # burn 3× LLM_TIMEOUT and still fail; user already may be on interim path).
     max_retries = 3
+    llm_timeout = float(settings.LLM_TIMEOUT_SECONDS)
+    support_num = (
+        getattr(settings, "CLIENT_SUPPORT_NUMBER", None) or "+91 9876543210"
+    ).strip()
     response = None
     for attempt in range(max_retries):
         llm_start = time.time()
@@ -1166,11 +1176,11 @@ async def process_chat(session_id: str, user_message: str, db: DBSession, client
             if attempt == 0 and name_extraction_task:
                 # Run the main chat and the name extraction concurrently.
                 # return_exceptions=True prevents the name-extract timeout from crashing main chat.
-                # LLM hard cap: settings.LLM_TIMEOUT_SECONDS (default 10s; <= webhook race window).
+                # LLM hard cap: settings.LLM_TIMEOUT_SECONDS (may exceed WA race; inflight continues).
                 results = await asyncio.gather(
                     asyncio.wait_for(
                         chat.send_message(user_message_for_llm),
-                        timeout=float(settings.LLM_TIMEOUT_SECONDS),
+                        timeout=llm_timeout,
                     ),
                     name_extraction_task,
                     return_exceptions=True
@@ -1196,7 +1206,7 @@ async def process_chat(session_id: str, user_message: str, db: DBSession, client
             else:
                 response = await asyncio.wait_for(
                     chat.send_message(user_message_for_llm),
-                    timeout=float(settings.LLM_TIMEOUT_SECONDS),
+                    timeout=llm_timeout,
                 )
 
             llm_time = round((time.time() - llm_start) * 1000)
@@ -1225,19 +1235,41 @@ async def process_chat(session_id: str, user_message: str, db: DBSession, client
             break  # Success — exit retry loop
         except Exception as e:
             llm_time = round((time.time() - llm_start) * 1000)
+            err_name = type(e).__name__
             logger.warning(json.dumps(
                 {"event": "llm_main_call", "latency_ms": llm_time, "attempt": attempt + 1, "success": False,
-                 "error": type(e).__name__, "detail": str(e)[:200]}))
+                 "error": err_name, "detail": str(e)[:200]}))
+            # Hard client-side timeout: do not retry (each attempt would burn full budget).
+            is_timeout = isinstance(e, (asyncio.TimeoutError, TimeoutError)) or err_name in (
+                "TimeoutError",
+                "CancelledError",
+            )
+            if is_timeout:
+                logger.error(json.dumps({
+                    "event": "llm_main_fatal",
+                    "error": err_name,
+                    "detail": "timeout_no_retry",
+                    "session": session_id,
+                    "timeout_s": llm_timeout,
+                }))
+                fallback = (
+                    "I'm currently experiencing a technical issue and couldn't process your request. "
+                    f"Our team is here to help — please reach us directly at *{support_num}* "
+                    "or try again in a few minutes. Apologies for the inconvenience! 🙏"
+                )
+                db.add(Message(session_id=session_id, client_id=client_id, role="assistant", content=fallback))
+                db.commit()
+                finalize_turn(db, session, lead, f_state)
+                return fallback
             if attempt < max_retries - 1:
                 wait_time = 0.5 * (2 ** attempt)  # Standard exponential backoff
                 await asyncio.sleep(wait_time)
             else:
-                logger.error(json.dumps({"event": "llm_main_fatal", "error": type(e).__name__, "detail": str(e)[:200],
+                logger.error(json.dumps({"event": "llm_main_fatal", "error": err_name, "detail": str(e)[:200],
                                          "session": session_id}))
-                # Proper closure — no false promise, offer human support immediately
                 fallback = (
                     "I'm currently experiencing a technical issue and couldn't process your request. "
-                    "Our team is here to help — please reach us directly at *+91 [CLIENT_SUPPORT_NUMBER]* "
+                    f"Our team is here to help — please reach us directly at *{support_num}* "
                     "or try again in a few minutes. Apologies for the inconvenience! 🙏"
                 )
                 db.add(Message(session_id=session_id, client_id=client_id, role="assistant", content=fallback))

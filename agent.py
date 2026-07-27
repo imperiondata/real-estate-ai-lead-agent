@@ -1168,7 +1168,7 @@ async def process_chat(session_id: str, user_message: str, db: DBSession, client
                 # return_exceptions=True prevents the 2s timeout from crashing the main chat.
                 # Added 6.0s strict timeout to prevent catastrophic 35s latency spikes.
                 results = await asyncio.gather(
-                    asyncio.wait_for(chat.send_message(user_message_for_llm), timeout=6.0),
+                    asyncio.wait_for(chat.send_message(user_message_for_llm), timeout=15.0),
                     name_extraction_task,
                     return_exceptions=True
                 )
@@ -1191,7 +1191,7 @@ async def process_chat(session_id: str, user_message: str, db: DBSession, client
                     except Exception as e:
                         logger.warning(f"Fast name extraction text parsing failed: {e}")
             else:
-                response = await asyncio.wait_for(chat.send_message(user_message_for_llm), timeout=6.0)
+                response = await asyncio.wait_for(chat.send_message(user_message_for_llm), timeout=15.0)
 
             llm_time = round((time.time() - llm_start) * 1000)
             logger.info(

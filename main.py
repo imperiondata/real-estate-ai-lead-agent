@@ -960,7 +960,7 @@ async def whatsapp_webhook(
                 )
                 reply_text = await asyncio.wait_for(
                     process_unified_lead(payload, db, client_id=client_id),
-                    timeout=15.0
+                    timeout=10.0
                 )
                 
                 # Finished fast enough — log latency and return standard TwiML

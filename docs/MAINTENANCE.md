@@ -505,6 +505,7 @@ Structured logs use `request_id` / `tenant_id` contextvars when set.
 |-----|----------|
 | `AGENTS.md` | Agent/dev high-signal facts |
 | `README.md` | Product overview & setup |
+| `docs/TIMEOUTS_AND_TIMINGS.md` | All race/TTL/scheduler/backoff values + code anchors |
 | `docs/FRONTEND_BACKLOG.md` | FE SSE/API cutover |
 | `docs/N8N_INTEGRATION.md` | n8n config-later |
 | `plans/UNIFIED_EXECUTION_ORDER.md` | Program order / gates |

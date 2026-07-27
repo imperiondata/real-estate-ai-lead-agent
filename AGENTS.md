@@ -16,6 +16,7 @@ High-signal, repo-specific facts an agent would likely miss without help.
 | Seed 1000 dummy leads + Neo4j | `python seed_dummy_leads.py` (`--count`, `--purge-only`, `--no-neo4j`) |
 | Project PG leads → Neo4j | `python project_leads_to_neo4j.py` (`--client-id`, `--source dummy_seed`) |
 | Ops / maintenance runbook | `docs/MAINTENANCE.md` |
+| Timeouts & timings map | `docs/TIMEOUTS_AND_TIMINGS.md` (all race/TTL/scheduler values + line anchors) |
 | Provision production client | `python add_client.py` (interactive, generates secure keys) |
 | Stress test (126 cases) | `python task3_runner.py` |
 | Filter stress test | `python task3_runner.py --category HOT` (`--test-id R01`, `--skip-db`, `--base-url`, `--api-key`) |
@@ -248,6 +249,7 @@ Sales hot escalate: notify_agent + create_task → agent_tasks
 
 ## Docs pointers
 
+- **Timeouts & timings (all race/TTL/scheduler values):** `docs/TIMEOUTS_AND_TIMINGS.md`
 - n8n: Compose service + AE path shipped; UI workflows still ops (`docs/N8N_INTEGRATION.md`). Brochure HTTPS URLs optional until set.
 - **Post-G3 automations closeout (Step 24):** `plans/PHASE3_AUTOMATIONS_CLOSEOUT.md` on branch `phase3_automations`. Canonical bus only (`lead.hot` + `trigger`, not invented event names). Backend hardens emits/payloads; Maitri owns n8n UI chains. HubSpot Python stays skipped.
 - **BA-1…BA-7 shipped:** `app/events/lead_hot.py` publishes `lead.hot` (score + handoff, Redis debounce); `_emit_turn_events` adds `chat_context`; EE merges params into success events; HITL `approve_path`/`reject_path`; `GET/POST /api/v1/calendar/*` (confirm → AE). n8n primary = Redis Streams. Tests: `tests/test_e18_automations_closeout.py`.

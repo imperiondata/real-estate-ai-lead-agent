@@ -67,9 +67,9 @@ Backend **dual-publishes** catalog + review aliases so n8n names from PR review 
 
 | Item | Status |
 |------|--------|
-| Always-true dummy `GET /calendar/availability` | **Rejected** (lies to n8n). Optional honest freebusy later is not scheduled. |
+| Always-true dummy `GET /calendar/availability` | **Rejected**. Honest freebusy/calendar REST on automations is optional (`app/api/calendar.py`, labeled `provider`). |
 | `event_bus.publish` inside `calendar_executor.py` | **Not needed** — EE owns success publish (single event). Executor is pure I/O. |
-| Dual-path delete of root `agent.py` / `crm_sync.py` / `follow_up.py` (Phase 10.2/10.3) | **Deferred** — shared libraries for v3; not a second product path (`AGENTS.md`). |
+| Dual-path delete of root `agent.py` / `crm_sync.py` / `follow_up.py` (Phase 10.2/10.3) | **Deferred** — shared libraries for v3 (`AGENTS.md`). |
 | HubSpot Python live portal | Skipped; external CRM via n8n nodes OK. |
 
 ## Local Docker (recommended for credentials + webhooks)
@@ -221,7 +221,7 @@ Prefer `lead.hot` + `payload.trigger`. If using the PR #10 alias `lead.escalated
 
 ### `lead.qualified` (CRM fields + transcript)
 
-Emitted from `main.py` `_emit_turn_events` when 6-field gate complete. Closeout adds `chat_context` (BA-2):
+Emitted from `main.py` `_emit_turn_events` when 6-field gate complete (`chat_context` attached):
 
 ```json
 {

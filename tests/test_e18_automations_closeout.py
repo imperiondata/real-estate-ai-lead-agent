@@ -87,10 +87,12 @@ def test_publish_lead_hot_calls_bus(monkeypatch):
 
     ok = asyncio.run(run())
     assert ok is True
-    assert len(published) == 1
-    assert published[0][0] == "lead.hot"
-    assert published[0][1] == "Client_1"
-    assert published[0][3]["trigger"] == "hot_threshold"
+    types = [p[0] for p in published]
+    assert "lead.hot" in types
+    assert "lead.escalated" in types  # PR #10 dual-publish alias
+    hot = next(p for p in published if p[0] == "lead.hot")
+    assert hot[1] == "Client_1"
+    assert hot[3]["trigger"] == "hot_threshold"
 
 
 def test_publish_lead_hot_debounce_skips_second(monkeypatch):
@@ -132,11 +134,13 @@ def test_publish_lead_hot_debounce_skips_second(monkeypatch):
 
     a, b = asyncio.run(run())
     assert a is True and b is False
-    assert len(published) == 1
+    # First publish dual-fires lead.hot + lead.escalated; second call debounced
+    assert len(published) == 2
+    assert {p[0] for p in published} == {"lead.hot", "lead.escalated"}
 
 
 def test_lead_scoring_handler_publishes_lead_hot(monkeypatch):
-    """When score_lead returns hot scores, handler publishes lead.hot."""
+    """When score_lead returns hot scores, handler publishes lead.hot (+ alias)."""
     from app.agents import lead_scoring_handler as h
 
     published = []
@@ -221,6 +225,7 @@ def test_lead_scoring_handler_publishes_lead_hot(monkeypatch):
     types = [p[0] for p in published]
     assert "lead.scored" in types
     assert "lead.hot" in types
+    assert "lead.escalated" in types
     hot = next(p for p in published if p[0] == "lead.hot")
     assert hot[1]["trigger"] == "hot_threshold"
     assert hot[1]["chat_context"] == "User: buy now"
@@ -534,7 +539,10 @@ def test_calendar_router_mounted_in_main():
 
 
 def test_no_invented_event_types_in_closeout_modules():
-    """Guard: closeout code must not introduce rejected event names."""
+    """Guard: do not invent human.requested (use lead.hot + trigger=human_handoff).
+
+    lead.escalated / session.completed are intentional PR #10 dual-publish aliases.
+    """
     from pathlib import Path
 
     roots = [
@@ -542,7 +550,7 @@ def test_no_invented_event_types_in_closeout_modules():
         Path("app/agents/lead_scoring_handler.py"),
         Path("app/api/calendar.py"),
     ]
-    banned = ("human.requested", "lead.escalated", "session.completed")
+    banned = ("human.requested",)
     for path in roots:
         text = path.read_text(encoding="utf-8")
         for b in banned:

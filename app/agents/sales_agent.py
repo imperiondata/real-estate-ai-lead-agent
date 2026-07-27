@@ -5,7 +5,7 @@ action and (optionally) advances the deal stage and syncs the lead to the CRM
 through the AutomationEngine -> ExecutionEngine (so CRM writes are observable
 and DLQ-protected, reusing the Phase 3 `CRMExecutor`).
 
-Wave B.1: registered on the CEO bus (``lead.scored``, ``lead.hot``, ``conversation.updated``)
+Wave B.1: registered on the CEO bus (``lead.scored``, ``lead.hot``, ``conversation.updated``, ``lead.qualified``)
 so hot/scored leads trigger real AE actions without an HTTP call.
 Wave B.2: lightweight objection detection via rule lexicon.
 
@@ -33,7 +33,7 @@ from app.intelligence.agent_matcher import ensure_lead_assignment
 logger = logging.getLogger("sales_agent")
 
 # Wave B.1: bus subscription events.
-SALES_BUS_EVENTS = ["lead.scored", "lead.hot", "conversation.updated"]
+SALES_BUS_EVENTS = ["lead.scored", "lead.hot", "conversation.updated", "lead.qualified"]
 
 # Wave B.2: objection lexicon.
 _OBJECTION_PATTERNS = {
@@ -75,13 +75,13 @@ def recommend_next_action(lead: Lead) -> dict:
         return {"action": "request_info", "missing_fields": missing,
                 "rationale": "Capture remaining mandatory fields before routing."}
 
-    if temp == "hot":
-        return {"action": "escalate_hot",
-                "rationale": "Hot lead — pause automation and alert a human agent."}
-
     if lead.visit_date and (lead.funnel_stage or "New") not in ("Site Visit Booked", "Negotiation"):
         return {"action": "schedule_site_visit",
                 "rationale": "Visit date captured — confirm and book the site tour."}
+
+    if temp == "hot":
+        return {"action": "escalate_hot",
+                "rationale": "Hot lead — pause automation and alert a human agent."}
 
     if temp == "warm" and lead.assigned_agent:
         return {"action": "send_brochure",
@@ -238,9 +238,38 @@ async def _nba_to_ae_action(lead: Lead, client_id: int, recommendation: dict) ->
                 "visit_date": lead.visit_date,
                 "name": lead.name or "",
                 "phone": lead.phone or "",
+                "location": lead.location or "",
             },
             "source": "sales_agent",
         })
+        # P3: When a hot lead has a visit date, fire hot lead notification alongside
+        # so the agent gets the WhatsApp alert even though escalate_hot was bypassed.
+        if (lead.lead_temperature or "").lower() == "hot":
+            hot_reason = "Hot lead with confirmed visit date — alert agent."
+            await ae_submit({
+                "action_type": "notify_agent",
+                "tenant_id": f"Client_{client_id}",
+                "entity_id": str(lead.id),
+                "parameters": {
+                    "kind": "hot_lead",
+                    "lead_id": lead.id,
+                    "reason": hot_reason,
+                },
+                "source": "sales_agent",
+            })
+            await ae_submit({
+                "action_type": "create_task",
+                "tenant_id": f"Client_{client_id}",
+                "entity_id": str(lead.id),
+                "parameters": {
+                    "lead_id": lead.id,
+                    "title": f"Call hot lead {lead.name or lead.id}",
+                    "description": hot_reason,
+                    "assignee": lead.assigned_agent or None,
+                    "source": "sales_agent",
+                },
+                "source": "sales_agent",
+            })
     elif action == "send_brochure":
         from app.agents.whatsapp_agent import generate_brochure, resolve_tool_media_url
 
@@ -279,16 +308,21 @@ async def sales_bus_handler(envelope: dict) -> None:
         return
 
     # Debounce: skip if this lead was acted on recently.
+    # P3: lead.qualified bypasses debounce — visit booking is time-critical.
+    event_type = envelope.get("event_type", "")
     try:
         import redis.asyncio as aioredis
         r = aioredis.from_url(settings.REDIS_URL, decode_responses=True)
         lock_key = _debounce_key(client_id, lid)
         already = await r.get(lock_key)
         if already:
-            logger.debug("sales_bus debounce: lead %s client %s skipped", lid, client_id)
-            await r.aclose()
-            return
-        await r.set(lock_key, "1", ex=600)  # 10 minute TTL
+            if event_type == "lead.qualified":
+                logger.debug("sales_bus debounce bypassed for lead.qualified: lead %s client %s", lid, client_id)
+            else:
+                logger.debug("sales_bus debounce: lead %s client %s skipped", lid, client_id)
+                await r.aclose()
+                return
+        await r.set(lock_key, "1", ex=600)  # 10 minute TTL (refreshes for bypassed events)
         await r.aclose()
     except Exception:
         pass  # debounce is best-effort; proceed without it

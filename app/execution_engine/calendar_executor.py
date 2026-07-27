@@ -19,6 +19,7 @@ unchanged and the rest of the pipeline keeps working (config-later safe).
 from __future__ import annotations
 
 import logging
+import re
 import uuid
 from datetime import datetime, timedelta, timezone
 
@@ -37,9 +38,19 @@ def _google_configured() -> bool:
     )
 
 
+_DAY_NAMES = ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"]
+
+
 def _parse_start(visit_date) -> datetime:
-    """Best-effort parse of an ISO visit_date; default to +1 day."""
+    """Best-effort parse of visit_date into a datetime.
+
+    Handles:
+      - ISO-8601 strings (e.g. "2026-08-01T10:00:00")
+      - Natural language day + time (e.g. "Saturday 10:00 AM", "Friday 2:30 PM")
+      - Fallback: tomorrow at current UTC time
+    """
     if visit_date:
+        # 1. Try ISO-8601
         try:
             dt = datetime.fromisoformat(str(visit_date).replace("Z", "+00:00"))
             if dt.tzinfo is None:
@@ -47,6 +58,39 @@ def _parse_start(visit_date) -> datetime:
             return dt
         except (ValueError, TypeError):
             pass
+
+        # 2. Try natural language: "Saturday 10:00 AM", "friday 2:30pm", etc.
+        text = str(visit_date).strip()
+        match = re.match(
+            r'(monday|tuesday|wednesday|thursday|friday|saturday|sunday)'
+            r'\s+(\d{1,2}:\d{2})\s*(am|pm)?',
+            text, re.IGNORECASE,
+        )
+        if match:
+            day_name = match.group(1).lower()
+            time_str = match.group(2)
+            ampm = (match.group(3) or "").upper()
+
+            # Parse hour/minute
+            parts = time_str.split(":")
+            hour, minute = int(parts[0]), int(parts[1])
+            if ampm == "PM" and hour != 12:
+                hour += 12
+            elif ampm == "AM" and hour == 12:
+                hour = 0
+
+            # Resolve to next occurrence of that weekday
+            now = datetime.now(timezone.utc)
+            target_weekday = _DAY_NAMES.index(day_name)
+            days_ahead = target_weekday - now.weekday()
+            if days_ahead <= 0:
+                days_ahead += 7
+            target = (now + timedelta(days=days_ahead)).replace(
+                hour=hour, minute=minute, second=0, microsecond=0,
+            )
+            return target
+
+    # 3. Fallback: tomorrow at current UTC time
     return datetime.now(timezone.utc) + timedelta(days=1)
 
 
@@ -80,6 +124,7 @@ class CalendarExecutor(BaseExecutor):
         body = {
             "summary": summary,
             "description": description,
+            "location": params.get("location", ""),
             "start": {"dateTime": start.isoformat(), "timeZone": tz},
             "end": {"dateTime": end.isoformat(), "timeZone": tz},
         }

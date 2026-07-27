@@ -289,3 +289,16 @@ def test_kanban_board_claim_button_expanded():
     assert 'col.name === "New" || lead.is_negotiating' in content, (
         "Claim button condition should include lead.is_negotiating"
     )
+
+
+def test_priority_alert_card_renders_negotiation_badge():
+    """Dashboard PriorityAlertCard should show compact Negotiate badge near Claim."""
+    with open(
+        "frontend/src/app/(dashboard)/dashboard/PriorityAlertCard.tsx",
+        "r",
+        encoding="utf-8",
+    ) as f:
+        content = f.read()
+
+    assert "is_negotiating" in content, "PriorityAlertCard should reference is_negotiating"
+    assert "Negotiate" in content, "PriorityAlertCard should render compact Negotiate badge"

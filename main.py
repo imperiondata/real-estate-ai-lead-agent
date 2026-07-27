@@ -624,72 +624,166 @@ async def chat_endpoint(session_id: str, message: str, current_client: models.Cl
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
-async def background_process_and_push(session_id: str, Body: str, client_id: int):
-    """
-    Executes if the LLM exceeds 15s timeout. Pushes the reply out-of-band via AE→EE
-    (WhatsAppExecutor), not a direct Twilio call.
+_WA_FALLBACK_BODY = (
+    "I'm experiencing a brief connectivity issue. Please try again in a moment, "
+    "or reach our team directly at +91 9876543210."
+)
 
-    P3.1/P3.2: Re-acquires session lock before processing to prevent concurrent double-processing.
-    P3.3: Passes background=True so agent.py can skip duplicate user message inserts.
+
+async def _session_turn_locked(session_id: str, body: str, client_id: int) -> str:
+    """Run one WhatsApp turn under the session lock with a private DB session.
+
+    Lock lives for the *full* turn (including after the webhook race window) so a
+    concurrent message cannot interleave while Gemini is still finishing.
+    Own SessionLocal avoids request-scoped session close when the webhook returns
+    interim TwiML and the task continues.
     """
-    # P3.1/P3.2: Re-acquire the session lock so only one background task processes at a time.
-    # Use a longer timeout (45s) since background processing may take longer than the 15s webhook window.
+    lock = redis_client.lock(f"session_lock:{session_id}", timeout=45.0, blocking_timeout=30.0)
+    acquired = await lock.acquire()
+    if not acquired:
+        logger.warning(
+            "SESSION_TURN_LOCK | session=%s | could not acquire lock; skipping",
+            session_id,
+        )
+        raise RuntimeError("session_lock_unavailable")
+    try:
+        with SessionLocal() as db:
+            payload = LeadIngestionPayload(
+                session_id=session_id,
+                source="whatsapp",
+                message=body,
+                whatsapp_opt_in=True,
+            )
+            # Single in-flight turn — never cancel/re-run, so is_background=False.
+            return await process_unified_lead(payload, db, client_id, background=False)
+    finally:
+        await lock.release()
+
+
+async def _await_inflight_and_push(task: asyncio.Task, session_id: str, client_id: int):
+    """After webhook race timeout: await the *same* turn task and push via EE.
+
+    Does not start a second process_unified_lead (avoids double Gemini / double writes).
+    """
+    try:
+        reply_text = await task
+        result = await _send_whatsapp_via_ee(
+            client_id,
+            session_id,
+            reply_text or _WA_FALLBACK_BODY,
+            session_id,
+            source="inflight_push",
+        )
+        if result.get("status") == "error":
+            raise RuntimeError(result.get("error") or "ee_send_failed")
+        logger.info("INFLIGHT_PUSH | session=%s | status=delivered", session_id)
+    except Exception as e:
+        logger.error("INFLIGHT_PUSH failed for %s: %s", session_id, e)
+        try:
+            result = await _send_whatsapp_via_ee(
+                client_id,
+                session_id,
+                _WA_FALLBACK_BODY,
+                session_id,
+                source="inflight_fallback",
+            )
+            if result.get("status") == "error":
+                raise RuntimeError(result.get("error") or "ee_fallback_failed")
+            logger.warning(
+                "FALLBACK | session=%s | reason=inflight_task_failure | detail=graceful_fallback_via_ee",
+                session_id,
+            )
+        except Exception as fallback_err:
+            logger.error("FALLBACK push also failed for %s: %s", session_id, fallback_err)
+            BACKGROUND_FAILURE_COUNT.labels(component="twilio").inc()
+            INTEGRATION_FAILURES.labels(integration="twilio").inc()
+            with SessionLocal() as db:
+                db.add(
+                    models.DLQEvent(
+                        target_endpoint="twilio_outbound",
+                        payload={
+                            "session_id": session_id,
+                            "body": _WA_FALLBACK_BODY,
+                            "to": f"whatsapp:{session_id}",
+                        },
+                        error_trace=str(fallback_err),
+                        status="pending",
+                        client_id=client_id,
+                    )
+                )
+                db.commit()
+
+
+async def background_process_and_push(session_id: str, Body: str, client_id: int):
+    """Legacy full re-run path (kept for SMS / callers that need a fresh turn).
+
+    WhatsApp webhook preferred path is _session_turn_locked + _await_inflight_and_push
+    (no cancel, no second Gemini call). This helper still re-acquires the session lock
+    and uses background=True for P3.3 duplicate-message guard when a full re-run is required.
+    """
     lock = redis_client.lock(f"session_lock:{session_id}", timeout=45.0, blocking_timeout=10.0)
     lock_acquired = False
-    fallback_body = (
-        "I'm experiencing a brief connectivity issue. Please try again in a moment, "
-        "or reach our team directly at +91 9876543210."
-    )
     try:
         lock_acquired = await lock.acquire()
         if not lock_acquired:
-            logger.warning(f"BACKGROUND_LOCK | session={session_id} | another worker holds the lock; skipping duplicate background run")
+            logger.warning(
+                "BACKGROUND_LOCK | session=%s | another worker holds the lock; skipping duplicate background run",
+                session_id,
+            )
             return
 
-        # --- FIX 3: Use context manager to prevent session leak ---
         with SessionLocal() as db:
             try:
                 payload = LeadIngestionPayload(
                     session_id=session_id,
                     source="whatsapp",
                     message=Body,
-                    whatsapp_opt_in=True
+                    whatsapp_opt_in=True,
                 )
                 reply_text = await process_unified_lead(payload, db, client_id, background=True)
                 result = await _send_whatsapp_via_ee(
-                    client_id, session_id, reply_text or fallback_body, session_id, source="background_push"
+                    client_id,
+                    session_id,
+                    reply_text or _WA_FALLBACK_BODY,
+                    session_id,
+                    source="background_push",
                 )
                 if result.get("status") == "error":
                     raise RuntimeError(result.get("error") or "ee_send_failed")
-                logger.info(f"Background task pushed response to {session_id} via EE")
+                logger.info("Background task pushed response to %s via EE", session_id)
             except Exception as e:
-                logger.error(f"Background task failed for {session_id}: {e}")
+                logger.error("Background task failed for %s: %s", session_id, e)
                 try:
                     result = await _send_whatsapp_via_ee(
-                        client_id, session_id, fallback_body, session_id, source="background_fallback"
+                        client_id,
+                        session_id,
+                        _WA_FALLBACK_BODY,
+                        session_id,
+                        source="background_fallback",
                     )
                     if result.get("status") == "error":
                         raise RuntimeError(result.get("error") or "ee_fallback_failed")
                     logger.warning(
-                        f"FALLBACK | session={session_id} | reason=background_task_failure | detail=graceful_fallback_via_ee"
+                        "FALLBACK | session=%s | reason=background_task_failure | detail=graceful_fallback_via_ee",
+                        session_id,
                     )
                 except Exception as fallback_err:
-                    logger.error(f"FALLBACK push also failed for {session_id}: {fallback_err}")
+                    logger.error("FALLBACK push also failed for %s: %s", session_id, fallback_err)
                     BACKGROUND_FAILURE_COUNT.labels(component="twilio").inc()
                     INTEGRATION_FAILURES.labels(integration="twilio").inc()
-                    payload_dlq = {
-                        "session_id": session_id,
-                        "body": fallback_body,
-                        "to": f"whatsapp:{session_id}",
-                    }
-                    dlq_entry = models.DLQEvent(
-                        target_endpoint="twilio_outbound",
-                        payload=payload_dlq,
-                        error_trace=str(fallback_err),
-                        status="pending",
-                        client_id=client_id
+                    db.add(
+                        models.DLQEvent(
+                            target_endpoint="twilio_outbound",
+                            payload={
+                                "session_id": session_id,
+                                "body": _WA_FALLBACK_BODY,
+                                "to": f"whatsapp:{session_id}",
+                            },
+                            error_trace=str(fallback_err),
+                            status="pending",
+                            client_id=client_id,
+                        )
                     )
-                    db.add(dlq_entry)
                     db.commit()
     finally:
         if lock_acquired:
@@ -726,10 +820,45 @@ class LeadIngestionPayload(BaseModel):
     whatsapp_opt_in: bool = False
 
 
+async def _emit_turn_events_deferred(
+    *,
+    client_id: int,
+    scoped_session_id: str,
+    lead_id: int,
+    source_channel: str,
+    is_new_lead: bool,
+    message: str = "",
+) -> None:
+    """Bus publish with a private DB session — safe after the reply path returns."""
+    try:
+        with SessionLocal() as db:
+            lead = (
+                db.query(models.Lead)
+                .filter(models.Lead.id == lead_id, models.Lead.client_id == client_id)
+                .first()
+            )
+            if not lead:
+                return
+            await _emit_turn_events(
+                client_id=client_id,
+                scoped_session_id=scoped_session_id,
+                lead=lead,
+                source_channel=source_channel,
+                is_new_lead=is_new_lead,
+                message=message,
+                db=db,
+            )
+    except Exception as e:  # noqa: BLE001
+        logger.debug("deferred turn events skipped: %s", e)
+
+
 async def process_unified_lead(payload: LeadIngestionPayload, db: DBSession, client_id: int, background: bool = False):
     """
     Unified entry point for lead ingestion.
     Refactored to call process_chat for Gemini processing to avoid logic duplication.
+
+    Bus events (_emit_turn_events) run off the reply critical path so WhatsApp TwiML
+    is not delayed by Redis Streams / chat_context summarize.
     """
     raw_session_id = payload.session_id
     prefix = f"{client_id}_"
@@ -796,15 +925,26 @@ async def process_unified_lead(payload: LeadIngestionPayload, db: DBSession, cli
     )
     # Refresh lead after chat extraction so bus payloads carry latest fields.
     db.refresh(lead)
-    await _emit_turn_events(
-        client_id=client_id,
-        scoped_session_id=scoped_session_id,
-        lead=lead,
-        source_channel=payload.source or "api",
-        is_new_lead=is_new_lead,
-        message=payload.message or "",
-        db=db,
+    lead_id = lead.id
+    source_channel = payload.source or "api"
+    message = payload.message or ""
+
+    # Off critical path: bus publish must not delay TwiML / chat JSON return.
+    evt_task = asyncio.create_task(
+        _emit_turn_events_deferred(
+            client_id=client_id,
+            scoped_session_id=scoped_session_id,
+            lead_id=lead_id,
+            source_channel=source_channel,
+            is_new_lead=is_new_lead,
+            message=message,
+        )
     )
+    running_bg_tasks.add(evt_task)
+    evt_task.add_done_callback(running_bg_tasks.discard)
+    if getattr(settings, "TEST_MODE", False):
+        await evt_task
+
     return reply
 
 @app.post("/api/v1/ingest")
@@ -946,58 +1086,57 @@ async def whatsapp_webhook(
 
         session_id = From.replace("whatsapp:", "")
         client_id = current_client.id
-        
-        # Task 2: Message Queue Handling (Lock per session using Redis)
-        async with redis_client.lock(f"session_lock:{session_id}", timeout=20.0, blocking_timeout=30.0):
-            # Task 6: Timeout Handling
+
+        # Race window under Twilio ~15s HTTP limit. Turn runs in a task that owns
+        # its own SessionLocal + session_lock for the full duration (not cancelled).
+        webhook_timeout = float(getattr(settings, "WHATSAPP_WEBHOOK_TIMEOUT", 12.0))
+        chat_task = asyncio.create_task(_session_turn_locked(session_id, Body, client_id))
+        done, _pending = await asyncio.wait({chat_task}, timeout=webhook_timeout)
+
+        if chat_task in done:
+            reply_text = chat_task.result()  # re-raises turn errors → outer except
+            latency_ms = round((time.time() - request_start) * 1000)
+            logger.info(
+                "LATENCY | session=%s | %sms | status=delivered | window=%ss",
+                session_id,
+                latency_ms,
+                webhook_timeout,
+            )
+            twiml = MessagingResponse()
+            msg = twiml.message(reply_text or "")
             try:
-                # Give LLM 15s to finish to prevent double-charging the Google Free Tier Rate limit
-                payload = LeadIngestionPayload(
-                    session_id=session_id,
-                    source="whatsapp",
-                    message=Body,
-                    whatsapp_opt_in=True
-                )
-                reply_text = await asyncio.wait_for(
-                    process_unified_lead(payload, db, client_id=client_id),
-                    timeout=10.0
-                )
-                
-                # Finished fast enough — log latency and return standard TwiML
-                latency_ms = round((time.time() - request_start) * 1000)
-                logger.info(f"LATENCY | session={session_id} | {latency_ms}ms | status=delivered")
-                twiml = MessagingResponse()
-                msg = twiml.message(reply_text or "")
-                # Approach B: structured media from WhatsAppAgent (not reply-text scrape).
-                try:
-                    from app.agents.whatsapp_agent import take_outbound_media_url
+                from app.agents.whatsapp_agent import take_outbound_media_url
 
-                    media_url = take_outbound_media_url()
-                    if media_url:
-                        msg.media(media_url)
-                except Exception as e:  # pragma: no cover
-                    logger.debug("outbound media attach skipped: %s", e)
-                return Response(content=str(twiml), media_type="application/xml")
-            
-            except asyncio.TimeoutError:
-                # Took too long — dispatch to background and return interim response
-                logger.info(f"TIMEOUT | session={session_id} | exceeded=15000ms | action=background_dispatch")
-                background_tasks.add_task(background_process_and_push, session_id, Body, client_id)
+                media_url = take_outbound_media_url()
+                if media_url:
+                    msg.media(media_url)
+            except Exception as e:  # pragma: no cover
+                logger.debug("outbound media attach skipped: %s", e)
+            return Response(content=str(twiml), media_type="application/xml")
 
-                # P3.1: Only send one interim "Just checking..." per MessageSid
-                interim_key = f"interim_sent:{MessageSid}" if MessageSid else None
-                send_interim = True
-                if interim_key:
-                    already_sent = await redis_client.get(interim_key)
-                    if already_sent:
-                        send_interim = False
-                    else:
-                        await redis_client.set(interim_key, "1", ex=120)
+        # Slow path: do NOT cancel chat_task — await same turn and EE-push.
+        timeout_ms = int(webhook_timeout * 1000)
+        logger.info(
+            "TIMEOUT | session=%s | exceeded=%sms | action=await_inflight_push",
+            session_id,
+            timeout_ms,
+        )
+        background_tasks.add_task(_await_inflight_and_push, chat_task, session_id, client_id)
 
-                twiml = MessagingResponse()
-                if send_interim:
-                    twiml.message("Just checking that for you...")
-                return Response(content=str(twiml), media_type="application/xml")
+        # P3.1: Only send one interim "Just checking..." per MessageSid
+        interim_key = f"interim_sent:{MessageSid}" if MessageSid else None
+        send_interim = True
+        if interim_key:
+            already_sent = await redis_client.get(interim_key)
+            if already_sent:
+                send_interim = False
+            else:
+                await redis_client.set(interim_key, "1", ex=120)
+
+        twiml = MessagingResponse()
+        if send_interim:
+            twiml.message("Just checking that for you...")
+        return Response(content=str(twiml), media_type="application/xml")
     
     except Exception as e:
         logger.warning(f"FALLBACK | session={session_id if 'session_id' in locals() else 'unknown'} | reason={type(e).__name__} | detail={str(e)[:120]}")

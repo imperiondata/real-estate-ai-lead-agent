@@ -19,6 +19,7 @@ def _read_source(rel_path: str) -> str:
 
 MAIN_SRC = _read_source("main.py")
 AGENT_SRC = _read_source("agent.py")
+CONFIG_SRC = _read_source("config.py")
 
 
 # ---------------------------------------------------------------------------
@@ -41,6 +42,47 @@ class TestBackgroundLockReacquisition:
     def test_background_lock_released_in_finally(self):
         """Lock must be released when done."""
         assert "lock.release()" in MAIN_SRC
+
+
+# ---------------------------------------------------------------------------
+# WA race: no cancel / await-inflight + aligned timeouts
+# ---------------------------------------------------------------------------
+
+
+class TestWhatsAppRaceNoCancel:
+    """Webhook races the turn task; slow path awaits same task (no second Gemini)."""
+
+    def test_session_turn_locked_helper_exists(self):
+        assert "async def _session_turn_locked" in MAIN_SRC
+
+    def test_await_inflight_helper_exists(self):
+        assert "async def _await_inflight_and_push" in MAIN_SRC
+
+    def test_webhook_uses_asyncio_wait_not_wait_for_cancel(self):
+        """Slow path must use asyncio.wait race, not wait_for cancel of the turn."""
+        wa = MAIN_SRC.split("async def whatsapp_webhook")[1].split("async def twilio_status")[0]
+        assert "asyncio.wait(" in wa
+        assert "_session_turn_locked" in wa
+        assert "_await_inflight_and_push" in wa
+        assert "await_inflight_push" in wa
+
+    def test_config_has_aligned_timeouts(self):
+        assert "WHATSAPP_WEBHOOK_TIMEOUT" in CONFIG_SRC
+        assert "LLM_TIMEOUT_SECONDS" in CONFIG_SRC
+
+    def test_agent_uses_llm_timeout_setting(self):
+        assert "LLM_TIMEOUT_SECONDS" in AGENT_SRC
+
+    def test_rag_and_graph_timeout_settings(self):
+        assert "RAG_TIMEOUT_SECONDS" in CONFIG_SRC
+        assert "GRAPH_CONTEXT_TIMEOUT_SECONDS" in CONFIG_SRC
+        assert "RAG_TIMEOUT_SECONDS" in AGENT_SRC
+
+    def test_post_turn_deferred_helpers(self):
+        wa = _read_source("app/agents/whatsapp_agent.py")
+        assert "_post_turn_side_effects" in wa
+        assert "_graph_extra_context_soft" in wa
+        assert "_emit_turn_events_deferred" in MAIN_SRC
 
 
 # ---------------------------------------------------------------------------

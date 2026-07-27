@@ -1089,7 +1089,7 @@ async def process_chat(session_id: str, user_message: str, db: DBSession, client
             # Offload synchronous RAG/FAISS to thread to prevent blocking FastAPI event loop
             context_items, score = await asyncio.wait_for(
                 asyncio.to_thread(retrieve, rag_query),
-                timeout=3.5
+                timeout=float(getattr(settings, "RAG_TIMEOUT_SECONDS", 2.0)),
             )
             rag_time = round((time.time() - rag_start) * 1000)
             logger.info(json.dumps({"event": "rag_retrieval", "latency_ms": rag_time, "success": True}))
@@ -1165,10 +1165,13 @@ async def process_chat(session_id: str, user_message: str, db: DBSession, client
         try:
             if attempt == 0 and name_extraction_task:
                 # Run the main chat and the name extraction concurrently.
-                # return_exceptions=True prevents the 2s timeout from crashing the main chat.
-                # Added 6.0s strict timeout to prevent catastrophic 35s latency spikes.
+                # return_exceptions=True prevents the name-extract timeout from crashing main chat.
+                # LLM hard cap: settings.LLM_TIMEOUT_SECONDS (default 10s; <= webhook race window).
                 results = await asyncio.gather(
-                    asyncio.wait_for(chat.send_message(user_message_for_llm), timeout=15.0),
+                    asyncio.wait_for(
+                        chat.send_message(user_message_for_llm),
+                        timeout=float(settings.LLM_TIMEOUT_SECONDS),
+                    ),
                     name_extraction_task,
                     return_exceptions=True
                 )
@@ -1191,7 +1194,10 @@ async def process_chat(session_id: str, user_message: str, db: DBSession, client
                     except Exception as e:
                         logger.warning(f"Fast name extraction text parsing failed: {e}")
             else:
-                response = await asyncio.wait_for(chat.send_message(user_message_for_llm), timeout=15.0)
+                response = await asyncio.wait_for(
+                    chat.send_message(user_message_for_llm),
+                    timeout=float(settings.LLM_TIMEOUT_SECONDS),
+                )
 
             llm_time = round((time.time() - llm_start) * 1000)
             logger.info(

@@ -21,14 +21,14 @@ Auth → get_client_by_api_key() → resolves client_id
       ↓
 Fast-path intercepts (instant replies, guardrails)
       ↓
-asyncio.wait_for(process_unified_lead(), timeout=15s)
-  ├── RAG context injection (rag.py + FAISS)
-  ├── Gemini 3.1 Flash Lite
+asyncio.create_task(_session_turn_locked) + race WHATSAPP_WEBHOOK_TIMEOUT (default 12s)
+  ├── session_lock + private DB session (full turn)
+  ├── Neo4j graph context (soft ≤0.5s) + RAG (≤2s) + Gemini (LLM_TIMEOUT ≤10s)
   └── extract_lead_info() tool → saves to Lead table
       ↓
-TwiML response → WhatsApp reply
+Fast: TwiML reply  |  Slow: interim "Just checking…" + await same task → EE push
       ↓
-BackgroundTask: crm_sync.py → HubSpot (5 retries + DLQ)
+Off-path: score / memory / graph upsert + bus events (lead.created → CRM, etc.)
       ↓
 APScheduler (every 60s): follow_up.py → timed follow-up messages
       ↓

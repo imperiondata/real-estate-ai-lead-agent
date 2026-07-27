@@ -101,12 +101,18 @@ High-signal, repo-specific facts an agent would likely miss without help.
 
 ## Webhook Flow & Timeouts
 
-- WhatsApp endpoint: 15s timeout via `asyncio.wait_for` → on timeout, dispatches `background_process_and_push` + returns interim TwiML.
-- **Idempotency (P3.4):** Both `/api/v1/whatsapp` and `/api/v1/incoming_sms` insert `WebhookLog(message_sid=MessageSid)` FIRST. On `IntegrityError` (PK race on `MessageSid`) it rolls back and returns empty `<Response></Response>` — duplicate `MessageSid`s are silently dropped (`main.py:655`, `main.py:760`).
-- **Interim dedup (P3.1):** At most one interim "Just checking..." is sent per `MessageSid`, gated by Redis key `interim_sent:{MessageSid}` (120s TTL) (`main.py:696`).
-- **Background lock (P3.1/P3.2):** `background_process_and_push` re-acquires `session_lock:{session_id}` (`timeout=45.0, blocking_timeout=10.0`) before processing; if another worker holds it, the run is skipped. It passes `background=True` downstream (`main.py:357`).
-- **Duplicate message guard (P3.3):** On the background path (`is_background=True`), `agent.py` skips inserting a user message when `_has_recent_duplicate_message` finds identical content within the last 5 minutes (`agent.py:182`).
-- **Per-session Redis lock:** Both handlers wrap `process_unified_lead` in `async with redis_client.lock(f"session_lock:{session_id}", timeout=20.0, blocking_timeout=30.0)`. The SMS handler falls back to best-effort processing without the lock if Redis is down.
+- **WhatsApp race window:** `WHATSAPP_WEBHOOK_TIMEOUT` (default **12s**, under Twilio ~15s HTTP limit). Starts `_session_turn_locked` as an `asyncio.Task`, then `asyncio.wait({task}, timeout=…)`.
+  - **Fast path:** task finishes in window → real Gemini reply as TwiML.
+  - **Slow path:** returns interim `"Just checking that for you..."` and schedules `_await_inflight_and_push` — **does not cancel** the task and **does not** re-run `process_unified_lead` (single Gemini call; final reply via AE→EE).
+- **LLM hard cap:** `LLM_TIMEOUT_SECONDS` (default **10s**) on `chat.send_message` in `agent.py`. Keep ≤ webhook timeout so the model alone cannot outlive the race window.
+- **Pre-LLM budgets:** `RAG_TIMEOUT_SECONDS` (default **2.0s**), `GRAPH_CONTEXT_TIMEOUT_SECONDS` (default **0.5s**, soft-timeout via `asyncio.to_thread` + `wait_for` in WhatsAppAgent).
+- **Post-turn off critical path (prod):** After reply text is ready, score / negotiation Layer 2 / graph upsert / memory and `_emit_turn_events` run as fire-and-forget tasks with private `SessionLocal`. When `TEST_MODE=true` those tasks are awaited so unit tests stay deterministic.
+- **`_session_turn_locked`:** owns a private `SessionLocal` + holds `session_lock:{session_id}` for the **full** turn (including after interim return) so concurrent messages cannot interleave mid-Gemini. Request-scoped `db` is only used for WebhookLog dedupe.
+- **Idempotency (P3.4):** Both `/api/v1/whatsapp` and `/api/v1/incoming_sms` insert `WebhookLog(message_sid=MessageSid)` FIRST. On `IntegrityError` (PK race on `MessageSid`) it rolls back and returns empty `<Response></Response>` — duplicate `MessageSid`s are silently dropped.
+- **Interim dedup (P3.1):** At most one interim "Just checking..." per `MessageSid`, gated by Redis key `interim_sent:{MessageSid}` (120s TTL).
+- **Legacy re-run:** `background_process_and_push` still exists for full re-process + EE push (lock + `background=True`). WhatsApp webhook preferred path is await-inflight, not re-run.
+- **Duplicate message guard (P3.3):** On the legacy background path (`is_background=True`), `agent.py` skips inserting a user message when `_has_recent_duplicate_message` finds identical content within the last 5 minutes.
+- **SMS Redis lock:** SMS handler still uses `async with redis_client.lock(f"session_lock:{scoped_session_id}", …)` around `process_unified_lead`; falls back best-effort if Redis is down.
 
 ## SMS Follow-Up Scoping (P3.5)
 

@@ -77,6 +77,20 @@ class Settings(BaseSettings):
     # agent — leave the lead unassigned so it can be routed/reviewed manually.
     MIN_MATCH_SCORE: int = 0
 
+    # WhatsApp webhook race window (seconds). Must stay under Twilio's ~15s HTTP
+    # limit so we can return TwiML (real reply or interim) before Twilio retries.
+    # On exceed: return interim "Just checking..." and await the *same* in-flight
+    # turn (no cancel / no second Gemini call). See main.py _session_turn_locked.
+    WHATSAPP_WEBHOOK_TIMEOUT: float = 12.0
+
+    # Per Gemini send_message hard cap (seconds). Keep <= WHATSAPP_WEBHOOK_TIMEOUT
+    # so the LLM cannot outlive the webhook race window by itself.
+    LLM_TIMEOUT_SECONDS: float = 10.0
+
+    # Pre-LLM context budgets (seconds) — keep tight so RAG/Neo4j cannot burn the race window.
+    RAG_TIMEOUT_SECONDS: float = 2.0
+    GRAPH_CONTEXT_TIMEOUT_SECONDS: float = 0.5
+
     # AWS Secrets Manager
     AWS_REGION: str = ""
     AWS_SECRET_NAME: str = ""

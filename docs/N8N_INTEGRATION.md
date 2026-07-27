@@ -46,7 +46,7 @@ Full closeout plan (payloads, lane split, ordered tasks): **`plans/PHASE3_AUTOMA
 
 ### What n8n must NOT own
 
-- WhatsApp 15s TwiML / 6-field gate / RAG  
+- WhatsApp TwiML race (`WHATSAPP_WEBHOOK_TIMEOUT`, default 12s) / 6-field gate / RAG  
 - Follow-up Day0→7 FSM / 10m–30m escalation cron / competitor monitor job  
 - Tenant isolation / JWT issuance  
 - Treating `lead.escalated` / `session.completed` as separate product events — they are **dual-publish aliases** of catalog signals (see below)
@@ -121,7 +121,7 @@ N8N_API_KEY=shared-secret-matching-n8n-header-auth
 
 ## What must stay in IREIOS (not n8n)
 
-- WhatsApp 15s TwiML reply path  
+- WhatsApp TwiML reply path (12s race + await-inflight; no double Gemini)  
 - 6-field qualification gate + RAG  
 - Tenant isolation / JWT  
 - Follow-up Day0→7 state machine (v3 via AE→EE)  

@@ -27,7 +27,16 @@ def run_migration():
         "ALTER TABLE follow_up_states ADD COLUMN IF NOT EXISTS send_retry_count INTEGER DEFAULT 0;",
         "ALTER TABLE leads ADD COLUMN IF NOT EXISTS crm_resync_pending BOOLEAN DEFAULT FALSE;",
         "CREATE TABLE IF NOT EXISTS agent_learning (id SERIAL PRIMARY KEY, client_id INTEGER REFERENCES clients(id) ON DELETE CASCADE, agent_name VARCHAR, wins INTEGER DEFAULT 0, losses INTEGER DEFAULT 0);",
-        "CREATE INDEX IF NOT EXISTS ix_agent_learning_client_agent ON agent_learning (client_id, agent_name);"
+        "CREATE INDEX IF NOT EXISTS ix_agent_learning_client_agent ON agent_learning (client_id, agent_name);",
+        "CREATE TABLE IF NOT EXISTS approval_requests (id SERIAL PRIMARY KEY, client_id INTEGER REFERENCES clients(id) ON DELETE CASCADE, entity_id VARCHAR, action_type VARCHAR, action_payload JSONB, status VARCHAR DEFAULT 'pending', requested_by VARCHAR, resolved_by VARCHAR, reason VARCHAR, correlation_id VARCHAR UNIQUE, created_at TIMESTAMP WITH TIME ZONE DEFAULT now(), resolved_at TIMESTAMP WITH TIME ZONE);",
+        "CREATE INDEX IF NOT EXISTS ix_approval_requests_client_status ON approval_requests (client_id, status);",
+        "CREATE TABLE IF NOT EXISTS lead_memories (id SERIAL PRIMARY KEY, client_id INTEGER REFERENCES clients(id) ON DELETE CASCADE, lead_id INTEGER REFERENCES leads(id) ON DELETE CASCADE, session_id VARCHAR, key VARCHAR, value TEXT, memory_type VARCHAR DEFAULT 'fact', created_at TIMESTAMP WITH TIME ZONE DEFAULT now());",
+        "CREATE INDEX IF NOT EXISTS ix_lead_memories_lead ON lead_memories (lead_id);",
+        "CREATE INDEX IF NOT EXISTS ix_lead_memories_client ON lead_memories (client_id);",
+        "CREATE TABLE IF NOT EXISTS inventory_units (id SERIAL PRIMARY KEY, client_id INTEGER REFERENCES clients(id) ON DELETE CASCADE, project_name VARCHAR NOT NULL, tower VARCHAR, unit_code VARCHAR NOT NULL, bhk VARCHAR, location VARCHAR, list_price INTEGER, status VARCHAR DEFAULT 'available', carpet_sqft INTEGER, meta_json JSONB, created_at TIMESTAMP WITH TIME ZONE DEFAULT now());",
+        "CREATE INDEX IF NOT EXISTS ix_inventory_units_client ON inventory_units (client_id);",
+        "CREATE TABLE IF NOT EXISTS pricing_rules (id SERIAL PRIMARY KEY, client_id INTEGER REFERENCES clients(id) ON DELETE CASCADE, location VARCHAR, bhk VARCHAR, min_budget INTEGER, max_budget INTEGER, list_price INTEGER, notes TEXT, created_at TIMESTAMP WITH TIME ZONE DEFAULT now());",
+        "CREATE INDEX IF NOT EXISTS ix_pricing_rules_client ON pricing_rules (client_id);"
     ]
 
     for query in migrations:

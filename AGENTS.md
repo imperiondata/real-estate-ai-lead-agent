@@ -11,8 +11,11 @@ High-signal, repo-specific facts an agent would likely miss without help.
 | Start API | `uvicorn main:app --host 0.0.0.0 --port 8000 --reload` (venv active) |
 | Install deps | `pip install -r requirements.lock` (not `requirements.txt`) |
 | Start frontend | `cd frontend && npm run dev` |
-| Docker services | `docker compose up -d` (pg, redis, ngrok, frontend) |
+| Docker services | `docker compose up -d` (pg, redis, neo4j, ngrok, frontend, **n8n**) · n8n only: `docker compose up -d n8n` → http://localhost:5678 |
 | Seed local test clients | `python seed.py` → keys `secret-client-key-123` / `secret-client-key-456` |
+| Seed 1000 dummy leads + Neo4j | `python seed_dummy_leads.py` (`--count`, `--purge-only`, `--no-neo4j`) |
+| Project PG leads → Neo4j | `python project_leads_to_neo4j.py` (`--client-id`, `--source dummy_seed`) |
+| Ops / maintenance runbook | `docs/MAINTENANCE.md` |
 | Provision production client | `python add_client.py` (interactive, generates secure keys) |
 | Stress test (126 cases) | `python task3_runner.py` |
 | Filter stress test | `python task3_runner.py --category HOT` (`--test-id R01`, `--skip-db`, `--base-url`, `--api-key`) |
@@ -29,8 +32,9 @@ High-signal, repo-specific facts an agent would likely miss without help.
 - **Backend:** FastAPI + Gemini 3.1 Flash Lite + Twilio WhatsApp + PostgreSQL + Redis + FAISS RAG
 - **Frontend:** Next.js 16.2.6 with React 19.2.4, Tailwind CSS v4, TypeScript. Route groups: `(public)` and `(dashboard)` with per-group layouts.
 - **Static dashboard:** HTML/JS/CSS served by FastAPI at `/dashboard`
-- **Scheduler (APScheduler):** 4 jobs — follow-up checker (1min), nightly backup (2am), nightly cleanup (3am), escalation checker (1min)
+- **Scheduler (APScheduler):** follow-up checker (1min), nightly backup (2am), nightly cleanup (3am), escalation checker (1min), CRM resync (5min), competitor monitor (01:00), weekly marketing report (Mon 08:00), expire_approvals (15min)
 - **App entrypoint:** `main.py` — FastAPI app, lifespan starts scheduler, webhook handlers, metrics
+- **Event Bus (IREIOS 3.0):** Redis Streams (`EVENT_STREAM_KEY`, default `ireios:events`) with consumer-group delivery; client in `app/clients/event_bus_client.py` (`EventBusClient`). Runtime: `Event → CEO → Agent/Workflow → Automation Engine → Execution Engine → Event`. Wired into lifespan at Task 1.7.
 
 ---
 
@@ -116,7 +120,7 @@ High-signal, repo-specific facts an agent would likely miss without help.
 
 ## CRM Sync (P5)
 
-- `crm_sync.py`: create-time sync fires once (`sync_lead_to_crm`); later field changes are debounced, not per-turn.
+- `crm_sync.py`: **create-time CRM is bus-owned** (`lead.created` → `crm_automation` → AE→EE `update_crm`). Helpers in `crm_sync` remain for `CRMExecutor` + `crm_resync_job` (debounced field re-sync every 5 min). Do not call `sync_lead_to_crm` from chat/webhook paths.
 - **P5.1:** after a meaningful field change on an already-synced lead, `agent.py` sets `Lead.crm_resync_pending = True`; `crm_resync_job` (scheduler, every 5 min) re-pushes and clears the flag. Failed re-sync keeps the flag set for retry.
 - **P5.2:** extended property map (location, intent, property_type, visit_date, assignee, budget_alignment_status, urgency_level, engagement_score, lead_temperature) gated by `CRM_SYNC_EXTENDED_PROPERTIES` (default True). A 4xx for an unknown custom property drops that property and retries once.
 - **P5.3:** `decide_crm_status_after_poll` leaves `crm_sync_status = "pending"` (never "success") when both `phone` and `name` are still empty after the create-time poll, so the next field update re-syncs.
@@ -159,6 +163,116 @@ IS_PRODUCTION=false
 - Gemini embeddings LRU-cached (128 entries) via `@lru_cache` on `get_query_embedding_cached`
 - `google.generativeai` SDK deprecation warning — known, still functional
 - `GEMINI_MODEL` defaults to `gemini-3.1-flash-lite` — can revert to `gemini-2.5-flash` in `.env`
+
+## IREIOS 3.0 Expansion Env Vars (added in Phase 0, consumed in later phases)
+
+- `EVENT_STREAM_KEY` (default `ireios:events`) — Redis Streams key for the Phase 1 event bus.
+- `EVENT_CONSUMER_GROUP` (default `ireios-cg`) — consumer group name for the bus.
+- `FEATURE_WHATSAPP_V3` (**default `true`** — production) — WhatsApp/chat routes use `WhatsAppAgent`; set `false` to roll back to `app.agents.qualification.process_chat` only.
+- `FOLLOWUP_ENGINE` (**default `v3`** — production) — `legacy|v3|shadow`. Prod = `v3` (AE→EE). `legacy` is emergency rollback only.
+- `NEO4J_URI` / `NEO4J_USER` / `NEO4J_PASSWORD` — Neo4j (Phase 7). Empty = graph no-op. Local: `bolt://localhost:7687` / `neo4j`/`localpass`.
+- `N8N_BASE_URL` / `N8N_API_KEY` — n8n optional ops plane (AE `template_type=n8n` shipped). Empty = `n8n_not_configured`. See **`docs/N8N_INTEGRATION.md`**.
+- `COMPETITOR_KEYWORDS` — comma-separated watch-list for the competitor monitor (empty = job no-ops).
+- `GOOGLE_CALENDAR_ID` / `GOOGLE_CALENDAR_CREDENTIALS_JSON` / `GOOGLE_CALENDAR_TIMEZONE` — real Google Calendar for `CalendarExecutor`. Empty = synthetic `visit_id` stub fallback (AE contract unchanged).
+- `BROCHURE_MEDIA_URL` / `FLOORPLAN_MEDIA_URL` — public **HTTPS** media for WhatsApp Approach B. Empty = plain-text brochure/floorplan. Non-HTTPS rejected.
+- HubSpot: `CRM_API_URL` / `CRM_API_KEY` via `crm_sync` `os.getenv` (not Settings). Default demo key = fake UUID in non-prod; skippable until a portal exists.
+
+## Production Go-Live Checklist (config-later flags)
+
+Flip these in `.env` at deploy (see `.env.example` footer): `IS_PRODUCTION=true`, `TEST_MODE=false`, `FOLLOW_UP_TEST_MODE=false`, `FOLLOW_UP_DLQ_TEST=false`, real `TWILIO_*`. Optional: `NEO4J_*`, `N8N_*`, `GOOGLE_CALENDAR_*`, `BROCHURE_*`/`FLOORPLAN_*`, `COMPETITOR_KEYWORDS`, real `CRM_API_*` (HubSpot skippable). Everything degrades gracefully when an integration is left unconfigured.
+
+**Dual-path note:** Expansion 10.2/10.3 module delete is **deferred**. Root `agent.py`, `crm_sync.py`, `follow_up.py` remain shared libraries for v3 wrappers (not a second product path).
+
+**PR #10 bus hooks (n8n):** `app/events/lead_hot.py` dual-publishes catalog `lead.hot` + alias `lead.escalated`; `session.completed` on handoff/full-qualify close; turn events include `chat_context`. `site_visit.scheduled` is published by **EE** after `CalendarExecutor` (executor has no `event_bus.publish` — by design). See `docs/N8N_INTEGRATION.md` § Dual-publish aliases.
+
+## IREIOS 3.0 — Active agents / workflows (full parity)
+
+Registered on the CEO bus in `main.py` lifespan (`register_*(ceo)`), all `status="active"`:
+
+- **`followup_arm`** (`app/workflows/followup_arm.py`) — arms `FollowUpState` on `lead.created`/`conversation.updated`.
+- **`lead_scoring`** (`app/agents/lead_scoring_handler.py`) — rescoring on `conversation.updated`/`lead.created`/`whatsapp.received` → publishes `lead.scored`.
+- **`crm_automation`** (`app/workflows/crm_automation.py`, Task 6.1) — on `lead.*` ensures sticky assignment + AE→EE `update_crm`, publishes `lead.assigned` (idempotent).
+- **`marketing_agent`** (`app/agents/marketing_agent.py`, 8.2, Wave B.4) — on `cron.weekly_report`/`campaign.completed`/`market.alert.generated` builds segmentation report → `marketing.report.generated`. Folds competitor alerts into report under `market_alert` key.
+- **`customer_success_agent`** (`app/agents/customer_success_agent.py`, 8.3, Wave B.3) — on `booking.confirmed`/`payment.*`/`renewal.due`/`document.pending`/`customer.onboarded` sends WhatsApp via AE (or fallback `notify_admin`). Covers former `retention_agent`.
+- **`sales_agent`** (`app/agents/sales_agent.py`, Wave B.1) — on `lead.scored`/`lead.hot`/`conversation.updated` maps NBA→AE actions (notify/schedule/send). 10min Redis debounce. Objection detection lexicon (price/timing/location/trust/competitor); persists to `LeadMemory`.
+- **`kg_event_writer`** (`app/knowledge_graph/event_writers.py`, 7.4) — async Neo4j projections on core events (no-op when Neo4j down).
+- **AE templates** (`app/automation_engine/templates/`, Wave B.5) — `hot_lead_notify.py` / `visit_booking.py` return validated action_request dicts. Support `template_type="n8n"` + `workflow_id` for ops fan-out.
+- **Direct-invoked (not bus):** `WhatsAppAgent` (via `FEATURE_WHATSAPP_V3`), `SalesAgent` (via `POST /api/v1/leads/{id}/sales-ai`).
+- **Cron (scheduler):** `competitor_monitor_job` (`app/workflows/competitor_monitor.py`, 8.4, Wave B.6) nightly 01:00 → `market.alert.generated` on `COMPETITOR_KEYWORDS` matches + writes `NotificationLog` rows for admin visibility.
+- **`negotiation_agent`** (`app/agents/negotiation_agent.py`, Wave C.1) — on `lead.negotiation.started`/`lead.negotiation.counter` checks budget alignment; submits `manager_approval` HITL when misaligned; publishes `negotiation.counter.sent`.
+- **`pricing_agent`** (`app/agents/pricing_agent.py`, Wave C.2) — on `pricing.query`/`lead.scored` queries `PricingRule` by location/budget; submits match via AE.
+- **`inventory_agent`** (`app/agents/inventory_agent.py`, Wave C.3) — on `inventory.query`/`inventory.hold` queries `InventoryUnit` (available status); submits inventory data via AE.
+- **`onboarding_agent`** (`app/agents/onboarding_agent.py`, Wave C.4) — on `customer.onboarded`/`booking.confirmed` sends WhatsApp checklist via AE.
+- **`finance_agent`** (`app/agents/finance_agent.py`, Wave C.5) — on `payment.query`/`finance.schedule` submits payment info via AE.
+- **`legal_agent`** (`app/agents/legal_agent.py`, Wave C.6) — on `document.required`/`legal.review` notifies admin of document needs.
+- **Placeholders (skipped by CEO):** none (all 6 promoted to active in Wave C).
+
+## IREIOS 3.0 — Neo4j Knowledge Graph (Phase 7 + BD-5 reply path)
+
+- `app/knowledge_graph/neo4j_client.py` (`neo4j_client`) — shared driver, `run()`, `health()`, `migrate_schema()` (idempotent constraints/indexes + `:SchemaVersion{version:1}`). `KnowledgeGraph` (`neo4j_kg.py`) delegates to it.
+- Schema migrate runs in lifespan (no-op when unconfigured).
+- **Writes:** `kg_event_writer` on bus (`lead.created`/`qualified`/`scored`/`conversation.updated`/`assigned`/`site_visit.scheduled`). Writer **hydrates props from live Postgres** before upsert so sparse `lead.scored` payloads cannot leave stale `location`/name. WhatsAppAgent best-effort `upsert_lead` **pre-turn** (similarity anchor) and **post-turn** (same-turn field sync after qualify+score).
+- **Reads on reply path (BD-5):** `WhatsAppAgent._graph_extra_context` → `graph_client.get_lead_context` → `format_graph_context_for_llm` → injected into `process_chat(..., extra_context=...)` summary for Gemini. Never blocks hard if Neo4j down.
+- **Routes:** `GET /api/v1/graph/health`, `GET /api/v1/graph/leads/{id}/context` (tenant-scoped), `POST /api/v1/graph/upsert` (admin).
+- `neo4j==5.28.2` in `requirements.lock`; docker service `neo4j` (7474/7687).
+
+## WhatsApp message path (current)
+
+```text
+Twilio → /api/v1/whatsapp → lock/dedupe → process_unified_lead
+  → WhatsAppAgent (graph context + qualify + score + tools)
+  → TwiML reply
+  → _emit_turn_events → Redis Streams → CEO agents (CRM/score/KG/arm)
+Follow-ups: FOLLOWUP_ENGINE=v3 → AE → WhatsAppExecutor
+Outbound (alerts/escalation/background): app/execution_engine/outbound.py → EE
+```
+
+## Docs pointers
+
+- n8n: Compose service + AE path shipped; UI workflows still ops (`docs/N8N_INTEGRATION.md`). Brochure HTTPS URLs optional until set.
+- Frontend remaining work: `docs/FRONTEND_BACKLOG.md` (MockSSE cutover still open)
+- Evidence: `plans/IREIOS_3.0_EVIDENCE_PACK.md` (G2 + G3)
+- **Post-G2 Waves A–D (depth fill, G3 green):** living log `plans/IREIOS_3.0_WAVE_A_D_CHANGELOG.md`; how-to `plans/IREIOS_3.0_WAVE_A_D_EXPANSION.md`; tests `tests/test_e14_wave_a.py`…`test_e17_wave_d.py`. UNIFIED Steps **20–23** + Gate **G3** = `[x]`.
+
+## WhatsApp brochure / floor plan (Approach B — shipped + post-G3 polish)
+
+- Trigger: `detect_tool_intent` on keywords (brochure / floor plan / layout…).
+- **Media:** `resolve_tool_media_url` — HTTPS-only `BROCHURE_MEDIA_URL` / `FLOORPLAN_MEDIA_URL` (non-HTTPS rejected).
+- **Default WA path:** short caption + `take_outbound_media_url()` → TwiML `<Media>` in `main.py` (no reply-text scrape; no AE double-send; e12).
+- **Chat API:** `POST /api/v1/chat` may include `media_url` in JSON when staged.
+- **Sales NBA / AE:** `send_brochure` attaches `media_url` when configured.
+- **Fallback:** empty env → full plain-text generators.
+
+## IREIOS 3.0 — Event Bus / CEO / Execution Engine (Phase 1)
+
+- **Event Bus:** `app/clients/event_bus_client.py` (`EventBusClient`, `event_bus` singleton) — Redis Streams only. `start()` before scheduler, `stop()` after, in `main.py` lifespan. CEO subscribes as a single `"*"` wildcard handler.
+- **CEO:** `app/orchestrator/ceo_orchestrator.py` (`ceo` singleton) routes events to `agent_registry` subscribers; skips `placeholder` agents; publishes `{agent_id}.failed` on handler error.
+- **Execution Engine:** `app/execution_engine/execution_engine.py` (`execution_engine` singleton) + `BaseExecutor`/`NoopExecutor` in `base_executor.py`. `dispatch` returns `{"status":"error","error":"no_executor"}` for unknown actions and writes a `DLQEvent` (via injectable `session_factory`, default `database.SessionLocal`) on any failure. `resolve_client_id` maps `Client_<id>` tenant ids to integer `client_id`.
+- **BaseAgent:** `app/agents/base_agent.py` runs `fetch_context → analyze → decide`; `process_event` forwards any action to `app.automation_engine.engine.submit` (Phase 1 stub → EE; Phase 2 adds approval/retry).
+- `EventBusClient.publish` raises loudly if called before `start()` or if Redis is down.
+
+## IREIOS 3.0 — Early API envelopes + SSE (Phase 1b, FE unblock)
+
+- `GET /api/v1/events/stream` — tenant-scoped SSE bridge from the bus. Auth: `?api_key=` / `X-API-Key` **or** the `jwt` HttpOnly cookie. Filters events to the caller's `Client_<id>`; `: ping` heartbeat every 15s; `503` if bus down.
+- `GET /api/v1/events/leads/{id}/timeline` — envelope-shaped events for a lead (sourced from `event_logs` via the lead's session); `404` if not owned by the caller's client.
+- `POST /api/v1/events/stub` — admin-gated (`X-Admin-Token` == `ADMIN_API_KEY`) publisher of sample events; returns `event_id`.
+- Routes live in `app/api/events.py` (`events_router`), mounted in `main.py`. `EventBusClient` has `subscribe`/`unsubscribe`.
+- **Smoke:**
+  ```powershell
+  curl -N "http://localhost:8000/api/v1/events/stream?api_key=secret-client-key-123"
+  python publish_stub_event.py --event-type lead.created --tenant-id Client_1 --payload "{\"name\":\"demo\"}"
+  ```
+- Contracts: `plans/IREIOS_3.0_API_SSE_CONTRACTS.md`. FE cutover: `docs/FRONTEND_BACKLOG.md`. Wipes / Neo4j ops: `docs/MAINTENANCE.md` §4.1.
+
+## Dev data wipes (soft / hard)
+
+Postgres ≠ Neo4j — clear both when testing graph + chat. Full SQL/Cypher: `docs/MAINTENANCE.md` §4.1 and `README.md` → Resetting Test Data.
+
+| | Postgres | Neo4j |
+|--|----------|--------|
+| **Soft** | TRUNCATE traffic tables; keep `clients`/`agents` | `MATCH (n:Lead) DETACH DELETE n;` |
+| **Hard** | + `agents`,`clients` then `python seed.py` | `MATCH (n) WHERE NOT n:SchemaVersion DETACH DELETE n;` |
+| **WA retest + clean graph** | soft PG + soft Neo4j, then send message | |
 
 ---
 

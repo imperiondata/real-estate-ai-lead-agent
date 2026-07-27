@@ -36,7 +36,7 @@ from sqlalchemy.orm import Session as DBSession
 from app.intelligence.agent_matcher import ensure_lead_assignment, hot_threshold_notification_reason
 from app.intelligence.lead_scoring import calculate_lead_score
 from config import settings
-from crm_sync import sync_lead_to_crm
+
 from models import Session, Message, Lead, EventLog
 from notification_service import trigger_hot_lead_notification, SEVERITY_HANDOFF, SEVERITY_SCORE_ALERT
 from rag import retrieve
@@ -50,9 +50,52 @@ PUNE_AREAS = ["wakad road", "wakad", "hinjewadi", "baner", "kharadi", "kothrud",
 
 
 def is_hinglish(text: str) -> bool:
-    hinglish_keywords = {"kya", "hai", "hain", "mujhe", "mein", "me", "chahiye", "tha", "bas", "nahi", "ha", "haan", "kab", "ka", "ki", "ko", "kar", "karna"}
+    # Strong Hindi/Hinglish tokens only. Bare "me"/"ha"/"ka"/"ki"/"ko" are English
+    # false positives ("let me share…", "ha ha") and must not trip the output guard.
+    hinglish_keywords = {
+        "kya", "hai", "hain", "mujhe", "mein", "chahiye", "tha", "bas", "nahi",
+        "haan", "kab", "karna", "liye", "aapka", "apna", "humare", "ke",
+    }
     words = set(text.lower().replace("?", "").replace(".", "").replace(",", "").split())
     return bool(words.intersection(hinglish_keywords))
+
+
+def build_english_fallback_reply(lead) -> str:
+    """P2.6 safe English reply that only asks for fields still missing on the lead."""
+    _loc = (getattr(lead, "location", None) if lead else None) or "Pune"
+    _pt = (getattr(lead, "property_type", None) if lead else None) or "property"
+    name = (getattr(lead, "name", None) or "").strip() if lead else ""
+    budget = getattr(lead, "budget", None) if lead else None
+    has_budget = budget is not None and str(budget).strip() not in ("", "0", "None")
+    has_location = bool(getattr(lead, "location", None) if lead else None)
+    has_property_type = bool(getattr(lead, "property_type", None) if lead else None)
+
+    asks = []
+    if not has_budget:
+        asks.append("your approximate budget")
+    if not name:
+        asks.append("your name")
+    if not has_location:
+        asks.append("which area you're interested in")
+    if not has_property_type:
+        asks.append("property type (e.g. 2BHK)")
+
+    name_bit = f", {name}" if name else ""
+    if asks:
+        if len(asks) == 1:
+            ask_str = asks[0]
+        elif len(asks) == 2:
+            ask_str = f"{asks[0]} and {asks[1]}"
+        else:
+            ask_str = ", ".join(asks[:-1]) + f", and {asks[-1]}"
+        return (
+            f"Got it{name_bit} — {_pt} options in {_loc} are available. "
+            f"Could you share {ask_str}?"
+        )
+    return (
+        f"Got it{name_bit} — {_pt} options in {_loc} are available. "
+        f"Would you like shortlisted options or to book a site visit?"
+    )
 
 
 def detect_user_language(text: str) -> str:
@@ -552,7 +595,7 @@ INTENT-BASED BEHAVIOR:
 
 # 3. Stateful Memory Function
 async def process_chat(session_id: str, user_message: str, db: DBSession, client_id: int = 1,
-                       is_background: bool = False) -> str:
+                       is_background: bool = False, extra_context: str | None = None) -> str:
     """
     Main orchestrator for user input. Fetches memory, injects context to the LLM,
     extracts function calls for lead generation, and commits all data to DB.
@@ -568,7 +611,8 @@ async def process_chat(session_id: str, user_message: str, db: DBSession, client
 
     lead = db.query(Lead).filter(Lead.session_id == session_id).first()
     if not lead:
-        lead = Lead(session_id=session_id, client_id=client_id)
+        # Interactive chat/WA defaults to opted-in; explicit STOP sets False (P0.5).
+        lead = Lead(session_id=session_id, client_id=client_id, whatsapp_opt_in=True)
         db.add(lead)
         db.commit()
 
@@ -583,10 +627,8 @@ async def process_chat(session_id: str, user_message: str, db: DBSession, client
         task1 = asyncio.create_task(log_event_async(session_id, "lead_created", latency_ms=latency, client_id=client_id))
         task1.add_done_callback(handle_task_result)
 
-        # --- FIX: Trigger HubSpot CRM sync for organically created chats ---
-        # sync_lead_to_crm already returns a Task in an async context; do not re-wrap.
-        task2 = sync_lead_to_crm(lead.id)
-        task2.add_done_callback(handle_task_result)
+        # CRM create is bus-owned (lead.created → crm_automation → AE→EE).
+        # Do not dual-call sync_lead_to_crm here (BD-1).
 
     # --- FIX: Extract raw phone number from the tenant-prefixed Session ID ---
     if not lead.phone:
@@ -832,6 +874,56 @@ async def process_chat(session_id: str, user_message: str, db: DBSession, client
         asyncio.create_task(
             trigger_hot_lead_notification(lead.id, "Explicit human agent requested.", severity=SEVERITY_HANDOFF)
         )
+        # PR #10: bus lead.hot + alias lead.escalated; session.completed on close
+        try:
+            from types import SimpleNamespace
+
+            from app.events.lead_hot import publish_lead_hot, publish_session_completed
+            from app.memory.conversation_memory import conversation_memory
+
+            _chat_ctx = ""
+            try:
+                _chat_ctx = conversation_memory.summarize_recent(
+                    db, session_id=session_id, turns=10
+                ) or ""
+            except Exception:
+                pass
+            _snap = SimpleNamespace(
+                id=lead.id,
+                session_id=session_id,
+                name=lead.name,
+                phone=lead.phone,
+                location=lead.location,
+                budget=lead.budget,
+                property_type=lead.property_type,
+                intent=lead.intent,
+                lead_temperature=lead.lead_temperature,
+                conversion_probability=lead.conversion_probability,
+                assigned_agent=lead.assigned_agent,
+            )
+            asyncio.create_task(
+                publish_lead_hot(
+                    client_id=client_id,
+                    lead=_snap,
+                    trigger="human_handoff",
+                    reason="Explicit human agent requested.",
+                    session_id=session_id,
+                    chat_context=_chat_ctx,
+                    source="agent",
+                )
+            )
+            asyncio.create_task(
+                publish_session_completed(
+                    client_id=client_id,
+                    lead=_snap,
+                    session_id=session_id,
+                    close_reason="human_handoff",
+                    chat_context=_chat_ctx,
+                    source="agent",
+                )
+            )
+        except Exception as _bus_exc:  # noqa: BLE001
+            logger.debug("handoff bus publish skipped: %s", _bus_exc)
 
         handoff_reply = "I completely understand. I have paused my automated responses and alerted our human team. An expert will review our chat and reach out to you shortly!"
         db.add(Message(session_id=session_id, client_id=client_id, role="assistant", content=handoff_reply))
@@ -909,6 +1001,11 @@ async def process_chat(session_id: str, user_message: str, db: DBSession, client
         if summary_parts:
             summary_text = "Known about this user: " + ", ".join(summary_parts) + ".\n"
 
+        # BD-5: Neo4j / graph micro-market context (injected by WhatsAppAgent).
+        if extra_context:
+            summary_text += f"Knowledge graph signal: {extra_context}\n"
+
+        if summary_parts:
             # THE FIX: If they want to visit but are missing details, force Gemini to naturally ask for them.
             # Check if they are discussing a visit in this turn
             wants_visit = lead.visit_date or (lead.intent and "visit" in lead.intent.lower()) or any(
@@ -1383,6 +1480,7 @@ async def process_chat(session_id: str, user_message: str, db: DBSession, client
     # =================================================================
     # UNIVERSAL QUALIFICATION OVERRIDE (Fires closing template safely)
     # =================================================================
+    _just_closed_qualified = False
     if is_fully_qualified_now and session.status != "closed":
         loc = lead.location
         vdate = lead.visit_date
@@ -1393,6 +1491,7 @@ async def process_chat(session_id: str, user_message: str, db: DBSession, client
             final_text = f"Fantastic! Everything is set for your visit to {loc} on {vdate}. Our team will be in touch to confirm. Looking forward to seeing you! 🏡"
 
         session.status = "closed"
+        _just_closed_qualified = True
         if f_state:
             f_state.follow_up_status = "completed"
             f_state.next_follow_up_at = None
@@ -1400,6 +1499,46 @@ async def process_chat(session_id: str, user_message: str, db: DBSession, client
         logger.info(f"🏆 LEAD FULLY QUALIFIED: {lead.phone} | Session {session_id}")
 
     db.commit()
+
+    if _just_closed_qualified:
+        try:
+            from types import SimpleNamespace
+
+            from app.events.lead_hot import publish_session_completed
+            from app.memory.conversation_memory import conversation_memory
+
+            _q_ctx = ""
+            try:
+                _q_ctx = conversation_memory.summarize_recent(
+                    db, session_id=session_id, turns=10
+                ) or ""
+            except Exception:
+                pass
+            _q_snap = SimpleNamespace(
+                id=lead.id,
+                session_id=session_id,
+                name=lead.name,
+                phone=lead.phone,
+                location=lead.location,
+                budget=lead.budget,
+                property_type=lead.property_type,
+                intent=lead.intent,
+                lead_temperature=lead.lead_temperature,
+                conversion_probability=lead.conversion_probability,
+                assigned_agent=lead.assigned_agent,
+            )
+            asyncio.create_task(
+                publish_session_completed(
+                    client_id=client_id,
+                    lead=_q_snap,
+                    session_id=session_id,
+                    close_reason="fully_qualified",
+                    chat_context=_q_ctx,
+                    source="agent",
+                )
+            )
+        except Exception as _sc_exc:  # noqa: BLE001
+            logger.debug("session.completed publish skipped: %s", _sc_exc)
 
     # P5.1: if this lead was already synced to the CRM at create time, flag a
     # debounced re-sync so post-qualification fields (budget/location/visit_date/
@@ -1412,14 +1551,10 @@ async def process_chat(session_id: str, user_message: str, db: DBSession, client
 
     # P2.6: Language output guard — English user must not receive Hinglish reply.
     # Catches mismatches from ALL paths (tool conversational_reply, response.text, fallback).
+    # Fallback is field-aware so we never re-ask name/budget/etc. already on the lead.
     if detect_user_language(user_message) == "english" and is_hinglish(final_text):
         logger.warning(f"LANGUAGE_MISMATCH | session={session_id} | user=en | reply=hinglish")
-        _loc = lead.location or "Pune"
-        _pt = lead.property_type or "property"
-        final_text = (
-            f"Got it — {_pt} options in {_loc} are available. "
-            f"What's your approximate budget, and may I know your name?"
-        )
+        final_text = build_english_fallback_reply(lead)
 
     # Save Gemini's textual response to the Message table (skip if already saved inside tool call block)
     if not locals().get('message_saved', False):

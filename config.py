@@ -81,6 +81,32 @@ class Settings(BaseSettings):
     AWS_REGION: str = ""
     AWS_SECRET_NAME: str = ""
 
+    # --- IREIOS 3.0 expansion env vars (wired in later phases) ---
+    # Redis Streams event bus (Phase 1)
+    EVENT_STREAM_KEY: str = "ireios:events"
+    EVENT_CONSUMER_GROUP: str = "ireios-cg"
+    # WhatsApp Agent v3 feature flag (Phase 5) — v3 is the production default;
+    # set false to fall back to the legacy process_chat path (rollback).
+    FEATURE_WHATSAPP_V3: bool = True
+    # Follow-up engine selector (Phase 4): legacy | v3 | shadow (v3 is prod default)
+    FOLLOWUP_ENGINE: str = "v3"
+    # Neo4j knowledge graph (Phase 7) — empty = graceful no-op until provisioned
+    NEO4J_URI: str = ""
+    NEO4J_USER: str = ""
+    NEO4J_PASSWORD: str = ""
+    # n8n automation (Phase 2) — empty = n8n_not_configured (safe)
+    N8N_BASE_URL: str = ""
+    N8N_API_KEY: str = ""
+    # Phase 8 competitor monitor watch-list (comma-separated, no network call)
+    COMPETITOR_KEYWORDS: str = ""
+    # Wave D.4: WhatsApp brochure/floor plan media URL (public HTTPS). Empty = text fallback.
+    BROCHURE_MEDIA_URL: str = ""
+    FLOORPLAN_MEDIA_URL: str = ""
+    # Google Calendar (real CalendarExecutor) — empty = stub visit_id fallback
+    GOOGLE_CALENDAR_ID: str = ""
+    GOOGLE_CALENDAR_CREDENTIALS_JSON: str = ""
+    GOOGLE_CALENDAR_TIMEZONE: str = "Asia/Kolkata"
+
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8")
 
     @property

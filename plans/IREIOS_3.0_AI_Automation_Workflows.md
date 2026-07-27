@@ -290,11 +290,20 @@ Not a conversational agent; registered handler under CEO/bus.
 
 ---
 
-## 10. Placeholder agents (Layer 2 remainder)
+## 10. Former placeholders → active agents (Wave C)
 
-Registered in CEO with `status=placeholder`. No business logic until planned.
+`PLACEHOLDER_AGENTS` is **empty**. The six Layer-2 names are **active** bus agents (see `AGENTS.md`):
 
-Examples of future plugs: Pricing AI, Negotiation AI (L7), Inventory AI, Legal/Docs AI, etc. Each only needs: subscription list, `BaseAgent` implementation, registry entry.
+| Agent | Typical inputs | Notes |
+|-------|----------------|--------|
+| `negotiation_agent` | `lead.negotiation.*` | HITL when budget misaligned |
+| `pricing_agent` | `pricing.query`, `lead.scored` | `PricingRule` lookup |
+| `inventory_agent` | `inventory.query` / hold | `InventoryUnit` available |
+| `onboarding_agent` | `booking.confirmed`, `customer.onboarded` | Welcome WA checklist |
+| `finance_agent` | `payment.query`, `finance.schedule` | Payment info via AE |
+| `legal_agent` | `document.required`, `legal.review` | Doc needs → notify |
+
+Former `retention_agent` duties are covered by `customer_success_agent`.
 
 ---
 

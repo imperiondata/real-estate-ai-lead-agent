@@ -24,7 +24,7 @@ def seed_test_clients():
                 api_key="secret-client-key-123"
             )
             db.add(client_1)
-            print(f"✅ Created Client 1: {client_1_email}")
+            print(f"[OK] Created Client 1: {client_1_email}")
         else:
             print(f"[*] Client 1 already exists: {client_1_email}")
 
@@ -46,7 +46,7 @@ def seed_test_clients():
                 lead_type="buyer"
             )
             db.add(manager_1)
-            print(f"✅ Created Default Manager for Client 1")
+            print("[OK] Created Default Manager for Client 1")
 
         # --- SEED HIGH-INTENT LOCAL AGENT FOR CLIENT 1 (For testing direct routing) ---
         agent_1 = db.query(models.Agent).filter_by(client_id=client_1.id, name="Sneha Patil").first()
@@ -63,7 +63,7 @@ def seed_test_clients():
                 lead_type="buyer"
             )
             db.add(agent_1)
-            print(f"✅ Created Agent 1 (Sneha Patil) for Client 1")
+            print("[OK] Created Agent 1 (Sneha Patil) for Client 1")
 
         # --- CLIENT 2: Secondary Test Account (For Isolation Drills) ---
         client_2_email = "client2@revenueos.com"
@@ -76,13 +76,13 @@ def seed_test_clients():
                 api_key="secret-client-key-456"
             )
             db.add(client_2)
-            print(f"✅ Created Client 2: {client_2_email}")
+            print(f"[OK] Created Client 2: {client_2_email}")
         else:
             print(f"[*] Client 2 already exists: {client_2_email}")
 
         db.flush()  # <--- Forces DB to generate client_2.id
 
-        # --- SEED DEFAULT MANAGER FOR CLIENT 1 ---
+        # --- SEED DEFAULT MANAGER FOR CLIENT 2 ---
         manager_2 = db.query(models.Agent).filter_by(client_id=client_2.id, is_manager=True).first()
         if not manager_2:
             manager_2 = models.Agent(
@@ -98,9 +98,9 @@ def seed_test_clients():
                 lead_type="buyer"
             )
             db.add(manager_2)
-            print(f"✅ Created Default Manager for Client 2")
+            print("[OK] Created Default Manager for Client 2")
 
-        # --- SEED HIGH-INTENT LOCAL AGENT FOR CLIENT 1 (For testing direct routing) ---
+        # --- SEED HIGH-INTENT LOCAL AGENT FOR CLIENT 2 ---
         agent_2 = db.query(models.Agent).filter_by(client_id=client_2.id, name="Sneha Patil").first()
         if not agent_2:
             agent_2 = models.Agent(
@@ -115,7 +115,7 @@ def seed_test_clients():
                 lead_type="buyer"
             )
             db.add(agent_2)
-            print(f"✅ Created Agent 2 (Sneha Patil) for Client 2")
+            print("[OK] Created Agent 2 (Sneha Patil) for Client 2")
 
         db.commit()
 
@@ -134,7 +134,7 @@ def seed_test_clients():
         print("=" * 50)
 
     except Exception as e:
-        print(f"❌ Error during seeding: {e}")
+        print(f"[ERROR] Error during seeding: {e}")
         db.rollback()
     finally:
         db.close()

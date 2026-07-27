@@ -4,8 +4,6 @@ import smtplib
 from email.message import EmailMessage
 from datetime import datetime, timezone, timedelta
 
-from twilio.rest import Client
-
 from config import settings
 from database import SessionLocal
 from models import Lead, NotificationLog, Agent
@@ -197,11 +195,15 @@ def _resolve_alert_recipient(db, lead):
 
 
 async def _send_alert_whatsapp(message_body: str, recipient: dict, lead: Lead, reason: str):
-    """Dispatch a WhatsApp alert with 3 retries and an email fallback.
+    """Dispatch a WhatsApp alert via EE (WhatsAppExecutor) with retries + email fallback.
 
     Returns (delivery_status, twilio_sid): "pending_ack" on success (including
     TEST_MODE / no-Twilio simulation) or "failed" when every attempt fails.
     """
+    import asyncio
+
+    from app.execution_engine.whatsapp_executor import WhatsAppExecutor
+
     agent_phone = recipient["phone"]
     agent_name = recipient["name"]
     agent_email = recipient["email"]
@@ -213,30 +215,32 @@ async def _send_alert_whatsapp(message_body: str, recipient: dict, lead: Lead, r
     if settings.TEST_MODE:
         logger.info(f"[TEST MODE] Simulated WhatsApp Alert to {agent_name} ({agent_phone})")
         twilio_success = True
-    elif settings.TWILIO_ACCOUNT_SID:
-        client = Client(settings.TWILIO_ACCOUNT_SID, settings.TWILIO_AUTH_TOKEN)
-        to_number = f"whatsapp:{agent_phone}" if not agent_phone.startswith("whatsapp:") else agent_phone
-
+    elif settings.TWILIO_ACCOUNT_SID and agent_phone:
         base_url = settings.WEBHOOK_BASE_URL
         status_callback_url = f"{base_url}/api/v1/webhook/twilio-status" if base_url else None
+        executor = WhatsAppExecutor()
+        params = {
+            "to": agent_phone,
+            "body": message_body,
+            "source": "hot_lead_alert",
+        }
+        if status_callback_url:
+            params["status_callback"] = status_callback_url
 
         for attempt in range(3):
             try:
-                message = client.messages.create(
-                    from_=settings.TWILIO_PHONE_NUMBER,
-                    body=message_body,
-                    to=to_number,
-                    status_callback=status_callback_url
-                )
-                twilio_sid = message.sid
-                delivery_status = "pending_ack"
-                twilio_success = True
-                logger.info(
-                    f"WhatsApp Alert dispatched to {agent_name} | SID: {twilio_sid} | Attempt: {attempt + 1}")
-                break
+                result = await executor.execute({"parameters": params})
+                if result.get("status") == "success":
+                    twilio_sid = result.get("sid")
+                    delivery_status = "pending_ack"
+                    twilio_success = True
+                    logger.info(
+                        f"WhatsApp Alert dispatched to {agent_name} | SID: {twilio_sid} | Attempt: {attempt + 1}"
+                    )
+                    break
+                raise RuntimeError(result.get("error") or "ee_send_failed")
             except Exception as e:
                 logger.warning(f"WhatsApp Alert attempt {attempt + 1} failed: {e}")
-                import asyncio
                 await asyncio.sleep(1)
 
         if not twilio_success:

@@ -27,17 +27,137 @@ from sqlalchemy import func
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session as DBSession
 from twilio.request_validator import RequestValidator
-from twilio.rest import Client
 from twilio.twiml.messaging_response import MessagingResponse
 
 import auth
 import models
-from agent import process_chat
+from app.agents.qualification import process_chat
+from app.agents.whatsapp_agent import whatsapp_agent_v3
+from app.knowledge_graph.neo4j_kg import knowledge_graph
+from app.memory.conversation_memory import conversation_memory
 from config import settings, tenant_id_ctx, request_id_ctx
-from crm_sync import sync_lead_to_crm, crm_resync_job
+
+
+def _select_chat_fn():
+    """Phase 5 (5.1): FEATURE_WHATSAPP_V3 selects the v3 orchestrator.
+
+    Returns the async chat function to use for /chat and /whatsapp routes.
+    Legacy (default) keeps the original `agent.process_chat` pipeline.
+    """
+    if getattr(settings, "FEATURE_WHATSAPP_V3", False):
+        return whatsapp_agent_v3.process_chat
+    return process_chat
+
+
+async def _publish_bus_event(
+    event_type: str,
+    client_id: int,
+    entity_id: str,
+    payload: Optional[dict] = None,
+    source: str = "main",
+) -> Optional[str]:
+    """Best-effort Redis Streams publish. Never raises; never blocks product path hard."""
+    try:
+        from app.clients.event_bus_client import event_bus
+
+        if not getattr(event_bus, "_running", False):
+            return None
+        return await event_bus.publish(
+            event_type,
+            f"Client_{client_id}",
+            str(entity_id),
+            payload or {},
+            source=source,
+        )
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("BUS_PUBLISH_FAIL | type=%s entity=%s err=%s", event_type, entity_id, exc)
+        return None
+
+
+def _is_lead_qualified(lead) -> bool:
+    """6-field gate used before visit confirmation (same rule as agent qualification)."""
+    if lead is None:
+        return False
+    return bool(
+        lead.visit_date
+        and lead.phone
+        and lead.name
+        and lead.location
+        and lead.budget
+        and lead.property_type
+    )
+
+
+async def _emit_turn_events(
+    *,
+    client_id: int,
+    scoped_session_id: str,
+    lead,
+    source_channel: str,
+    is_new_lead: bool,
+    message: str = "",
+    db: Optional[DBSession] = None,
+) -> None:
+    """Publish lifecycle events so CEO bus agents (scoring/CRM/KG/arm) run on real traffic.
+
+    PR #10: when ``db`` is set, attaches ``chat_context`` for n8n / scoring.
+    """
+    if lead is None or not getattr(lead, "id", None):
+        return
+    lead_id = lead.id
+    chat_context = ""
+    if db is not None:
+        try:
+            chat_context = (
+                conversation_memory.summarize_recent(
+                    db, session_id=scoped_session_id, turns=10
+                )
+                or ""
+            )[:4000]
+        except Exception as exc:  # noqa: BLE001
+            logger.debug("chat_context summarize skipped: %s", exc)
+    base = {
+        "lead_id": lead_id,
+        "session_id": scoped_session_id,
+        "source": source_channel,
+        "name": lead.name,
+        "phone": lead.phone,
+        "location": lead.location,
+        "budget": lead.budget,
+        "property_type": lead.property_type,
+        "intent": lead.intent,
+        "lead_temperature": getattr(lead, "lead_temperature", None),
+        "conversion_probability": getattr(lead, "conversion_probability", None),
+        "chat_context": chat_context,
+    }
+    channel_event = "whatsapp.received" if source_channel == "whatsapp" else (
+        "chat.received" if source_channel in ("chat", "web", "api") else f"{source_channel}.received"
+    )
+    await _publish_bus_event(channel_event, client_id, str(lead_id), {**base, "message": (message or "")[:500]})
+    if is_new_lead:
+        await _publish_bus_event("lead.created", client_id, str(lead_id), base)
+    await _publish_bus_event("conversation.updated", client_id, str(lead_id), base)
+    if _is_lead_qualified(lead):
+        await _publish_bus_event("lead.qualified", client_id, str(lead_id), base)
+
+
+async def _send_whatsapp_via_ee(client_id: int, to: str, body: str, entity_id: str, source: str = "main") -> dict:
+    """Outbound WhatsApp through AutomationEngine → WhatsAppExecutor (DLQ-protected)."""
+    from app.execution_engine.outbound import send_whatsapp_async
+
+    return await send_whatsapp_async(
+        to=to,
+        body=body,
+        tenant_id=f"Client_{client_id}",
+        entity_id=entity_id,
+        source=source,
+    )
+
+from crm_sync import crm_resync_job
 from database import engine, Base, get_db, SessionLocal
 from follow_up import check_and_send_followups
 from metrics import BACKGROUND_FAILURE_COUNT, INTEGRATION_FAILURES
+from app.api.events import router as events_router
 
 # Create a global set to protect background tasks from garbage collection
 running_bg_tasks = set()
@@ -121,10 +241,10 @@ def escalation_cron_job():
     from models import NotificationLog, Agent
     from database import SessionLocal
     from datetime import datetime, timezone, timedelta
-    from twilio.rest import Client
     from config import settings, tenant_id_ctx
     from notification_service import resolve_escalation_recipient
     import logging
+    from app.execution_engine.outbound import send_whatsapp_blocking
 
     logger = logging.getLogger("escalation_engine")
     with SessionLocal() as db:
@@ -142,16 +262,15 @@ def escalation_cron_job():
                 logger.warning(f"⚠️ 10M ESCALATION TRIGGERED: Lead {log.lead_id} ignored by {log.assigned_agent}.")
 
                 manager = db.query(Agent).filter(Agent.client_id == log.client_id, Agent.is_manager == True).first()
-                if manager and settings.TWILIO_ACCOUNT_SID:
+                if manager and manager.phone:
                     try:
-                        client = Client(settings.TWILIO_ACCOUNT_SID, settings.TWILIO_AUTH_TOKEN)
                         msg = f"🚨 *10-Min Escalation:* Lead #{log.lead_id} was ignored by {log.assigned_agent}. Please review immediately."
-                        to_phone = f"whatsapp:{manager.phone}" if not manager.phone.startswith(
-                            "whatsapp:") else manager.phone
-                        client.messages.create(
-                            from_=settings.TWILIO_PHONE_NUMBER,
+                        send_whatsapp_blocking(
+                            to=manager.phone,
                             body=msg,
-                            to=to_phone
+                            tenant_id=f"Client_{log.client_id}",
+                            entity_id=f"lead:{log.lead_id}",
+                            source="escalation_10m",
                         )
                     except Exception as e:
                         logger.error(f"10m escalation Twilio failed: {e}")
@@ -171,16 +290,15 @@ def escalation_cron_job():
                     f"🚨 30M CRITICAL ESCALATION TRIGGERED: Lead {log.lead_id} still unacknowledged! Alerting Director.")
 
                 director = resolve_escalation_recipient(db, log.client_id, "30m")
-                if director and settings.TWILIO_ACCOUNT_SID:
+                if director and director.phone:
                     try:
-                        client = Client(settings.TWILIO_ACCOUNT_SID, settings.TWILIO_AUTH_TOKEN)
                         msg = f"🚨 *URGENT ESCALATION (30 Min)*\nLead #{log.lead_id} requires immediate Director intervention."
-                        to_phone = f"whatsapp:{director.phone}" if not director.phone.startswith(
-                            "whatsapp:") else director.phone
-                        client.messages.create(
-                            from_=settings.TWILIO_PHONE_NUMBER,
+                        send_whatsapp_blocking(
+                            to=director.phone,
                             body=msg,
-                            to=to_phone
+                            tenant_id=f"Client_{log.client_id}",
+                            entity_id=f"lead:{log.lead_id}",
+                            source="escalation_30m",
                         )
                     except Exception as e:
                         logger.error(f"30m escalation Twilio failed: {e}")
@@ -206,20 +324,128 @@ def escalation_cron_job():
             logger.error(f"Escalation job failed: {e}")
 
 scheduler = BackgroundScheduler()
-scheduler.add_job(check_and_send_followups, "interval", minutes=1, id="follow_up_checker")
+
+
+def dispatch_followups() -> None:
+    """Phase 4.2 — follow-up engine selector (legacy | v3 | shadow).
+
+    - legacy: original ``follow_up.check_and_send_followups`` (default).
+    - v3:     ``app.workflows.followup_scheduler`` (AE->EE pipeline).
+    - shadow: v3 in dry-run (logs + persists audit message, does NOT send).
+    """
+    engine = settings.FOLLOWUP_ENGINE
+    if engine == "v3":
+        from app.workflows.followup_scheduler import check_and_send_followups_v3
+
+        check_and_send_followups_v3()
+    elif engine == "shadow":
+        from app.workflows.followup_scheduler import check_and_send_followups_v3
+
+        # Shadow dry-run: build the payloads but skip the actual AE send.
+        with _ShadowsFollowups():
+            check_and_send_followups_v3()
+    else:
+        check_and_send_followups()
+
+
+class _ShadowsFollowups:
+    """Context manager that forces TEST_MODE so v3 logs instead of sending."""
+
+    def __enter__(self):
+        self._prev = settings.TEST_MODE
+        settings.TEST_MODE = True
+        return self
+
+    def __exit__(self, *a):
+        settings.TEST_MODE = self._prev
+        return False
+
+
+scheduler.add_job(dispatch_followups, "interval", minutes=1, id="follow_up_checker")
 scheduler.add_job(backup_postgres, "cron", hour=2, minute=0, id="nightly_backup")
 scheduler.add_job(daily_cleanup_job, "cron", hour=3, minute=0, id="nightly_cleanup")
 scheduler.add_job(escalation_cron_job, "interval", minutes=1, id="escalation_checker")
 scheduler.add_job(crm_resync_job, "interval", minutes=5, id="crm_resync")
+# Phase 8.4: competitor keyword monitor (nightly; no-op when COMPETITOR_KEYWORDS empty).
+from app.workflows.competitor_monitor import competitor_monitor_job
+scheduler.add_job(competitor_monitor_job, "cron", hour=1, minute=0, id="competitor_monitor")
+
+# Wave A.1: weekly marketing cron (publishes cron.weekly_report per client).
+from app.workflows.weekly_marketing_cron import weekly_marketing_cron_job
+scheduler.add_job(weekly_marketing_cron_job, "cron", day_of_week="mon", hour=8, minute=0, id="weekly_marketing_report")
+
+# Wave A.4: expire stale approvals every 15 minutes.
+from app.automation_engine.engine import expire_stale_approvals
+scheduler.add_job(expire_stale_approvals, "interval", minutes=15, id="expire_approvals", args=[24])
 
 @asynccontextmanager
 async def lifespan(app):
-    """Start the follow-up scheduler when the server boots, stop it on shutdown."""
+    """Start the follow-up scheduler and the IREIOS 3.0 event bus when the server boots, stop them on shutdown.
+
+    Order: event bus starts before the scheduler (so bus-backed jobs can
+    publish); on shutdown the scheduler stops first, then the bus.
+    """
+    from app.clients.event_bus_client import event_bus
+    from app.execution_engine.registry import register_executors
+    from app.orchestrator.ceo_orchestrator import ceo
+
+    await event_bus.start()
+    register_executors()  # wire real executors (Phase 3) into the EE singleton
+    ceo.bootstrap()  # subscribes CEO as the single wildcard bus handler (no agents yet ok)
+    # Phase 4.3: arm FollowUpState when a lead is created/updated on the bus.
+    from app.workflows.followup_arm import on_lead_created
+
+    ceo.register_agent("followup_arm", on_lead_created, ["lead.created", "conversation.updated"], status="active")
+
+    # --- Full-parity active agents/workflows (Workstream B/C) ---
+    from app.agents.lead_scoring_handler import register_lead_scoring
+    from app.workflows.crm_automation import register_crm_automation
+    from app.agents.marketing_agent import register_marketing_agent
+    from app.agents.customer_success_agent import register_customer_success
+    from app.knowledge_graph.event_writers import register_graph_writers
+
+    register_lead_scoring(ceo)      # conversation.updated -> lead.scored
+    register_crm_automation(ceo)    # lead.* -> assign + CRM sync -> lead.assigned
+    register_marketing_agent(ceo)   # cron.weekly_report -> marketing.report.generated
+    register_customer_success(ceo)  # booking/payment/renewal -> reminders
+    register_graph_writers(ceo)     # core events -> Neo4j async writers
+
+    # Wave B.1: Sales AI on the CEO bus — reacts to scored/hot leads.
+    from app.agents.sales_agent import register_sales_agent
+    register_sales_agent(ceo)
+
+    # Wave C: Promote 6 placeholders to real agents.
+    from app.agents.negotiation_agent import register_negotiation
+    from app.agents.pricing_agent import register_pricing
+    from app.agents.inventory_agent import register_inventory
+    from app.agents.onboarding_agent import register_onboarding
+    from app.agents.finance_agent import register_finance
+    from app.agents.legal_agent import register_legal
+    register_negotiation(ceo)
+    register_pricing(ceo)
+    register_inventory(ceo)
+    register_onboarding(ceo)
+    register_finance(ceo)
+    register_legal(ceo)
+
+    # Phase 7.2: apply Neo4j schema (idempotent no-op when Neo4j unconfigured).
+    from app.knowledge_graph.neo4j_client import neo4j_client
+    try:
+        neo4j_client.migrate_schema()
+    except Exception as e:  # noqa: BLE001 - never block boot
+        logger.warning("Neo4j schema migrate skipped: %s", e)
+
+    # Phase 10.1: register Layer-2 placeholder agents (visible, skipped by CEO).
+    from app.agents.placeholders import register_placeholders
+    register_placeholders(ceo)
     scheduler.start()
     logger.info("Background scheduler started (follow-ups, backups, cleanup)")
-    yield
-    scheduler.shutdown()
-    logger.info("Background scheduler stopped")
+    try:
+        yield
+    finally:
+        scheduler.shutdown()
+        logger.info("Background scheduler stopped")
+        await event_bus.stop()
 
 app = FastAPI(
     title="Real Estate AI Lead Agent",
@@ -227,6 +453,20 @@ app = FastAPI(
     version="1.0.0",
     lifespan=lifespan
 )
+
+app.include_router(events_router)
+
+# Wave A.2: Lifecycle event producers (admin-gated).
+from app.api.lifecycle import router as lifecycle_router
+app.include_router(lifecycle_router)
+
+# Phase 7.3: Graph API routes (tenant-scoped; graceful no-op when Neo4j down).
+from app.knowledge_graph.graph_api import router as graph_router
+app.include_router(graph_router)
+
+# Wave D.1: Prediction / forecast routes (JWT, client-scoped, heuristic MVP).
+from app.api.predictions import router as predictions_router
+app.include_router(predictions_router)
 
 # TLS Enforcement (Redirect HTTP to HTTPS)
 if settings.IS_PRODUCTION or os.getenv("RENDER"):
@@ -346,20 +586,42 @@ async def chat_endpoint(session_id: str, message: str, current_client: models.Cl
     prefix = f"{client_id}_"
     scoped_session_id = session_id if session_id.startswith(prefix) else f"{prefix}{session_id}"
     try:
-        reply = await process_chat(scoped_session_id, message, db, client_id=client_id)
-        return {
+        lead_before = db.query(models.Lead).filter(models.Lead.session_id == scoped_session_id).first()
+        is_new_lead = lead_before is None
+        reply = await _select_chat_fn()(scoped_session_id, message, db, client_id=client_id)
+        lead = db.query(models.Lead).filter(models.Lead.session_id == scoped_session_id).first()
+        await _emit_turn_events(
+            client_id=client_id,
+            scoped_session_id=scoped_session_id,
+            lead=lead,
+            source_channel="chat",
+            is_new_lead=is_new_lead,
+            message=message,
+            db=db,
+        )
+        media_url = None
+        try:
+            from app.agents.whatsapp_agent import take_outbound_media_url
+
+            media_url = take_outbound_media_url()
+        except Exception:
+            pass
+        out = {
             "status": "success",
             "session_id": session_id,
             "client_id": client_id,
-            "reply": reply
+            "reply": reply,
         }
+        if media_url:
+            out["media_url"] = media_url
+        return out
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
 async def background_process_and_push(session_id: str, Body: str, client_id: int):
     """
-    Executes if the LLM exceeds 15s timeout. Uses Twilio REST API to push the reply out-of-band.
-    If the LLM still fails in the background, sends a graceful fallback so the user is never left with no response.
+    Executes if the LLM exceeds 15s timeout. Pushes the reply out-of-band via AE→EE
+    (WhatsAppExecutor), not a direct Twilio call.
 
     P3.1/P3.2: Re-acquires session lock before processing to prevent concurrent double-processing.
     P3.3: Passes background=True so agent.py can skip duplicate user message inserts.
@@ -368,6 +630,10 @@ async def background_process_and_push(session_id: str, Body: str, client_id: int
     # Use a longer timeout (45s) since background processing may take longer than the 15s webhook window.
     lock = redis_client.lock(f"session_lock:{session_id}", timeout=45.0, blocking_timeout=10.0)
     lock_acquired = False
+    fallback_body = (
+        "I'm experiencing a brief connectivity issue. Please try again in a moment, "
+        "or reach our team directly at +91 9876543210."
+    )
     try:
         lock_acquired = await lock.acquire()
         if not lock_acquired:
@@ -384,37 +650,31 @@ async def background_process_and_push(session_id: str, Body: str, client_id: int
                     whatsapp_opt_in=True
                 )
                 reply_text = await process_unified_lead(payload, db, client_id, background=True)
-                if settings.TWILIO_ACCOUNT_SID:
-                    client = Client(settings.TWILIO_ACCOUNT_SID, settings.TWILIO_AUTH_TOKEN)
-                    await asyncio.to_thread(
-                        client.messages.create,
-                        from_=settings.TWILIO_PHONE_NUMBER,
-                        body=reply_text,
-                        to=f"whatsapp:{session_id}"
-                    )
-                    logger.info(f"Background task pushed response to {session_id}")
+                result = await _send_whatsapp_via_ee(
+                    client_id, session_id, reply_text or fallback_body, session_id, source="background_push"
+                )
+                if result.get("status") == "error":
+                    raise RuntimeError(result.get("error") or "ee_send_failed")
+                logger.info(f"Background task pushed response to {session_id} via EE")
             except Exception as e:
                 logger.error(f"Background task failed for {session_id}: {e}")
-                # Always guarantee the user gets a response — send fallback via Twilio REST
                 try:
-                    if settings.TWILIO_ACCOUNT_SID:
-                        fallback_client = Client(settings.TWILIO_ACCOUNT_SID, settings.TWILIO_AUTH_TOKEN)
-                        await asyncio.to_thread(
-                            fallback_client.messages.create,
-                            from_=settings.TWILIO_PHONE_NUMBER,
-                            body="I'm experiencing a brief connectivity issue. Please try again in a moment, or reach our team directly at +91 9876543210.",
-                            to=f"whatsapp:{session_id}"
-                        )
-                        logger.warning(f"FALLBACK | session={session_id} | reason=background_task_failure | detail=graceful_fallback_sent_via_twilio")
+                    result = await _send_whatsapp_via_ee(
+                        client_id, session_id, fallback_body, session_id, source="background_fallback"
+                    )
+                    if result.get("status") == "error":
+                        raise RuntimeError(result.get("error") or "ee_fallback_failed")
+                    logger.warning(
+                        f"FALLBACK | session={session_id} | reason=background_task_failure | detail=graceful_fallback_via_ee"
+                    )
                 except Exception as fallback_err:
                     logger.error(f"FALLBACK push also failed for {session_id}: {fallback_err}")
-                    # Phase 2 Hardening: Dead-Letter Queue integration for Twilio outbound
                     BACKGROUND_FAILURE_COUNT.labels(component="twilio").inc()
                     INTEGRATION_FAILURES.labels(integration="twilio").inc()
                     payload_dlq = {
                         "session_id": session_id,
-                        "body": "I'm experiencing a brief connectivity issue. Please try again in a moment, or reach our team directly at +91 9876543210.",
-                        "to": f"whatsapp:{session_id}"
+                        "body": fallback_body,
+                        "to": f"whatsapp:{session_id}",
                     }
                     dlq_entry = models.DLQEvent(
                         target_endpoint="twilio_outbound",
@@ -516,16 +776,30 @@ async def process_unified_lead(payload: LeadIngestionPayload, db: DBSession, cli
         ))
         db.commit()
 
-        # Launch the CRM Sync and protect it from Garbage Collection
-        # sync_lead_to_crm already returns a Task in an async context; do not re-wrap.
-        task = sync_lead_to_crm(lead.id)
-        running_bg_tasks.add(task)
-        task.add_done_callback(running_bg_tasks.discard)
+        # CRM create is bus-owned: lead.created → crm_automation → AE→EE (BD-1).
+        # Field updates still debounced via crm_resync_job.
     # --------------------------------------------------------
 
-    # Now delegate the core logic to process_chat
-    return await process_chat(scoped_session_id, payload.message or "", db, client_id=client_id,
-                              is_background=background)
+    # Now delegate the core logic to the selected chat pipeline
+    reply = await _select_chat_fn()(
+        scoped_session_id,
+        payload.message or "",
+        db,
+        client_id=client_id,
+        is_background=background,
+    )
+    # Refresh lead after chat extraction so bus payloads carry latest fields.
+    db.refresh(lead)
+    await _emit_turn_events(
+        client_id=client_id,
+        scoped_session_id=scoped_session_id,
+        lead=lead,
+        source_channel=payload.source or "api",
+        is_new_lead=is_new_lead,
+        message=payload.message or "",
+        db=db,
+    )
+    return reply
 
 @app.post("/api/v1/ingest")
 async def ingest_lead(payload: LeadIngestionPayload, current_client: models.Client = Depends(auth.get_client_by_api_key), db: DBSession = Depends(get_db)):
@@ -687,7 +961,16 @@ async def whatsapp_webhook(
                 latency_ms = round((time.time() - request_start) * 1000)
                 logger.info(f"LATENCY | session={session_id} | {latency_ms}ms | status=delivered")
                 twiml = MessagingResponse()
-                twiml.message(reply_text)
+                msg = twiml.message(reply_text or "")
+                # Approach B: structured media from WhatsAppAgent (not reply-text scrape).
+                try:
+                    from app.agents.whatsapp_agent import take_outbound_media_url
+
+                    media_url = take_outbound_media_url()
+                    if media_url:
+                        msg.media(media_url)
+                except Exception as e:  # pragma: no cover
+                    logger.debug("outbound media attach skipped: %s", e)
                 return Response(content=str(twiml), media_type="application/xml")
             
             except asyncio.TimeoutError:
@@ -1059,6 +1342,55 @@ def create_agent(agent: AgentCreate, current_client: models.Client = Depends(aut
     db.refresh(new_agent)
     return {"status": "success", "agent": new_agent}
 
+# --- IREIOS 3.0 PHASE 2: HITL approve / reject API ---
+class ApprovalResolveBody(BaseModel):
+    decision: str  # "approve" | "reject"
+    reason: Optional[str] = None
+
+
+@app.get("/api/v1/approvals")
+def list_approvals(
+    current_client: models.Client = Depends(auth.get_current_client),
+    db: DBSession = Depends(get_db),
+):
+    """List pending approval requests for the authenticated tenant (managers)."""
+    from app.automation_engine.hitl import get_pending
+
+    return {"status": "success", "approvals": get_pending(current_client.id, db)}
+
+
+@app.post("/api/v1/approvals/{approval_id}/approve")
+async def approve_approval(
+    approval_id: int,
+    body: Optional[ApprovalResolveBody] = None,
+    current_client: models.Client = Depends(auth.get_current_client),
+    db: DBSession = Depends(get_db),
+):
+    """Approve a pending action and resume it through the Automation Engine."""
+    from app.automation_engine.engine import resume
+
+    manager_id = str(current_client.id)
+    reason = body.reason if body else None
+    result = await resume(approval_id, manager_id=manager_id, reason=reason)
+    return {"status": "success", "result": result}
+
+
+@app.post("/api/v1/approvals/{approval_id}/reject")
+def reject_approval(
+    approval_id: int,
+    body: Optional[ApprovalResolveBody] = None,
+    current_client: models.Client = Depends(auth.get_current_client),
+    db: DBSession = Depends(get_db),
+):
+    """Reject a pending action (drops it; notifies the requesting agent)."""
+    from app.automation_engine.engine import reject
+
+    manager_id = str(current_client.id)
+    reason = body.reason if body else None
+    result = reject(approval_id, manager_id=manager_id, reason=reason)
+    return {"status": "success", "result": result}
+
+
 @app.get("/api/v1/leads")
 def get_leads(
     current_client: models.Client = Depends(auth.get_current_client),
@@ -1149,6 +1481,163 @@ def update_lead_stage(
     db.commit()
     return {"status": "success", "lead_id": lead.id, "stage": lead.funnel_stage}
 
+
+@app.get("/api/v1/leads/{lead_id}/score")
+def score_lead_endpoint(
+    lead_id: int,
+    current_client: models.Client = Depends(auth.get_current_client),
+    db: DBSession = Depends(get_db),
+):
+    """
+    Phase 5 (5.6): compute the IREIOS lead score for a client-owned lead.
+
+    Returns the deterministic scoring breakdown (conversion probability,
+    temperature, urgency, engagement, budget alignment) without mutating the row.
+    """
+    lead = db.query(models.Lead).filter(
+        models.Lead.id == lead_id, models.Lead.client_id == current_client.id
+    ).first()
+    if not lead:
+        raise HTTPException(status_code=404, detail="Lead not found")
+    from app.agents.whatsapp_agent import score_lead
+    return {"status": "success", "lead_id": lead_id, "scores": score_lead(lead)}
+
+
+@app.post("/api/v1/leads/{lead_id}/sales-ai")
+async def sales_ai_endpoint(
+    lead_id: int,
+    current_client: models.Client = Depends(auth.get_current_client),
+    db: DBSession = Depends(get_db),
+):
+    """
+    Phase 6 (6.1–6.4): run the Sales AI on a client-owned lead — score, assign,
+    recommend a next-best action, advance the funnel stage, and sync to CRM via
+    the AutomationEngine (observable + DLQ-protected). Returns the recommendation.
+    """
+    lead = db.query(models.Lead).filter(
+        models.Lead.id == lead_id, models.Lead.client_id == current_client.id
+    ).first()
+    if not lead:
+        raise HTTPException(status_code=404, detail="Lead not found")
+    from app.agents.sales_agent import sales_agent
+    result = await sales_agent.run_sales_ai(db, lead, current_client.id, sync_crm=True)
+    return {"status": "success", "lead_id": lead_id, **result}
+
+
+@app.get("/api/v1/leads/{lead_id}/memory")
+def lead_memory_endpoint(
+    lead_id: int,
+    current_client: models.Client = Depends(auth.get_current_client),
+    db: DBSession = Depends(get_db),
+):
+    """
+    Phase 7 (7.5): return persisted conversation-memory items for a client-owned
+    lead, plus a recent-message summary.
+    """
+    lead = db.query(models.Lead).filter(
+        models.Lead.id == lead_id, models.Lead.client_id == current_client.id
+    ).first()
+    if not lead:
+        raise HTTPException(status_code=404, detail="Lead not found")
+    items = conversation_memory.recall(db, lead_id=lead_id, client_id=current_client.id)
+    summary = conversation_memory.summarize_recent(db, session_id=lead.session_id)
+    return {
+        "status": "success",
+        "lead_id": lead_id,
+        "memory": [{"key": m.key, "value": m.value, "type": m.memory_type} for m in items],
+        "recent_summary": summary,
+    }
+
+
+@app.get("/api/v1/kg/status")
+def kg_status_endpoint():
+    """
+    Phase 7 (7.1): report whether the Neo4j knowledge graph is available.
+    Returns availability only (no tenant data) — safe to expose.
+    """
+    return {"status": "success", "knowledge_graph_available": bool(knowledge_graph.available)}
+
+
+@app.post("/api/v1/leads/{lead_id}/memory")
+def store_lead_memory_endpoint(
+    lead_id: int,
+    body: dict,
+    current_client: models.Client = Depends(auth.get_current_client),
+    db: DBSession = Depends(get_db),
+):
+    """
+    Phase 7 (7.5): store a structured memory item for a client-owned lead.
+    Body: {"key": str, "value": str, "memory_type": str (optional)}.
+    """
+    lead = db.query(models.Lead).filter(
+        models.Lead.id == lead_id, models.Lead.client_id == current_client.id
+    ).first()
+    if not lead:
+        raise HTTPException(status_code=404, detail="Lead not found")
+    key = (body or {}).get("key")
+    value = (body or {}).get("value")
+    if not key or value is None:
+        raise HTTPException(status_code=422, detail="key and value are required")
+    item = conversation_memory.remember(
+        db, lead_id=lead_id, client_id=current_client.id, key=key, value=str(value),
+        session_id=lead.session_id, memory_type=(body or {}).get("memory_type", "fact"),
+    )
+    return {"status": "success", "id": item.id, "key": item.key, "value": item.value}
+
+
+# ---------------------------------------------------------------------------
+# Phase 8 — Prediction APIs + Marketing / CS / Competitor (Tasks 8.1–8.5)
+# ---------------------------------------------------------------------------
+
+@app.get("/api/v1/leads/{lead_id}/prediction")
+def lead_prediction_endpoint(
+    lead_id: int,
+    current_client: models.Client = Depends(auth.get_current_client),
+    db: DBSession = Depends(get_db),
+):
+    """Phase 8 (8.1): conversion prediction + expected closure days for a lead."""
+    lead = db.query(models.Lead).filter(
+        models.Lead.id == lead_id, models.Lead.client_id == current_client.id
+    ).first()
+    if not lead:
+        raise HTTPException(status_code=404, detail="Lead not found")
+    from app.services.prediction_service import predict_conversion
+    return {"status": "success", "lead_id": lead_id, "prediction": predict_conversion(lead)}
+
+
+@app.get("/api/v1/marketing/segments")
+def marketing_segments_endpoint(
+    current_client: models.Client = Depends(auth.get_current_client),
+    db: DBSession = Depends(get_db),
+):
+    """Phase 8 (8.2/8.3): segment open leads and suggest a campaign per segment."""
+    from app.services.prediction_service import marketing_campaign_suggestion, segment_leads
+    segments = segment_leads(db, current_client.id)
+    suggestions = {seg: marketing_campaign_suggestion(seg) for seg in ("hot", "warm", "cold")}
+    return {"status": "success", "client_id": current_client.id,
+            "segments": segments, "campaign_suggestions": suggestions}
+
+
+@app.get("/api/v1/cs/at-risk")
+def cs_at_risk_endpoint(
+    current_client: models.Client = Depends(auth.get_current_client),
+    db: DBSession = Depends(get_db),
+):
+    """Phase 8 (8.4): customer-success — list cold/inactive open leads."""
+    from app.services.prediction_service import detect_at_risk
+    at_risk = detect_at_risk(db, current_client.id)
+    return {"status": "success", "client_id": current_client.id, "at_risk": at_risk,
+            "count": len(at_risk)}
+
+
+@app.post("/api/v1/competitor/signals")
+def competitor_signals_endpoint(body: dict = {}):
+    """Phase 8 (8.5): competitor keyword monitor (no external network call)."""
+    from app.services.prediction_service import competitor_signals
+    text = (body or {}).get("text")
+    return {"status": "success", "signals": competitor_signals(text)}
+
+
 @app.get("/api/v1/leads/export")
 def export_leads(
     current_client: models.Client = Depends(auth.get_current_client),
@@ -1214,4 +1703,6 @@ async def health_check(db: DBSession = Depends(get_db)):
     }
 
 # Mount static files for the Dashboard
+# Note: events_router is mounted once near app construction (above); do not
+# re-include here — duplicate include breaks OpenAPI operation IDs and route lookup.
 app.mount("/dashboard", StaticFiles(directory="dashboard", html=True), name="dashboard")

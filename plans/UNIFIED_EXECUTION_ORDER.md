@@ -59,21 +59,28 @@
 | **6** | Bug | Phase 5 (P5.1–P5.3) | CRM sync completeness | CRM reflects post-qualification fields; no false success on empty identity | `[x]` |
 | **7** | Bug | Phase 6 (P6.1–P6.6) | Structural backlog | Structural items done or explicitly deferred in this table as `[-]` | `[x]` |
 | **G1** | Gate | **Block 1 complete** | Monolith stable | **Bug master regression checklist** (§13 of bug plan) all green | `[x]` |
-| **8** | Expansion | Phase 0 Task 0.2 | Branch / env hygiene + Redis available | App boots; Redis reachable | `[ ]` |
-| **9** | Expansion | Phase 1 (Tasks 1.1–1.8) | **Redis Streams** bus, CEO, BaseAgent, EE skeleton | Expansion Phase 1 exit gate (durable publish) | `[ ]` |
-| **10** | Expansion | Phase 1b (Tasks 1b.1–1b.4) | **Early SSE + API envelopes** (stub producers OK) | Expansion Phase 1b exit gate — **FE unblocked** | `[ ]` |
-| **11** | Expansion | Phase 2 (Tasks 2.1–2.7) | Automation Engine, HITL, LangGraph/n8n hooks | Expansion Phase 2 exit gate | `[ ]` |
-| **12** | Expansion | Phase 3 (Tasks 3.1–3.4) | WhatsApp & CRM executors | Expansion Phase 3 exit gate | `[ ]` |
-| **13** | Expansion | Phase 4 (Tasks 4.1–4.5) | Follow-up scheduler via AE→EE | Expansion Phase 4 exit gate | `[ ]` |
-| **14** | Expansion | Phase 5 (Tasks 5.1–5.9) | WhatsApp Agent, brochure/floorplan, scoring | Expansion Phase 5 exit gate (`task3_runner`, isolation) | `[ ]` |
-| **15** | Expansion | Phase 6 (Tasks 6.1–6.4) | CRM automation + Sales AI | Expansion Phase 6 exit gate | `[ ]` |
-| **16** | Expansion | Phase 7 (Tasks 7.1–7.7) | Neo4j KG + Memory | Expansion Phase 7 exit gate | `[ ]` |
-| **17** | Expansion | Phase 8 (Tasks 8.1–8.5) | Prediction APIs + Marketing/CS/Competitor | Expansion Phase 8 exit gate | `[ ]` |
-| **18** | Expansion | Phase 9 (Tasks 9.1–9.8) | FE cutover to live SSE/APIs (contracts from 1b) | Expansion Phase 9 exit gate | `[ ]` |
-| **19** | Expansion | Phase 10 (Tasks 10.1–10.5) | Placeholders, decommission, evidence | Expansion Phase 10 final gate | `[ ]` |
-| **G2** | Gate | **Program complete** | MVP close | Expansion plan **Program final gate (G2)** checklist + Task 10.4–10.5 | `[ ]` |
+| **8** | Expansion | Phase 0 Task 0.2 | Branch / env hygiene + Redis available | App boots; Redis reachable | `[x]` |
+| **9** | Expansion | Phase 1 (Tasks 1.1–1.8) | **Redis Streams** bus, CEO, BaseAgent, EE skeleton | Expansion Phase 1 exit gate (durable publish) | `[x]` |
+| **10** | Expansion | Phase 1b (Tasks 1b.1–1b.4) | **Early SSE + API envelopes** (stub producers OK) | Expansion Phase 1b exit gate — **FE unblocked** | `[x]` |
+| **11** | Expansion | Phase 2 (Tasks 2.1–2.7) | Automation Engine, HITL, LangGraph/n8n hooks | Expansion Phase 2 exit gate | `[x]` |
+| **12** | Expansion | Phase 3 (Tasks 3.1–3.4) | WhatsApp & CRM executors | Expansion Phase 3 exit gate | `[x]` |
+| **13** | Expansion | Phase 4 (Tasks 4.1–4.5) | Follow-up scheduler via AE→EE | Expansion Phase 4 exit gate | `[x]` |
+| **14** | Expansion | Phase 5 (Tasks 5.1–5.9) | WhatsApp Agent, brochure/floorplan, scoring | Expansion Phase 5 exit gate (`task3_runner`, isolation) | `[x]` |
+| **15** | Expansion | Phase 6 (Tasks 6.1–6.4) | CRM automation + Sales AI | Expansion Phase 6 exit gate | `[x]` |
+| **16** | Expansion | Phase 7 (Tasks 7.1–7.7) | Neo4j KG + Memory | Expansion Phase 7 exit gate | `[x]` |
+| **17** | Expansion | Phase 8 (Tasks 8.1–8.5) | Prediction APIs + Marketing/CS/Competitor | Expansion Phase 8 exit gate | `[x]` |
+| **18** | Expansion | Phase 9 (Tasks 9.1–9.8) | FE cutover to live SSE/APIs (contracts from 1b) | Expansion Phase 9 exit gate | `[x]` |
+| **19** | Expansion | Phase 10 (Tasks 10.1–10.5) | Placeholders, decommission, evidence | Expansion Phase 10 final gate | `[x]` |
+| **G2** | Gate | **MVP program complete** | Phases 0–10 close | Expansion plan **Program final gate (G2)** checklist + Task 10.4–10.5 | `[x]` |
+| **20** | Wave A–D | **Wave A** — dead loops + live HubSpot/Calendar/n8n hooks | Wave A exit gate | `plans/IREIOS_3.0_WAVE_A_D_EXPANSION.md` §1 | `[x]` |
+| **21** | Wave A–D | **Wave B** — deepen Sales/CS/Marketing + AE templates | Wave B exit gate | same §2 | `[x]` |
+| **22** | Wave A–D | **Wave C** — 6 placeholders → active agents | Wave C exit gate | same §3 | `[x]` |
+| **23** | Wave A–D | **Wave D** — forecast/memory/n8n + brochure **Approach B** (MediaUrl PDF) | Wave D exit gate §4.7 | same §4 | `[x]` |
+| **G3** | Gate | **Waves A–D complete** | Depth-fill close | pytest full + isolation + DLQ green; evidence pack Wave section; changelog | `[x]` |
 
 **Expansion Task 0.1** (doc freeze) is already done; do not re-open it as a blocking step.
+
+**Post-G2 depth fill:** detailed tasks, integration signup guides, and per-wave benefits live in `plans/IREIOS_3.0_WAVE_A_D_EXPANSION.md`. Living log: `plans/IREIOS_3.0_WAVE_A_D_CHANGELOG.md`. Tests: `tests/test_e14_wave_a.py` … `test_e17_wave_d.py`.
 
 ---
 
@@ -186,6 +193,8 @@ Before **any** expansion work:
 
 Implement using `plans/IREIOS_3.0_STEP_BY_STEP_EXPANSION.md` only. Within each phase, follow task numbers in order (e.g. 1.1 before 1.2).
 
+Per-slice progress is tracked in **`plans/IREIOS_3.0_EXPANSION_CHANGELOG.md`** (parallel to `BUG_FIXES_CHANGELOG.md`); tests live in `tests/test_eN_*.py` (distinct `e` prefix from bug-fix `p` tests); API/SSE contracts in `plans/IREIOS_3.0_API_SSE_CONTRACTS.md`; G2 evidence in `plans/IREIOS_3.0_EVIDENCE_PACK.md`.
+
 Supporting architecture (read-only reference, not alternate queues) — all under `plans/`:
 
 - `IREIOS_3.0_Architecture_Diagrams.md`
@@ -247,6 +256,20 @@ Supporting architecture (read-only reference, not alternate queues) — all unde
 
 - Tasks **10.1 → 10.5**: Placeholders, decommission dual paths, evidence pack, final gate.
 
+### Step 20 — Full plan parity (v3 enablement + real agents/integrations)
+
+- Promote the 4 previously endpoint-only plan agents to **real bus-registered agents**:
+  `lead_scoring`, `crm_automation` (6.1 → `lead.assigned`), `marketing_agent` (8.2 →
+  `marketing.report.generated`), `customer_success_agent` (8.3 → AE `notify_agent`),
+  `kg_event_writer` (7.4), `competitor_monitor_job` (8.4 nightly → `market.alert.generated`).
+- Full Neo4j build (7.1–7.5): `neo4j==5.28.2` in `requirements.lock`, docker service,
+  `neo4j_client.migrate_schema()`, `graph_api` routes, `event_writers`, `graph_client`.
+- Enable v3 by default (`FEATURE_WHATSAPP_V3=True`, `FOLLOWUP_ENGINE=v3`).
+- Real Google Calendar in `CalendarExecutor` (stub fallback when unconfigured).
+- Tests: `tests/test_e11_parity.py` (11), `tests/test_e7_graph.py` (6 filled).
+- Regression: full `pytest` **253 passed, 3 skipped**; `gate_isolation_test.py` PASS (v3);
+  `gate_dlq_drill.py` OK. No push/branch. **Step 20 → `[x]`.**
+
 ### Gate G2 — Program complete
 
 Complete the checklist **Program final gate (G2)** in `IREIOS_3.0_STEP_BY_STEP_EXPANSION.md` (architecture/cutover, graph/memory, APIs/SSE, quality commands, evidence pack).  
@@ -302,8 +325,21 @@ If production breaks mid-program:
 
 ---
 
-## 10. Immediate next action
+## 10. Immediate next action (post-G3)
 
-**Step 1 — Bug Phase 0**, starting with **P0.1** in `plans/BUG_AUDIT_AND_PHASED_FIX_PLAN.md`.
+**Gates G1 / G2 / G3 are complete** (bugs + expansion Phases 0–10 + Waves A–D code).
 
-Do not open Expansion Task 1.1 until Gate **G1** is complete.
+**Integration audit 2026-07-22 (HubSpot skipped):** GCal **live** · Neo4j **live** · n8n **container up, workflows incomplete** · brochure **URLs empty**.
+
+**Still incomplete — do next:**
+
+| Priority | Work | Status |
+|----------|------|--------|
+| 1 | n8n UI: owner setup → webhook `ireios_hot_lead_slack` + Header Auth → AE smoke | `[~]` instance only |
+| 2 | Host HTTPS brochure/floorplan PDFs → set `BROCHURE_MEDIA_URL` / `FLOORPLAN_MEDIA_URL` → Twilio smoke | `[ ]` |
+| 3 | FE MockSSE cutover | Mayank — `docs/FRONTEND_BACKLOG.md` |
+| 4 | Optional leftovers | D.2 memory, B.7 create_task, `task3_runner` |
+| — | HubSpot live portal | `[-]` skip |
+| — | Dual-path module delete (10.2/10.3) | **Still deferred** |
+
+Detail: `plans/IREIOS_3.0_WAVE_A_D_CHANGELOG.md` § Post-G3 integration audit, `docs/N8N_INTEGRATION.md`.

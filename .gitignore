@@ -4,6 +4,13 @@
 .env
 frontend/.env
 
+# Google Cloud / service-account keys (never commit)
+secrets/
+**/credentials*.json
+**/*-service-account*.json
+my-project-*.json
+*-*.iam.gserviceaccount.com*.json
+
 # Virtual environment
 venv/
 env/

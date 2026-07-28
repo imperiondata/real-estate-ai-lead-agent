@@ -115,6 +115,11 @@ class Settings(BaseSettings):
     # n8n automation (Phase 2) — empty = n8n_not_configured (safe)
     N8N_BASE_URL: str = ""
     N8N_API_KEY: str = ""
+    # Bus→n8n webhook bridge (separate consumer group; stock n8n cannot XREADGROUP)
+    N8N_BRIDGE_ENABLED: bool = True
+    N8N_BRIDGE_GROUP: str = "ireios-n8n"
+    # Optional JSON override of event_type → webhook path map (empty = defaults)
+    N8N_WEBHOOK_MAP: str = ""
     # Phase 8 competitor monitor watch-list (comma-separated, no network call)
     COMPETITOR_KEYWORDS: str = ""
     # Wave D.4: WhatsApp brochure/floor plan media URL (public HTTPS). Empty = text fallback.

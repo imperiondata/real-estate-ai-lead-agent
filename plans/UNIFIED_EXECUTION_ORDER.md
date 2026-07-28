@@ -77,8 +77,9 @@
 | **22** | Wave A–D | **Wave C** — 6 placeholders → active agents | Wave C exit gate | same §3 | `[x]` |
 | **23** | Wave A–D | **Wave D** — forecast/memory/n8n + brochure **Approach B** (MediaUrl PDF) | Wave D exit gate §4.7 | same §4 | `[x]` |
 | **G3** | Gate | **Waves A–D complete** | Depth-fill close | pytest full + isolation + DLQ green; evidence pack Wave section; changelog | `[x]` |
-| **24** | Automations closeout | **Bus hooks + n8n contracts** (no new product scope) | Step 24 exit in `plans/PHASE3_AUTOMATIONS_CLOSEOUT.md` §8 | `[x]` backend; n8n WF-1 still ops |
-| **G4** | Gate | **Automations production-ready** | BA-7 green + n8n WF-1 live smoke + docs flipped | `[~]` BA-7 done; WF-1 pending Maitri |
+| **24** | Automations closeout | **Bus hooks + n8n contracts** (no new product scope) | Step 24 exit in `plans/PHASE3_AUTOMATIONS_CLOSEOUT.md` §8 | `[x]` backend; n8n WF-1 still ops |  
+| **24b** | n8n delivery | **Bus→webhook bridge** + Gmail WF recipes | `n8n_bridge` + `plans/N8N_LIVE_WORKFLOWS_PLAN.md` | `[x]` bridge; WF UI pending |  
+| **G4** | Gate | **Automations production-ready** | BA-7 + bridge + n8n WF-1 Gmail smoke | `[~]` bridge done; WF-1 pending Maitri |  
 
 **Expansion Task 0.1** (doc freeze) is already done; do not re-open it as a blocking step.
 
@@ -345,10 +346,10 @@ If production breaks mid-program:
 | BA-3 | Rich **`site_visit.scheduled`** payload (merge EE params + result) | Aritro | `[x]` |
 | BA-4 | HITL `approval.requested` deep-link path fields | Aritro | `[x]` |
 | BA-5 | Calendar REST wrapping AE (labeled stub / freebusy) | Aritro | `[x]` |
-| BA-6 | Redis-primary n8n ingest (no dual-fanout default) | Aritro | `[x]` docs |
-| BA-7 | Full pytest + isolation + DLQ | Aritro | `[x]` 352 pass / isolation / DLQ 1/1 |
-| WF-1 | n8n `ireios_hot_lead_slack` active on `lead.hot` | Maitri | `[~]` instance only |
-| WF-2…6 | Visit fan-out, HITL email, CRM-via-n8n, marketing CSV, DLQ alert | Maitri | `[ ]` |
+| BA-6 | ~~Redis-primary~~ → **bridge-primary** (`ireios-n8n` → webhooks); Gmail-first | Aritro | `[x]` code+docs 2026-07-28 |  
+| BA-7 | Full gate (pytest + isolation + DLQ) | Aritro | `[x]` |  
+| WF-1 | n8n `ireios_hot_lead_alert` Active on `lead.hot` → **Gmail** | Maitri | `[~]` instance only |  
+| WF-2…6 | Visit fan-out, HITL Gmail, CRM-via-n8n, marketing CSV, DLQ alert | Maitri | `[ ]` |  
 
 **Hard rules for Step 24:**
 
@@ -356,7 +357,9 @@ If production breaks mid-program:
 2. Do **not** migrate follow-up / escalation / competitor crons to n8n.  
 3. Google Calendar create stays in **`CalendarExecutor`** (already live); n8n fans out only.  
 4. HubSpot Python portal stays **skipped**; external CRM = n8n on `lead.qualified`.  
-5. No PR/merge process in this step’s definition of done (team process separate).
+5. n8n ingest = **`n8n_bridge`** (not stock Redis Streams). Primary ops channel = **Gmail**.  
+6. Recipes: `plans/N8N_LIVE_WORKFLOWS_PLAN.md`.  
+7. No PR/merge process in this step’s definition of done (team process separate).
 
 ### Gate G4 — Automations production-ready
 

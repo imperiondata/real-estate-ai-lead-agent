@@ -1,14 +1,14 @@
-"""IREIOS 3.0 — Phase 2 n8n client scaffold.
+"""IREIOS 3.0 — n8n webhook HTTP client.
 
-Thin async client for triggering n8n workflows via their webhook REST API.
-n8n can also subscribe directly to the Redis Streams bus (same transport as
-Phase 1) for event-driven automations — this client covers the outbound
-HTTP-trigger direction so the Automation Engine can hand off ``template_type="n8n"``
-actions.
+Used by:
+  * Automation Engine when ``template_type="n8n"``
+  * ``n8n_bridge`` (bus consumer group ``ireios-n8n`` → POST full envelopes)
 
-When ``N8N_BASE_URL`` / ``N8N_API_KEY`` are not configured the client returns
-a clean ``n8n_not_configured`` error (never crashes), matching the repo's
-demo-stub philosophy (see ``crm_sync``).
+Stock n8n cannot XREADGROUP Redis Streams — the bridge is the supported
+bus→n8n path. See ``docs/N8N_INTEGRATION.md``.
+
+When ``N8N_BASE_URL`` / ``N8N_API_KEY`` are empty the client returns
+``n8n_not_configured`` (never crashes).
 """
 from __future__ import annotations
 
@@ -43,7 +43,7 @@ class N8NClient:
 
         Returns the n8n response JSON, or ``{"status":"error","error":"n8n_not_configured"}``
         when the service is not configured. Uses an async httpx client with a
-        sensible timeout.
+        sensible timeout. Empty / non-JSON success bodies are treated as success.
         """
         if not self.configured:
             logger.warning("n8n trigger skipped: not configured (N8N_BASE_URL/N8N_API_KEY)")
@@ -55,7 +55,13 @@ class N8NClient:
             async with httpx.AsyncClient(timeout=15.0) as client:
                 resp = await client.post(url, json=payload, headers=headers)
                 resp.raise_for_status()
-                return {"status": "success", "workflow_id": workflow_id, "response": resp.json()}
+                body: Any = None
+                if resp.content:
+                    try:
+                        body = resp.json()
+                    except Exception:  # noqa: BLE001 - plain text / empty ok
+                        body = {"raw": resp.text[:500]}
+                return {"status": "success", "workflow_id": workflow_id, "response": body}
         except httpx.HTTPStatusError as exc:
             logger.error("n8n trigger %s returned %s", workflow_id, exc.response.status_code)
             return {"status": "error", "error": f"n8n_http_{exc.response.status_code}"}

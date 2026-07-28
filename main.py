@@ -392,6 +392,13 @@ async def lifespan(app):
     from app.orchestrator.ceo_orchestrator import ceo
 
     await event_bus.start()
+    # n8n bridge: separate Streams group → POST webhooks (Gmail/ops). Never joins CEO group.
+    from app.automation_engine.n8n_bridge import n8n_bridge
+
+    try:
+        await n8n_bridge.start()
+    except Exception as e:  # noqa: BLE001 - never block boot
+        logger.warning("n8n bridge start skipped: %s", e)
     register_executors()  # wire real executors (Phase 3) into the EE singleton
     ceo.bootstrap()  # subscribes CEO as the single wildcard bus handler (no agents yet ok)
     # Phase 4.3: arm FollowUpState when a lead is created/updated on the bus.
@@ -447,6 +454,12 @@ async def lifespan(app):
     finally:
         scheduler.shutdown()
         logger.info("Background scheduler stopped")
+        try:
+            from app.automation_engine.n8n_bridge import n8n_bridge as _n8n_bridge
+
+            await _n8n_bridge.stop()
+        except Exception as e:  # noqa: BLE001
+            logger.warning("n8n bridge stop: %s", e)
         await event_bus.stop()
 
 app = FastAPI(

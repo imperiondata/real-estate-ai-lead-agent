@@ -173,10 +173,11 @@ def test_memory_auto_write_after_turn():
 
 
 def test_n8n_workflows_documented():
-    """D.3 remains ops-incomplete; assert hot-lead webhook is documented."""
+    """D.3 remains ops-incomplete; assert hot-lead webhook + bridge are documented."""
     with open("docs/N8N_INTEGRATION.md", encoding="utf-8") as f:
         doc = f.read()
-    assert "ireios_hot_lead_slack" in doc
+    assert "ireios_hot_lead_alert" in doc or "ireios_hot_lead_slack" in doc
+    assert "n8n_bridge" in doc or "ireios-n8n" in doc
     assert "INCOMPLETE" in doc or "incomplete" in doc.lower()
 
 

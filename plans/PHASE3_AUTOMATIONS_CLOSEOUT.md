@@ -75,7 +75,8 @@ A third-party audit proposed new event types (`human.requested`, `lead.escalated
 | **G-CTX** | No `chat_context` on turn events | n8n CRM/note workflows lack transcript | **Closed BA-2** |
 | **G-VISIT-P** | EE success publish uses executor **result only** | thin `site_visit.scheduled` | **Closed BA-3** |
 | **G-HITL-URL** | `approval.requested` payload lacks deep links | n8n buttons | **Closed BA-4** |
-| **G-N8N-UI** | Webhook/Redis workflow not activated | AE → `n8n_http_404` / no Slack | **Open — Maitri** |
+| **G-N8N-UI** | Webhook workflows not activated | bridge → `n8n_http_404` / no Gmail | **Open — Maitri** |
+| **G-N8N-DELIVERY** | Stock n8n cannot read Redis Streams | “Redis primary” was invalid | **Closed** — `n8n_bridge` group `ireios-n8n` |
 | **G-MEM** | D.2 memory auto-write still deferred | Optional polish | Deferred |
 
 ### 1.3 Explicit non-goals (this branch)
@@ -166,9 +167,10 @@ All events use the bus envelope from `EventBusClient.build_envelope`.
 | `score` | Mirror of `conversion_probability` for Slack templates |
 | `chat_context` | From `conversation_memory.summarize_recent(db, session_id=..., turns=10)` — truncate if >4k chars |
 
-**Do not also emit** `lead.escalated` or `human.requested`.
+**Catalog rule:** do not invent `human.requested` as a standalone type.  
+**PR #10:** code dual-publishes alias `lead.escalated` (same payload). Bridge maps **`lead.hot` only** — never both (double Gmail).
 
-**Idempotency guidance:** Redis key `lead_hot_emitted:{client_id}:{lead_id}:{trigger}` TTL 15–60m so score path does not spam n8n every turn while still hot. Handoff may always emit once per closed session.
+**Idempotency guidance:** Redis key `lead_hot_emitted:{client_id}:{lead_id}:{trigger}` TTL 30m so score path does not spam n8n every turn while still hot.
 
 ### 3.2 CRM / transcript → enrich `lead.qualified` (+ `conversation.updated`)
 
@@ -306,9 +308,11 @@ Implement on `phase3_automations`. One task at a time; mark done only with tests
 | `GET /api/v1/calendar/availability` | API key; Google freebusy or **labeled** `provider=stub` heuristic slots |
 | `POST /api/v1/calendar/confirm` | Tenant lead update + **`ae_submit(build_visit_action)`** |
 
-### BA-6 — n8n primary ingest mode — **P2** — `[x]` 2026-07-23
+### BA-6 — n8n primary ingest mode — **P2** — `[x]` 2026-07-23 · **revised 2026-07-28**
 
-**Decision (locked):** **Redis Streams primary** for `lead.hot` / lifecycle events. AE `template_type=n8n` webhook remains available as fallback when n8n cannot read Redis. Do **not** dual-fanout both by default (avoids double Slack). Documented in `docs/N8N_INTEGRATION.md`.
+**Original (invalid for stock n8n):** “Redis Streams primary” — n8n has no Streams trigger.
+
+**Revised (locked):** **Python `N8NBridge`** joins separate consumer group `ireios-n8n`, filters allowlisted `event_type`, POSTs full envelope to n8n webhooks. AE `template_type=n8n` = fallback only. Do **not** dual-fanout bridge + AE for the same alert (double Gmail). See `docs/N8N_INTEGRATION.md`, `app/automation_engine/n8n_bridge.py`, `plans/N8N_LIVE_WORKFLOWS_PLAN.md`.
 
 ### BA-7 — Validation gate — **P0** — `[x]` 2026-07-23
 
@@ -331,15 +335,15 @@ gate_dlq_drill.py + dlq_replay.py → 1/1 recovered
 1. **Redis Streams** trigger on `ireios:events` (filter `event_type`) — preferred for bus-native events.  
 2. **Webhook** `POST /webhook/<path>` + Header Auth — preferred when AE `template_type=n8n`.
 
-### WF-1 — `ireios_hot_lead_slack` (P0)
+### WF-1 — `ireios_hot_lead_alert` (P0) — Gmail-first
 
 | | |
 |--|--|
-| **Trigger** | `lead.hot` (Redis) **or** AE webhook path `ireios_hot_lead_slack` |
+| **Trigger** | Bridge POST on `lead.hot` → path `ireios_hot_lead_alert` |
 | **Filter** | All hot; optional branch on `payload.trigger` |
-| **Actions** | Slack Block Kit: name, score, location, assigned_agent, reason, truncated chat_context |
-| **Backend dependency** | BA-1 (+ BA-2 for context) |
-| **Status today** | Documented; instance up; workflow **not** activated → 404 |
+| **Actions** | **Gmail** to admin: name, score, location, assigned_agent, reason, chat_context |
+| **Backend dependency** | BA-1 + BA-2 + n8n_bridge |
+| **Status today** | Bridge shipped; workflow UI **not** activated → 404 until Maitri |
 
 ### WF-2 — Site visit fan-out (P1)
 
@@ -441,7 +445,8 @@ EE publishes site_visit.scheduled (rich payload after BA-3)
 - [x] Backend publishes **`lead.hot`** with `trigger` ∈ {`hot_threshold`,`human_handoff`} (unit + source proofs)  
 - [x] `lead.qualified` / `conversation.updated` include **`chat_context`** when history exists  
 - [x] `site_visit.scheduled` merge includes lead identity + visit_date (+ html_link when Google)  
-- [ ] n8n WF-1 **Active** and receives at least one real or stub hot event (screenshot) — **Maitri ops**  
+- [x] Bus→n8n **bridge** (`ireios-n8n`) ships and is documented (2026-07-28)  
+- [ ] n8n WF-1 **Active** and receives at least one real or stub hot event via Gmail (screenshot) — **Maitri ops**  
 - [x] Full `pytest` green + isolation + DLQ (2026-07-23)  
 - [x] No new non-catalog event types in code  
 - [x] HubSpot Python still skipped; no cron migration to n8n  
@@ -463,6 +468,8 @@ EE publishes site_visit.scheduled (rich payload after BA-3)
 | Calendar EE | `app/execution_engine/calendar_executor.py` |
 | EE event map | `app/execution_engine/registry.py`, `execution_engine.py` `_publish_success` |
 | n8n client | `app/automation_engine/n8n_client.py` |
+| n8n bridge | `app/automation_engine/n8n_bridge.py` (group `ireios-n8n`) |
+| n8n WF recipes | `plans/N8N_LIVE_WORKFLOWS_PLAN.md` |
 | Hot template | `app/automation_engine/templates/hot_lead_notify.py` |
 | Visit template | `app/automation_engine/templates/visit_booking.py` |
 | HITL | `app/automation_engine/hitl.py` |
@@ -479,3 +486,4 @@ EE publishes site_visit.scheduled (rich payload after BA-3)
 |------|----------|
 | 2026-07-23 | Locked closeout plan from Mayank mandate + third-party audit **reconciled** to catalog and tree. Rejected invented events and stub calendar-only APIs. Elevated `lead.hot` publish gap to P0. |
 | 2026-07-23 | Implemented BA-1…BA-7: `app/events/lead_hot.py`, scoring+handoff publish, chat_context, EE merge, HITL paths, calendar REST, Redis-primary n8n. Tests e18 (14). pytest 352 pass. |
+| 2026-07-28 | **BA-6 revised:** stock n8n cannot XREADGROUP. Shipped `n8n_bridge` (group `ireios-n8n`) + Gmail-first recipes `plans/N8N_LIVE_WORKFLOWS_PLAN.md`. Path rename `ireios_hot_lead_alert`. |

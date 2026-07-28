@@ -6,76 +6,86 @@ n8n is the **external workflow automation plane** for IREIOS 3.0. It is **not** 
 
 | Use case | Why n8n (not in-app code) |
 |----------|---------------------------|
-| Multi-step human approvals outside the dashboard | Visual BPM, email/Slack nodes |
+| Multi-step human approvals outside the dashboard | Visual BPM, Gmail/Slack nodes |
 | Nightly CRM hygiene / spreadsheet exports | Cron + connectors without redeploying API |
 | Marketing drip beyond WhatsApp follow-up FSM | Channel mix (email, SMS, ads) |
 | Partner webhooks (portals, accounting) | Quick connector library |
-| Ops alerts to Slack/Teams on `lead.hot` / DLQ depth | Subscribe to Redis Streams or HTTP webhooks |
+| Ops alerts (Gmail primary) on `lead.hot` / DLQ depth | Bridge → webhook → Gmail |
 
-## Architecture fit
+**Primary ops channel: Gmail.** Slack is optional.
+
+## Architecture fit (locked)
 
 ```text
 Event Bus (Redis Streams: ireios:events)
     │
-    ├─► CEO agents (in-process) — scoring, CRM AE, KG, follow-up arm
+    ├─► consumer group ireios-cg  → CEO agents (scoring, CRM AE, KG, follow-up arm)
     │
-    └─► n8n (optional)
-          • Redis Streams trigger (same stream/group or dedicated consumer)
-          • OR HTTP webhook from AutomationEngine (N8NClient.trigger_workflow)
+    └─► consumer group ireios-n8n → N8NBridge (app/automation_engine/n8n_bridge.py)
+              filter allowlisted event_type
+              POST {N8N_BASE_URL}/webhook/{path}
+              header X-N8N-API-KEY
+              body = full bus envelope
+                    │
+                    ▼
+              n8n Webhook workflows (Active) → Gmail / CRM nodes / Drive
 
-AutomationEngine
-    template_type="n8n"  →  app/automation_engine/n8n_client.py
-         → POST {N8N_BASE_URL}/webhook/{workflow_id}
-         → header X-N8N-API-KEY
+AutomationEngine (fallback only)
+    template_type="n8n"  →  n8n_client.trigger_workflow
+         → same POST /webhook/{workflow_id}
 ```
 
-When `N8N_BASE_URL` / `N8N_API_KEY` are empty, `N8NClient` returns  
-`{"status":"error","error":"n8n_not_configured"}` and **never crashes** the bus.
+### Why not “n8n reads Redis Streams”?
 
-## Recommended first workflows (when enabling)
+Stock n8n **cannot** consume Redis Streams:
 
-Full closeout plan (payloads, lane split, ordered tasks): **`plans/PHASE3_AUTOMATIONS_CLOSEOUT.md`**.
+- **Redis Trigger** = Pub/Sub channels only  
+- **Redis node** = get/set/publish — no `XREADGROUP`  
+- Joining CEO group `ireios-cg` would **steal** messages from in-app agents  
 
-1. **`lead.hot` → Slack** — Redis Streams filter **or** webhook `ireios_hot_lead_slack` (see below). Prefer catalog name `lead.hot`.
-2. **`site_visit.scheduled` → Slack/Gmail fan-out** — EE publishes after CalendarExecutor success (do not expect publish inside the executor file). Do **not** double-create Google events if `provider=google_calendar`.
-3. **`session.completed` → CRM note** (PR #10 alias) — optional; prefer `lead.qualified` for field upsert.
-4. **HITL email/Slack** — on `approval.requested`, manager notify with `/api/v1/approvals/{id}/approve|reject`.
-5. **`lead.qualified` → external CRM** (n8n HubSpot/SF nodes) — Python HubSpot portal stays skipped.
-6. **Weekly marketing segment** — on `marketing.report.generated`, push CSV to Drive.
-7. **DLQ depth alert** — n8n cron if pending `dlq_events` > N.
+**Primary delivery = Python bridge** with its **own** group `ireios-n8n`.  
+AE `template_type=n8n` remains a **fallback** for explicit action requests — do **not** enable both for the same alert (double Gmail).
+
+When `N8N_BASE_URL` / `N8N_API_KEY` are empty, client/bridge return/skip with  
+`n8n_not_configured` and **never crash** the bus or API.
+
+## Recommended workflows (Gmail-first)
+
+Full step-by-step recipes: **`plans/N8N_LIVE_WORKFLOWS_PLAN.md`**.
+
+| WF | Webhook path | Bus event | n8n action |
+|----|--------------|-----------|------------|
+| WF-1 P0 | `ireios_hot_lead_alert` | `lead.hot` | Gmail to admin (hot / handoff) |
+| WF-2 P1 | `ireios_visit_fanout` | `site_visit.scheduled` | Gmail invite note (no 2nd GCal create) |
+| WF-3 P1 | `ireios_hitl_notify` | `approval.requested` | Gmail manager + dashboard links |
+| WF-4 P2 | `ireios_crm_note` | `lead.qualified` | External CRM note + `chat_context` |
+| WF-5 P2 | `ireios_marketing_csv` | `marketing.report.generated` | CSV → Drive + Gmail link |
+| WF-6 P2 | (cron) | — | DLQ depth Gmail |
 
 ### What n8n must NOT own
 
-- WhatsApp TwiML race (`WHATSAPP_WEBHOOK_TIMEOUT`, default 12s) / 6-field gate / RAG  
-- Follow-up Day0→7 FSM / 10m–30m escalation cron / competitor monitor job  
+- WhatsApp TwiML race / 6-field gate / RAG  
+- Follow-up Day0→7 FSM / 10m–30m escalation cron / competitor monitor  
 - Tenant isolation / JWT issuance  
-- Treating `lead.escalated` / `session.completed` as separate product events — they are **dual-publish aliases** of catalog signals (see below)
+- Google Calendar **create** when Python already ran (`provider=google_calendar`)  
+- Subscribing to both `lead.hot` **and** `lead.escalated` (double email)
 
-## Dual-publish aliases (PR #10 — n8n bus hooks)
+## Dual-publish aliases (PR #10)
 
-Backend **dual-publishes** catalog + review aliases so n8n names from PR review work without breaking Sales/KG:
+Backend dual-publishes catalog + review aliases. Bridge maps **catalog only**.
 
-| Business signal | Catalog (prefer long-term) | Alias (PR #10 / n8n) | Code |
-|-----------------|----------------------------|----------------------|------|
-| Hot score or handoff | `lead.hot` (`payload.trigger` = `hot_threshold` \| `human_handoff`) | `lead.escalated` (same payload) | `app/events/lead_hot.py` |
-| Session closed (handoff / full qualify) | keep using `lead.qualified` for fields | `session.completed` (+ `chat_context`, `close_reason`) | same module |
-| Site visit booked | `site_visit.scheduled` | — (no alias) | **EE** after `CalendarExecutor` (`registry.py`) |
+| Business signal | Catalog (bridge maps) | Alias (not in default map) | Code |
+|-----------------|----------------------|----------------------------|------|
+| Hot score or handoff | `lead.hot` (`payload.trigger`) | `lead.escalated` | `app/events/lead_hot.py` |
+| Session closed | `lead.qualified` (+ `chat_context`) | `session.completed` | same + `main.py` |
+| Site visit booked | `site_visit.scheduled` | — | EE after `CalendarExecutor` |
 
-**n8n rule:** subscribe to **one** of `lead.hot` **or** `lead.escalated` per workflow — never both (double Slack). Aliases may be retired later; catalog names stay.
+**n8n rule:** one event type per workflow. Prefer catalog names.
 
-### Out of scope / deferred
-
-| Item | Status |
-|------|--------|
-| Always-true dummy `GET /calendar/availability` | **Rejected**. Honest freebusy/calendar REST on automations is optional (`app/api/calendar.py`, labeled `provider`). |
-| `event_bus.publish` inside `calendar_executor.py` | **Not needed** — EE owns success publish (single event). Executor is pure I/O. |
-| Dual-path delete of root `agent.py` / `crm_sync.py` / `follow_up.py` (Phase 10.2/10.3) | **Deferred** — shared libraries for v3 (`AGENTS.md`). |
-| HubSpot Python live portal | Skipped; external CRM via n8n nodes OK. |
-
-## Local Docker (recommended for credentials + webhooks)
+## Local Docker
 
 ```powershell
-docker compose up -d n8n
+docker compose up -d n8n redis
 # UI: http://localhost:5678  (create owner email/password on first visit)
 ```
 
@@ -83,108 +93,65 @@ docker compose up -d n8n
 |------|--------|
 | Image | `n8nio/n8n` service `n8n` in `docker-compose.yml` |
 | UI / API base | `http://localhost:5678` |
-| Data volume | `n8ndata` → `/home/node/.n8n` (workflows + credentials survive restart) |
-| Encryption key | `N8N_ENCRYPTION_KEY` (compose default for local; set in `.env` for prod) |
-| Webhooks | `http://localhost:5678/webhook/<path>` (production URL once workflow is **Active**) |
+| Data volume | `n8ndata` |
+| Webhooks | `http://localhost:5678/webhook/<path>` (workflow must be **Active**) |
 
 **Create credentials in the UI**
 
-1. Open http://localhost:5678 → finish owner setup.
-2. **Credentials** → add Slack / Gmail / etc. as needed (stored encrypted in the volume).
+1. Open http://localhost:5678 → finish owner setup.  
+2. **Credentials** → Gmail OAuth2 (primary). Optional Slack.  
 3. New workflow → **Webhook** node:
    - Method: POST  
-   - Path: e.g. `ireios_hot_lead_slack`  
+   - Path: e.g. `ireios_hot_lead_alert`  
    - Authentication: **Header Auth**  
    - Header name: `X-N8N-API-KEY`  
-   - Header value: same string as `.env` `N8N_API_KEY` (e.g. `local-n8n-webhook-secret`)
-4. Add Slack (or Set/Respond) node → **Activate** the workflow.
+   - Header value: same as `.env` `N8N_API_KEY`  
+4. Add **Gmail** node (or Set-only for smoke) → **Activate**.  
 5. Point IREIOS at the instance:
 
 ```env
 N8N_BASE_URL=http://localhost:5678
 N8N_API_KEY=local-n8n-webhook-secret
+N8N_BRIDGE_ENABLED=true
+N8N_BRIDGE_GROUP=ireios-n8n
 ```
 
-Restart uvicorn after changing `.env`. AE calls  
-`POST {N8N_BASE_URL}/webhook/{workflow_id}` with header `X-N8N-API-KEY`.
+Restart uvicorn after changing `.env`. Bridge POSTs  
+`{N8N_BASE_URL}/webhook/{path}` with header `X-N8N-API-KEY` and the **full bus envelope**.
 
-**From another container** (if API ever runs in Compose): use  
-`N8N_BASE_URL=http://n8n:5678` instead of localhost.
+**From another container** (API in Compose): `N8N_BASE_URL=http://n8n:5678`.
 
 ## Env
 
 ```env
 N8N_BASE_URL=http://localhost:5678
-# or https://yourname.app.n8n.cloud
 N8N_API_KEY=shared-secret-matching-n8n-header-auth
+N8N_BRIDGE_ENABLED=true
+N8N_BRIDGE_GROUP=ireios-n8n
+# Optional JSON override of event_type → webhook path
+# N8N_WEBHOOK_MAP={"lead.hot":"ireios_hot_lead_alert"}
 ```
 
-## What must stay in IREIOS (not n8n)
-
-- WhatsApp TwiML reply path (12s race + await-inflight; no double Gemini)  
-- 6-field qualification gate + RAG  
-- Tenant isolation / JWT  
-- Follow-up Day0→7 state machine (v3 via AE→EE)  
-- Multi-tenant `client_id` enforcement  
-
-n8n is **orchestration around** the OS, not a replacement for the CEO/AE/EE spine.
-
-## Status (post-G3 + BA closeout + PR #10 bus hooks)
-
-| Piece | Status |
-|-------|--------|
-| Client scaffold | **Shipped** — `app/automation_engine/n8n_client.py` |
-| AE `template_type=n8n` dispatch | **Shipped** (Wave A.3) |
-| Named template helper | **Shipped** — `hot_lead_notify.py` supports `workflow_id` |
-| Docker Compose service | **Shipped** — `n8n` in `docker-compose.yml` → http://localhost:5678 |
-| Bus: `lead.hot` + alias `lead.escalated` | **Shipped** — scoring + handoff (`app/events/lead_hot.py`) |
-| Bus: `session.completed` | **Shipped** — handoff + full qualify close |
-| Bus: `site_visit.scheduled` | **Shipped** — EE success map (not CalendarExecutor) |
-| Turn `chat_context` | **Shipped** — `_emit_turn_events` |
-| Calendar REST (BA-5) | **Shipped** — `GET/POST /api/v1/calendar/*` (confirm → AE) |
-| HITL approve/reject paths | **Shipped** |
-| Live n8n **workflows** | **INCOMPLETE** — Maitri activates WF UI |
-| Workflows CSV / DLQ | **Not started** |
-
-### Ingest mode (BA-6 locked)
-
-| Mode | Role |
-|------|------|
-| **Redis Streams on `ireios:events` (primary)** | Filter one of `lead.hot` **or** `lead.escalated` (not both). |
-| AE webhook `template_type=n8n` | **Fallback only** when n8n cannot reach Redis. Do not enable both for the same alert. |
-
-### Workflow 1: `ireios_hot_lead_slack`
-
-- Webhook path: `/webhook/ireios_hot_lead_slack`
-- Trigger from IREIOS: `template_type="n8n"`, `workflow_id="ireios_hot_lead_slack"`
-- Payload shape (example):
+## Envelope every webhook receives
 
 ```json
 {
-  "action_type": "notify_agent",
+  "event_id": "uuid",
+  "event_type": "lead.hot",
   "tenant_id": "Client_1",
-  "entity_id": "42",
-  "parameters": { "kind": "hot_lead", "lead_name": "...", "lead_phone": "...", "score": 0.95 },
-  "template_type": "n8n",
-  "workflow_id": "ireios_hot_lead_slack"
+  "entity_id": "123",
+  "source": "lead_scoring_handler",
+  "timestamp": "2026-07-28T12:00:00+00:00",
+  "correlation_id": "uuid",
+  "payload": { }
 }
 ```
 
-- n8n side: Webhook (POST) + Header Auth `X-N8N-API-KEY` + Slack (or log-only Set node for smoke)
-- Activate workflow before testing
+n8n expressions: `{{ $json.payload.name }}`, `{{ $json.event_type }}`, `{{ $json.tenant_id }}`.
 
-### Workflow 2–3 (recommended later)
+## Canonical payloads
 
-- Weekly marketing CSV on `marketing.report.generated`
-- DLQ depth alert (cron or stream)
-
-## Canonical payloads (closeout target — backend BA-1…BA-4)
-
-Bus envelope (all events): `event_id`, `event_type`, `tenant_id` (`Client_<id>`), `entity_id`, `source`, `timestamp`, `correlation_id`, `payload`.
-
-### `lead.hot` (notification / escalation — catalog event)
-
-Prefer `lead.hot` + `payload.trigger`. If using the PR #10 alias `lead.escalated`, subscribe to **one** of the two — never both.
+### `lead.hot` (WF-1)
 
 ```json
 {
@@ -211,49 +178,24 @@ Prefer `lead.hot` + `payload.trigger`. If using the PR #10 alias `lead.escalated
 }
 ```
 
-| Chat / audit wording | What bus emits |
-|----------------------|----------------|
-| `human.requested` | `lead.hot` + `lead.escalated` with `trigger=human_handoff` |
-| `lead.escalated` (as sole name) | Dual-published with `lead.hot` (same payload) — pick one in n8n |
-| `session.completed` | Dual-published on close (plus keep `lead.qualified` for fields) |
+| Chat wording | Bus emits |
+|--------------|-----------|
+| `human.requested` | `lead.hot` + alias `lead.escalated`, `trigger=human_handoff` |
+| `lead.escalated` | Alias of `lead.hot` — bridge ignores alias by default |
+| `session.completed` | Alias on close; prefer `lead.qualified` for CRM fields |
 
-**Shipped:** `app/events/lead_hot.py` dual-publish + `lead_scoring_handler` (`hot_threshold`) + handoff/qualify-close. Redis debounce 30m per `(client, lead, trigger)`.
+**Shipped:** `app/events/lead_hot.py` · debounce 30m · scoring + handoff.
 
-### `lead.qualified` (CRM fields + transcript)
+### `lead.qualified` (WF-4 CRM)
 
-Emitted from `main.py` `_emit_turn_events` when 6-field gate complete (`chat_context` attached):
+Emitted from `main.py` `_emit_turn_events` when 6-field gate complete (`chat_context` attached).
 
-```json
-{
-  "event_type": "lead.qualified",
-  "tenant_id": "Client_1",
-  "entity_id": "123",
-  "payload": {
-    "lead_id": 123,
-    "session_id": "1_+919999999999",
-    "name": "John Doe",
-    "phone": "+919999999999",
-    "location": "Baner",
-    "budget": "80L",
-    "property_type": "2BHK",
-    "intent": "buy",
-    "lead_temperature": "hot",
-    "conversion_probability": 85,
-    "chat_context": "User: Hi...\nAgent: Great..."
-  }
-}
-```
+### `site_visit.scheduled` (WF-2)
 
-### `site_visit.scheduled` (calendar — EE after `CalendarExecutor`)
-
-Python owns Google create when `GOOGLE_CALENDAR_*` set. n8n = invite email / Slack only.
+Python owns Google create when `GOOGLE_CALENDAR_*` set. n8n = Gmail/ops fan-out only.
 
 ```json
 {
-  "event_type": "site_visit.scheduled",
-  "tenant_id": "Client_1",
-  "entity_id": "123",
-  "source": "execution_engine",
   "payload": {
     "lead_id": 123,
     "visit_id": "...",
@@ -267,32 +209,68 @@ Python owns Google create when `GOOGLE_CALENDAR_*` set. n8n = invite email / Sla
 }
 ```
 
-**Do not** rely on a dummy `GET /api/v1/calendar/availability` that always returns `available: true` without `provider`. Optional authenticated freebusy API is BA-5 only if needed.
+**Do not** create a second Google event if `provider=google_calendar`.
 
-### `approval.requested` (HITL)
+### `approval.requested` (WF-3)
 
-Already published from `app/automation_engine/hitl.py`. Closeout BA-4 adds relative `approve_path` / `reject_path`.
+From `app/automation_engine/hitl.py`: `approve_path`, `reject_path`, optional `api_base_hint`.  
+Approve APIs need JWT — Gmail links should open the **dashboard**, not unauthenticated POST.
 
-### `marketing.report.generated`
+### `marketing.report.generated` (WF-5)
 
-Shipped from `marketing_agent`. Use for Drive CSV workflow.
+From `marketing_agent`.
 
-## Ingest: Redis Streams vs AE webhook
+## Smoke (bridge + WF-1)
 
-| Mode | When to use |
-|------|-------------|
-| **Redis Streams** on `ireios:events` (filter `event_type`) | Preferred for bus-native events (`lead.hot`, `lead.qualified`, `site_visit.scheduled`, …) |
-| **Webhook** `POST {N8N_BASE_URL}/webhook/{workflow_id}` + `X-N8N-API-KEY` | When AE submits `template_type=n8n` (e.g. hot_lead template) |
+```powershell
+docker compose up -d redis n8n
+# Activate WF-1 in n8n UI (path ireios_hot_lead_alert + Header Auth + Gmail or Set)
+# uvicorn with N8N_* set, then:
+python publish_stub_event.py --event-type lead.hot --tenant-id Client_1 --entity-id 1 --payload "{\"lead_id\":1,\"name\":\"Demo\",\"phone\":\"+9199\",\"trigger\":\"hot_threshold\",\"score\":90,\"reason\":\"stub\",\"chat_context\":\"User: hi\"}"
+```
 
-Pick **one primary** per workflow with backend owner to avoid double Slack messages.
+Expect: API log `n8n_bridge_forwarded` · n8n execution · Gmail (or Set node output).
 
-## Practicality vs LangGraph
+## Default webhook map
 
-Prefer **n8n** for Slack/email/Drive/partner connectors. Prefer **LangGraph** (or existing HITL pause) for in-process multi-step AI. Do not put WhatsApp TwiML or the 6-field gate in n8n.
+Code: `app/automation_engine/n8n_bridge.py` → `DEFAULT_WEBHOOK_MAP`
 
-## Python email vs n8n email
+| event_type | path |
+|------------|------|
+| `lead.hot` | `ireios_hot_lead_alert` |
+| `site_visit.scheduled` | `ireios_visit_fanout` |
+| `approval.requested` | `ireios_hitl_notify` |
+| `lead.qualified` | `ireios_crm_note` |
+| `marketing.report.generated` | `ireios_marketing_csv` |
+
+Legacy path name `ireios_hot_lead_slack` is **retired** (Gmail-first). Override via `N8N_WEBHOOK_MAP` if needed.
+
+## Status
+
+| Piece | Status |
+|-------|--------|
+| Client scaffold | **Shipped** — `n8n_client.py` |
+| AE `template_type=n8n` | **Shipped** |
+| **Bus → webhook bridge** | **Shipped** — `n8n_bridge.py`, group `ireios-n8n` |
+| Docker Compose `n8n` | **Shipped** |
+| Bus emits (`lead.hot`, `chat_context`, visit merge, HITL paths) | **Shipped** |
+| Live n8n **workflows** (Gmail nodes Active) | **INCOMPLETE** — ops / Maitri UI |
+| WF recipes | **`plans/N8N_LIVE_WORKFLOWS_PLAN.md`** |
+
+## What must stay in IREIOS (not n8n)
+
+- WhatsApp TwiML reply path  
+- 6-field qualification gate + RAG  
+- Tenant isolation / JWT  
+- Follow-up Day0→7 state machine  
+- Multi-tenant `client_id` enforcement  
+- Google Calendar **create** via `CalendarExecutor`
+
+n8n is **orchestration around** the OS, not a replacement for the CEO/AE/EE spine.
+
+## Python email vs n8n Gmail
 
 | Kind | Owner | Purpose |
 |------|--------|---------|
 | Critical / Twilio failure fallback | Python notification paths | Disaster recovery |
-| Business ops (digests, rich HTML, Slack blocks, manager HITL formatting) | n8n | Day-to-day ops routing |
+| Business ops (hot lead, visit fan-out, HITL, digests) | n8n Gmail | Day-to-day ops routing |

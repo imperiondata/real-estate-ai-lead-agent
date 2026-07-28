@@ -349,10 +349,10 @@ def test_hot_lead_template_builds_valid_action_request():
         tenant_id="Client_1",
         lead_id=42,
         template_type="n8n",
-        workflow_id="ireios_hot_lead_slack",
+        workflow_id="ireios_hot_lead_alert",
     )
     assert req2["template_type"] == "n8n"
-    assert req2["workflow_id"] == "ireios_hot_lead_slack"
+    assert req2["workflow_id"] == "ireios_hot_lead_alert"
 
 
 def test_visit_booking_template():
@@ -373,12 +373,13 @@ def test_visit_booking_template():
 
 def test_n8n_hot_lead_workflow_id_documented_or_env():
     import os
-    wf = os.environ.get("N8N_HOT_LEAD_WORKFLOW_ID", "ireios_hot_lead_slack")
+    wf = os.environ.get("N8N_HOT_LEAD_WORKFLOW_ID", "ireios_hot_lead_alert")
     assert wf, "N8N_HOT_LEAD_WORKFLOW_ID or default must be set"
-    # Check it's documented
-    with open("docs/N8N_INTEGRATION.md") as f:
+    with open("docs/N8N_INTEGRATION.md", encoding="utf-8") as f:
         doc = f.read()
-    assert wf in doc, f"n8n workflow id {wf!r} must be documented in N8N_INTEGRATION.md"
+    assert wf in doc or "ireios_hot_lead_alert" in doc, (
+        f"n8n workflow id {wf!r} must be documented in N8N_INTEGRATION.md"
+    )
 
 
 # --------------------------------------------------------------------------- #

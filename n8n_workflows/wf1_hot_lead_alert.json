@@ -1,0 +1,214 @@
+{
+  "name": "IREIOS \u2014 WF-1: Hot Lead Alert \u2192 Gmail",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "ireios_hot_lead_alert",
+        "authentication": "headerAuth",
+        "responseMode": "lastNode",
+        "options": {}
+      },
+      "id": "webhook-hot-lead",
+      "name": "Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        240,
+        300
+      ],
+      "webhookId": "ireios-hot-lead",
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "G00Bi1IyHkT5zo68",
+          "name": "IREIOS API Key"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "cond-trigger",
+              "leftValue": "={{ $json.payload.trigger }}",
+              "rightValue": "human_handoff",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "if-handoff",
+      "name": "Is Handoff?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        480,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "values": {
+          "string": [
+            {
+              "name": "alert_prefix",
+              "value": "[HANDOFF]"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "set-handoff",
+      "name": "Set HANDOFF Prefix",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3,
+      "position": [
+        720,
+        200
+      ]
+    },
+    {
+      "parameters": {
+        "values": {
+          "string": [
+            {
+              "name": "alert_prefix",
+              "value": "[HOT]"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "set-hot",
+      "name": "Set HOT Prefix",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3,
+      "position": [
+        720,
+        400
+      ]
+    },
+    {
+      "parameters": {
+        "mergeByFields": {
+          "values": [
+            {
+              "fieldName": "alert_prefix"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "merge-branches",
+      "name": "Merge",
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3,
+      "position": [
+        960,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "sendTo": "maitridj01@gmail.com",
+        "subject": "={{ $json.alert_prefix }} Hot Lead: {{ $json.payload.name }} \u2014 {{ $json.payload.location }}",
+        "emailType": "html",
+        "message": "=<h2>{{ $json.alert_prefix }} Hot Lead Alert</h2><table border='1' cellpadding='8' cellspacing='0' style='border-collapse:collapse;'><tr><td><b>Name</b></td><td>{{ $json.payload.name }}</td></tr><tr><td><b>Phone</b></td><td>{{ $json.payload.phone }}</td></tr><tr><td><b>Location</b></td><td>{{ $json.payload.location }}</td></tr><tr><td><b>Budget</b></td><td>{{ $json.payload.budget }}</td></tr><tr><td><b>Property Type</b></td><td>{{ $json.payload.property_type }}</td></tr><tr><td><b>Score</b></td><td>{{ $json.payload.score }}</td></tr><tr><td><b>Trigger</b></td><td>{{ $json.payload.trigger }}</td></tr><tr><td><b>Assigned Agent</b></td><td>{{ $json.payload.assigned_agent }}</td></tr></table><br/><p><a href='http://localhost:3000/crm?lead_id={{ $json.entity_id }}'>View Lead in CRM \u2192</a></p><br/><p><i>Event: {{ $json.event_type }} | Tenant: {{ $json.tenant_id }} | Time: {{ $json.timestamp }}</i></p>",
+        "options": {}
+      },
+      "id": "gmail-hot-lead",
+      "name": "Gmail \u2014 Hot Lead",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.1,
+      "position": [
+        1200,
+        300
+      ],
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "13auoI7CTqojlGZh",
+          "name": "Gmail account"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "Is Handoff?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Is Handoff?": {
+      "main": [
+        [
+          {
+            "node": "Set HANDOFF Prefix",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Set HOT Prefix",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Set HANDOFF Prefix": {
+      "main": [
+        [
+          {
+            "node": "Merge",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Set HOT Prefix": {
+      "main": [
+        [
+          {
+            "node": "Merge",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Merge": {
+      "main": [
+        [
+          {
+            "node": "Gmail \u2014 Hot Lead",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "staticData": null
+}

@@ -26,13 +26,13 @@ Detail: `plans/IREIOS_3.0_WAVE_A_D_CHANGELOG.md` · plan: `plans/IREIOS_3.0_WAVE
 ### A.0 integrations (ops) — audit 2026-07-22
 - [x] HubSpot — **skipped**; demo stub OK
 - [x] Google Calendar — live smoke `provider=google_calendar` (fix SA JSON path with `/` on Windows)
-- [~] n8n — Docker `n8n-local` **up** + `N8N_*` set; **workflow incomplete** (webhook 404 until UI owner + active path + Header Auth)
+- [x] n8n — Docker `n8n-local` **up** + `N8N_*` set; **6/6 workflows active** (webhook-verified: WF-1–WF-6)
 - [x] Brochure HTTPS media — jsDelivr `docs/demo/*.pdf` GET 200 `application/pdf`; resolve_tool_media_url OK (2026-07-23)
 - [x] Neo4j — `/api/v1/graph/health` available + schema v1
 - [x] D.2 memory auto-write + B.7 create_task (2026-07-23)
 - [ ] `task3_runner.py` live stress when Gemini quota allows
 - [ ] Dual-path module delete 10.2/10.3 — **deferred**
-- [ ] n8n workflow automations (incl. optional Calendar nodes) — later
+- [x] n8n workflow automations (WF-1–WF-6 shipped + active)
 
 ## Data, graph, memory
 - [x] Neo4j schema v1; `/api/v1/graph/health` available when configured

@@ -50,7 +50,7 @@ class N8NClient:
             return {"status": "error", "error": "n8n_not_configured"}
 
         url = f"{self.base_url}/webhook/{workflow_id}"
-        headers = {"X-N8N-API-KEY": self.api_key, "Content-Type": "application/json"}
+        headers = {"Authorization": f"Bearer {self.api_key}", "Content-Type": "application/json"}
         try:
             async with httpx.AsyncClient(timeout=15.0) as client:
                 resp = await client.post(url, json=payload, headers=headers)

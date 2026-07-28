@@ -1,0 +1,65 @@
+{
+  "name": "IREIOS \u2014 WF-4: CRM Note \u2192 Google Sheets",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "ireios_crm_append",
+        "authentication": "headerAuth",
+        "responseMode": "lastNode",
+        "options": {}
+      },
+      "id": "webhook-crm",
+      "name": "Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [240, 300],
+      "webhookId": "ireios-crm-append",
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "G00Bi1IyHkT5zo68",
+          "name": "IREIOS API Key"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://sheets.googleapis.com/v4/spreadsheets/1LkU9-OFXWm1q2cHycQ7DEuI9fmkptoD2F6jQCdtAwJg/values/Sheet1:append?valueInputOption=USER_ENTERED",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "googleSheetsOAuth2Api",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"values\": [[\n    \"{{ $json.body.payload.name }}\",\n    \"{{ $json.body.payload.phone }}\",\n    \"{{ $json.body.payload.location }}\",\n    \"{{ $json.body.payload.budget }}\",\n    \"{{ $json.body.payload.property_type }}\",\n    \"{{ $json.body.payload.visit_date }}\",\n    \"{{ $json.body.timestamp }}\",\n    \"{{ $json.body.tenant_id }}\",\n    \"{{ $json.body.entity_id }}\"\n  ]]\n}",
+        "options": {}
+      },
+      "id": "sheets-api",
+      "name": "Google Sheets API",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [520, 300],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "wpcizRhlDTPwGFM8",
+          "name": "Google Sheets account"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "Google Sheets API",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  }
+}

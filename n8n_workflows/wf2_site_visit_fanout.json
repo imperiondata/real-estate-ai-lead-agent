@@ -1,0 +1,142 @@
+{
+  "name": "IREIOS \u2014 WF-2: Site Visit Fan-out \u2192 Gmail",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "ireios_visit_fanout",
+        "authentication": "headerAuth",
+        "responseMode": "lastNode",
+        "options": {}
+      },
+      "id": "webhook-visit",
+      "name": "Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        240,
+        300
+      ],
+      "webhookId": "ireios-visit-fanout",
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "G00Bi1IyHkT5zo68",
+          "name": "IREIOS API Key"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "cond-provider",
+              "leftValue": "={{ $json.payload.provider }}",
+              "rightValue": "google_calendar",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "if-google",
+      "name": "Google Calendar?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        480,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "sendTo": "maitridj01@gmail.com",
+        "subject": "=Site Visit Booked \u2014 {{ $json.payload.name }} on {{ $json.payload.visit_date }}",
+        "emailType": "html",
+        "message": "=<h2>Site Visit Booked (Google Calendar)</h2><table border='1' cellpadding='8' cellspacing='0' style='border-collapse:collapse;'><tr><td><b>Lead</b></td><td>{{ $json.payload.name }}</td></tr><tr><td><b>Phone</b></td><td>{{ $json.payload.phone }}</td></tr><tr><td><b>Location</b></td><td>{{ $json.payload.location }}</td></tr><tr><td><b>Visit Date</b></td><td>{{ $json.payload.visit_date }}</td></tr><tr><td><b>Visit ID</b></td><td>{{ $json.payload.visit_id }}</td></tr></table><br/><p><a href='{{ $json.payload.html_link }}'>View in Google Calendar \u2192</a></p><br/><p><a href='http://localhost:3000/crm?lead_id={{ $json.entity_id }}'>View Lead in CRM \u2192</a></p>",
+        "options": {}
+      },
+      "id": "gmail-google",
+      "name": "Gmail \u2014 Calendar Event",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.1,
+      "position": [
+        720,
+        200
+      ],
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "13auoI7CTqojlGZh",
+          "name": "Gmail account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "sendTo": "maitridj01@gmail.com",
+        "subject": "=Site Visit Scheduled (Stub) \u2014 {{ $json.payload.name }}",
+        "emailType": "html",
+        "message": "=<h2>Site Visit Scheduled (Stub)</h2><p>Google Calendar is not configured. The visit was recorded as a stub.</p><table border='1' cellpadding='8' cellspacing='0' style='border-collapse:collapse;'><tr><td><b>Lead</b></td><td>{{ $json.payload.name }}</td></tr><tr><td><b>Phone</b></td><td>{{ $json.payload.phone }}</td></tr><tr><td><b>Location</b></td><td>{{ $json.payload.location }}</td></tr><tr><td><b>Visit Date</b></td><td>{{ $json.payload.visit_date }}</td></tr><tr><td><b>Visit ID</b></td><td>{{ $json.payload.visit_id }}</td></tr></table><br/><p><a href='http://localhost:3000/crm?lead_id={{ $json.entity_id }}'>View Lead in CRM \u2192</a></p>",
+        "options": {}
+      },
+      "id": "gmail-stub",
+      "name": "Gmail \u2014 Stub Visit",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.1,
+      "position": [
+        720,
+        400
+      ],
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "13auoI7CTqojlGZh",
+          "name": "Gmail account"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "Google Calendar?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Google Calendar?": {
+      "main": [
+        [
+          {
+            "node": "Gmail \u2014 Calendar Event",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Gmail \u2014 Stub Visit",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "staticData": null
+}

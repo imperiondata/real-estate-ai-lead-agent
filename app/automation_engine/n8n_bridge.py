@@ -29,7 +29,7 @@ DEFAULT_WEBHOOK_MAP: dict[str, str] = {
     "lead.hot": "ireios_hot_lead_alert",
     "site_visit.scheduled": "ireios_visit_fanout",
     "approval.requested": "ireios_hitl_notify",
-    "lead.qualified": "ireios_crm_note",
+    "lead.qualified": "ireios_crm_append",
     "marketing.report.generated": "ireios_marketing_csv",
 }
 

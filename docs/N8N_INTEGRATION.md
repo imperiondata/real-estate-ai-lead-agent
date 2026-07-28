@@ -24,7 +24,7 @@ Event Bus (Redis Streams: ireios:events)
     └─► consumer group ireios-n8n → N8NBridge (app/automation_engine/n8n_bridge.py)
               filter allowlisted event_type
               POST {N8N_BASE_URL}/webhook/{path}
-              header X-N8N-API-KEY
+              header Authorization: Bearer {N8N_API_KEY}
               body = full bus envelope
                     │
                     ▼
@@ -58,7 +58,7 @@ Full step-by-step recipes: **`plans/N8N_LIVE_WORKFLOWS_PLAN.md`**.
 | WF-1 P0 | `ireios_hot_lead_alert` | `lead.hot` | Gmail to admin (hot / handoff) |
 | WF-2 P1 | `ireios_visit_fanout` | `site_visit.scheduled` | Gmail invite note (no 2nd GCal create) |
 | WF-3 P1 | `ireios_hitl_notify` | `approval.requested` | Gmail manager + dashboard links |
-| WF-4 P2 | `ireios_crm_note` | `lead.qualified` | External CRM note + `chat_context` |
+| WF-4 P2 | `ireios_crm_append` | `lead.qualified` | Google Sheets append via HTTP Request |
 | WF-5 P2 | `ireios_marketing_csv` | `marketing.report.generated` | CSV → Drive + Gmail link |
 | WF-6 P2 | (cron) | — | DLQ depth Gmail |
 
@@ -104,8 +104,7 @@ docker compose up -d n8n redis
    - Method: POST  
    - Path: e.g. `ireios_hot_lead_alert`  
    - Authentication: **Header Auth**  
-   - Header name: `X-N8N-API-KEY`  
-   - Header value: same as `.env` `N8N_API_KEY`  
+   - Header Auth → name: `Authorization`, value: `Bearer {N8N_API_KEY}`
 4. Add **Gmail** node (or Set-only for smoke) → **Activate**.  
 5. Point IREIOS at the instance:
 
@@ -117,7 +116,7 @@ N8N_BRIDGE_GROUP=ireios-n8n
 ```
 
 Restart uvicorn after changing `.env`. Bridge POSTs  
-`{N8N_BASE_URL}/webhook/{path}` with header `X-N8N-API-KEY` and the **full bus envelope**.
+`{N8N_BASE_URL}/webhook/{path}` with header `Authorization: Bearer {N8N_API_KEY}` and the **full bus envelope**.
 
 **From another container** (API in Compose): `N8N_BASE_URL=http://n8n:5678`.
 
@@ -240,7 +239,7 @@ Code: `app/automation_engine/n8n_bridge.py` → `DEFAULT_WEBHOOK_MAP`
 | `lead.hot` | `ireios_hot_lead_alert` |
 | `site_visit.scheduled` | `ireios_visit_fanout` |
 | `approval.requested` | `ireios_hitl_notify` |
-| `lead.qualified` | `ireios_crm_note` |
+| `lead.qualified` | `ireios_crm_append` |
 | `marketing.report.generated` | `ireios_marketing_csv` |
 
 Legacy path name `ireios_hot_lead_slack` is **retired** (Gmail-first). Override via `N8N_WEBHOOK_MAP` if needed.
@@ -254,7 +253,7 @@ Legacy path name `ireios_hot_lead_slack` is **retired** (Gmail-first). Override 
 | **Bus → webhook bridge** | **Shipped** — `n8n_bridge.py`, group `ireios-n8n` |
 | Docker Compose `n8n` | **Shipped** |
 | Bus emits (`lead.hot`, `chat_context`, visit merge, HITL paths) | **Shipped** |
-| Live n8n **workflows** (Gmail nodes Active) | **INCOMPLETE** — ops / Maitri UI |
+| Live n8n **workflows** (Gmail nodes Active) | **Shipped** — 6/6 active, webhook-verified |
 | WF recipes | **`plans/N8N_LIVE_WORKFLOWS_PLAN.md`** |
 
 ## What must stay in IREIOS (not n8n)

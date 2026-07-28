@@ -99,14 +99,19 @@ docker compose up -d n8n redis
 **Create credentials in the UI**
 
 1. Open http://localhost:5678 → finish owner setup.  
-2. **Credentials** → Gmail OAuth2 (primary). Optional Slack.  
-3. New workflow → **Webhook** node:
+2. **Create Google OAuth2 credentials** — see **[`docs/N8N_GOOGLE_CREDENTIALS_SETUP.md`](N8N_GOOGLE_CREDENTIALS_SETUP.md)** for full step-by-step Google Cloud Console setup.
+   - One OAuth Client covers Gmail + Google Sheets (enable both APIs in Step 2)
+   - Required credentials: `Gmail OAuth2` + `Google Sheets OAuth2`
+3. Create **Header Auth** credential for IREIOS webhook auth:
+   - Name: `IREIOS API Key`
+   - Header: `Authorization`
+   - Value: `Bearer {N8N_API_KEY}` (same as `.env`)
+4. New workflow → **Webhook** node:
    - Method: POST  
    - Path: e.g. `ireios_hot_lead_alert`  
-   - Authentication: **Header Auth**  
-   - Header Auth → name: `Authorization`, value: `Bearer {N8N_API_KEY}`
-4. Add **Gmail** node (or Set-only for smoke) → **Activate**.  
-5. Point IREIOS at the instance:
+   - Authentication: **Header Auth** → select `IREIOS API Key`  
+5. Add **Gmail** node (or Set-only for smoke) → **Activate**.  
+6. Point IREIOS at the instance:
 
 ```env
 N8N_BASE_URL=http://localhost:5678
@@ -251,10 +256,17 @@ Legacy path name `ireios_hot_lead_slack` is **retired** (Gmail-first). Override 
 | Client scaffold | **Shipped** — `n8n_client.py` |
 | AE `template_type=n8n` | **Shipped** |
 | **Bus → webhook bridge** | **Shipped** — `n8n_bridge.py`, group `ireios-n8n` |
-| Docker Compose `n8n` | **Shipped** |
+| Docker Compose `n8n` | **Shipped** — `n8nio/n8n:2.31.5` |
 | Bus emits (`lead.hot`, `chat_context`, visit merge, HITL paths) | **Shipped** |
-| Live n8n **workflows** (Gmail nodes Active) | **Shipped** — 6/6 active, webhook-verified |
-| WF recipes | **`plans/N8N_LIVE_WORKFLOWS_PLAN.md`** |
+| Google OAuth2 credentials | **Shipped** — Gmail + Google Sheets via custom OAuth2 |
+| Live n8n **workflows** (6/6 Active) | **Shipped** — webhook-verified, import via `import_n8n_workflows.py` |
+| WF-1 `ireios_hot_lead_alert` | **Shipped** — Hot Lead → Gmail (IF handoff → prefix) |
+| WF-2 `ireios_visit_fanout` | **Shipped** — Site Visit → Gmail (IF google_calendar → event link) |
+| WF-3 `ireios_hitl_notify` | **Shipped** — HITL → Gmail (approval request) |
+| WF-4 `ireios_crm_append` | **Shipped** — CRM → Google Sheets via HTTP Request |
+| WF-5 `ireios_marketing_csv` | **Shipped** — Marketing Report → Gmail + CSV attachment via Gmail API |
+| WF-6 DLQ cron (15min) | **Shipped** — DLQ Depth Monitor → Gmail |
+| Credential setup guide | **Shipped** — `docs/N8N_GOOGLE_CREDENTIALS_SETUP.md` |
 
 ## What must stay in IREIOS (not n8n)
 

@@ -251,7 +251,7 @@ Sales hot escalate: notify_agent + create_task → agent_tasks
 ## Docs pointers
 
 - **Timeouts & timings (all race/TTL/scheduler values):** `docs/TIMEOUTS_AND_TIMINGS.md`
-- n8n: Compose + AE path + **bridge** shipped; Gmail WF UI still ops (`docs/N8N_INTEGRATION.md`, `plans/N8N_LIVE_WORKFLOWS_PLAN.md`). Brochure HTTPS URLs optional until set.
+- n8n: Compose + AE path + **bridge** shipped; **6/6 workflows active** (Gmail + Google Sheets via OAuth2). See `docs/N8N_INTEGRATION.md`, `docs/N8N_GOOGLE_CREDENTIALS_SETUP.md`. Brochure HTTPS URLs optional until set.
 - **Post-G3 automations closeout (Step 24):** `plans/PHASE3_AUTOMATIONS_CLOSEOUT.md`. Canonical bus (`lead.hot` + `trigger`). HubSpot Python stays skipped.
 - **BA-1…BA-7 + bridge:** `lead_hot.py`; `chat_context`; EE visit merge; HITL paths; calendar REST; **`n8n_bridge`** (not stock Redis→n8n). Tests: `tests/test_e18_*.py`, `tests/test_e20_n8n_bridge.py`.
 - Frontend remaining work: `docs/FRONTEND_BACKLOG.md` (MockSSE cutover still open)

@@ -366,6 +366,48 @@ Timeouts & timings map: `docs/TIMEOUTS_AND_TIMINGS.md`.
 
 ---
 
+## n8n Automation Workflows (Optional)
+
+n8n is the **external ops plane** for IREIOS — Gmail alerts, Google Sheets CRM logging, HITL notifications, and marketing report emails. It runs as a sidecar and does **not** affect the WhatsApp chat reply path.
+
+### Quick start
+
+```powershell
+# 1. Start n8n
+docker compose up -d n8n
+# UI: http://localhost:5678 (create owner account on first visit)
+
+# 2. Set up Google credentials (one-time)
+#    Follow: docs/N8N_GOOGLE_CREDENTIALS_SETUP.md
+#    Creates Gmail OAuth2 + Google Sheets OAuth2 credentials in n8n
+
+# 3. Import all 6 workflows
+python import_n8n_workflows.py
+
+# 4. Verify
+curl http://localhost:5678/api/v1/workflows -H "X-N8N-API-KEY: local-n8n-webhook-secret"
+```
+
+### Active workflows
+
+| WF | Webhook Path | Event | Action |
+|----|-------------|-------|--------|
+| WF-1 | `ireios_hot_lead_alert` | `lead.hot` | Gmail — hot lead alert with handoff prefix |
+| WF-2 | `ireios_visit_fanout` | `site_visit.scheduled` | Gmail — site visit booked (includes Calendar link) |
+| WF-3 | `ireios_hitl_notify` | `approval.requested` | Gmail — HITL approval request to manager |
+| WF-4 | `ireios_crm_append` | `lead.qualified` | Google Sheets — append lead row |
+| WF-5 | `ireios_marketing_csv` | `marketing.report.generated` | Gmail — CSV attachment (Gmail API) |
+| WF-6 | (cron 15min) | — | Gmail — DLQ depth monitor |
+
+### Key docs
+
+- **Credential setup:** [`docs/N8N_GOOGLE_CREDENTIALS_SETUP.md`](docs/N8N_GOOGLE_CREDENTIALS_SETUP.md) — full Google Cloud Console walkthrough
+- **Architecture:** [`docs/N8N_INTEGRATION.md`](docs/N8N_INTEGRATION.md) — bridge, envelope, workflow details
+- **Workflow JSONs:** `n8n_workflows/` — 6 workflow definitions
+- **Import script:** `import_n8n_workflows.py` — deploy via n8n REST API
+
+---
+
 ## Fresh Session Restart
 
 When returning after closing everything:

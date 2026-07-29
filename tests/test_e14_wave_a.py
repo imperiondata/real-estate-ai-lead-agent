@@ -216,6 +216,7 @@ def test_ae_n8n_template_calls_client_when_configured(monkeypatch):
 
     class _Resp:
         status_code = 200
+        content = b'{"ok":true}'
         def json(self):
             return {"ok": True}
         def raise_for_status(self):

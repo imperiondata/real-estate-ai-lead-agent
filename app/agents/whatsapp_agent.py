@@ -41,17 +41,25 @@ _PROP_TYPE_RE = re.compile(r"\b(1bhk|2bhk|3bhk|4bhk|villa|plot|studio|penthouse|
 _AREA_RE = re.compile(r"\b(\d{3,5})\s*sq\s*(ft|feet)\b", re.I)
 
 # Post-G3 Approach B: structured media URL for the current turn (TwiML path).
-# ContextVar keeps concurrent requests isolated; module fallback covers tests
-# that call process_chat via asyncio.run (new context copy).
+# ContextVar keeps concurrent requests isolated; per-session map avoids races when
+# multiple turns finish under different tasks; module fallback covers tests that
+# call process_chat via asyncio.run (new context copy).
 _outbound_media_ctx: contextvars.ContextVar[Optional[str]] = contextvars.ContextVar(
     "wa_outbound_media", default=None
 )
 _outbound_media_fallback: Optional[str] = None
+_outbound_media_by_session: dict[str, str] = {}
+_outbound_media_session_ctx: contextvars.ContextVar[Optional[str]] = contextvars.ContextVar(
+    "wa_outbound_media_session", default=None
+)
 
 
-def take_outbound_media_url() -> Optional[str]:
+def take_outbound_media_url(session_id: Optional[str] = None) -> Optional[str]:
     """Return and clear the media URL staged for this turn (if any)."""
     global _outbound_media_fallback
+    sid = session_id or _outbound_media_session_ctx.get()
+    if sid and sid in _outbound_media_by_session:
+        return _outbound_media_by_session.pop(sid, None)
     url = _outbound_media_ctx.get()
     _outbound_media_ctx.set(None)
     if url is None:
@@ -60,14 +68,23 @@ def take_outbound_media_url() -> Optional[str]:
     return url
 
 
-def peek_outbound_media_url() -> Optional[str]:
+def peek_outbound_media_url(session_id: Optional[str] = None) -> Optional[str]:
     """Read staged media URL without clearing (tests)."""
+    sid = session_id or _outbound_media_session_ctx.get()
+    if sid and sid in _outbound_media_by_session:
+        return _outbound_media_by_session.get(sid)
     return _outbound_media_ctx.get() or _outbound_media_fallback
 
 
-def _stage_outbound_media_url(url: Optional[str]) -> None:
+def _stage_outbound_media_url(url: Optional[str], session_id: Optional[str] = None) -> None:
     global _outbound_media_fallback
     val = url if url else None
+    sid = session_id or _outbound_media_session_ctx.get()
+    if sid:
+        if val:
+            _outbound_media_by_session[sid] = val
+        else:
+            _outbound_media_by_session.pop(sid, None)
     _outbound_media_ctx.set(val)
     _outbound_media_fallback = val
 
@@ -362,8 +379,9 @@ class WhatsAppAgent:
         if not lead:
             return reply
 
-        # Clear any stale staged media from a prior turn in this context.
-        _stage_outbound_media_url(None)
+        _outbound_media_session_ctx.set(session_id)
+        # Clear any stale staged media from a prior turn for this session.
+        _stage_outbound_media_url(None, session_id=session_id)
 
         final_reply = reply
 
@@ -405,7 +423,8 @@ class WhatsAppAgent:
                         logger.debug("tool sent event publish skipped: %s", e)
             else:
                 if media_url:
-                    _stage_outbound_media_url(media_url)
+                    _stage_outbound_media_url(media_url, session_id=session_id)
+
                 try:
                     from app.clients.event_bus_client import event_bus
 

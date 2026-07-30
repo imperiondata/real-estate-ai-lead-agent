@@ -89,6 +89,13 @@ def check_and_send_followups_v3() -> None:
                 session = db.query(Session).filter(Session.id == session_id).first()
                 lead = db.query(Lead).filter(Lead.session_id == session_id).first()
                 if not session:
+                    state.follow_up_status = "stopped"
+                    state.next_follow_up_at = None
+                    db.commit()
+                    logger.warning(
+                        "Follow-up v3 stopped: session missing session_id=%s",
+                        session_id,
+                    )
                     continue
 
                 clean_phone = None
@@ -144,7 +151,9 @@ def check_and_send_followups_v3() -> None:
                         "urgency_level": getattr(lead, "urgency_level", "low") or "low",
                         "engagement_score": getattr(lead, "engagement_score", 0) or 0,
                         "expected_closure_days": getattr(lead, "expected_closure_days", 0),
-                        "budget_alignment_status": "aligned",
+                        "budget_alignment_status": getattr(
+                            lead, "budget_alignment_status", None
+                        ) or "aligned",
                         "response_speed_score": 50,
                         "inactive_lead": inactivity,
                     }
@@ -157,12 +166,27 @@ def check_and_send_followups_v3() -> None:
                         raise Exception("QA_DLQ_TEST — intentional failure to verify DLQ pipeline")
 
                     if current_stage == "Day 7":
+                        if not lead:
+                            state.follow_up_status = "stopped"
+                            state.next_follow_up_at = None
+                            db.commit()
+                            logger.warning(
+                                "Day 7 v3 stopped: lead missing session_id=%s",
+                                session_id,
+                            )
+                            continue
                         closure_msg = (
                             f"Hi {lead.name or 'there'}, we haven't heard back from you in a while. "
                             f"We'll pause our updates for now. Feel free to reach out anytime — "
                             f"we're happy to help with your property search. Take care! 🏡"
                         )
-                        _run_dispatch(db, state, lead, clean_phone, closure_msg, "day7_closure")
+                        sent = _run_dispatch(db, state, lead, clean_phone, closure_msg, "day7_closure")
+                        if not sent:
+                            from follow_up import apply_quiet_hours
+                            from datetime import timedelta
+                            state.next_follow_up_at = apply_quiet_hours(now + timedelta(hours=24))
+                            db.commit()
+                            continue
                         state.follow_up_status = "stopped"
                         state.next_follow_up_at = None
                         session.status = "closed"
@@ -186,6 +210,12 @@ def check_and_send_followups_v3() -> None:
                         raise ValueError("ML Engine returned an empty message payload.")
 
                     sent = _run_dispatch(db, state, lead, clean_phone, payload_msg, f"followup_{current_stage}")
+                    if not sent:
+                        from follow_up import apply_quiet_hours
+                        from datetime import timedelta
+                        state.next_follow_up_at = apply_quiet_hours(now + timedelta(hours=24))
+                        db.commit()
+                        continue
 
                     if sent:
                         state.follow_up_sent_at = now
@@ -237,7 +267,10 @@ def check_and_send_followups_v3() -> None:
 
 
 def _run_dispatch(db, state, lead, clean_phone, body, source) -> bool:
-    """Build + send the message via AE; persist audit message; commit DB."""
+    """Build + send the message via AE; persist audit message; commit DB.
+
+    Returns True if FSM should advance. False = hold stage (e.g. no phone).
+    """
     session_id = state.session_id
     if settings.TEST_MODE:
         logger.info(f"[TEST MODE] Follow-up v3 skipped send for {session_id}")
@@ -245,12 +278,15 @@ def _run_dispatch(db, state, lead, clean_phone, body, source) -> bool:
                        role="assistant", content=f"[AUTO TEST] {body}"))
         db.commit()
         return True
-    if not (lead and lead.phone and settings.TWILIO_ACCOUNT_SID):
+    if not settings.TWILIO_ACCOUNT_SID:
         logger.info(f"Simulated follow-up v3 for {session_id}")
         db.add(Message(session_id=session_id, client_id=state.client_id,
                        role="assistant", content=f"[AUTO SIM] {body}"))
         db.commit()
         return True
+    if not (lead and lead.phone and clean_phone):
+        logger.warning("Follow-up v3 deferred (no phone) session=%s", session_id)
+        return False
     to = f"whatsapp:{clean_phone}" if lead and lead.source == "whatsapp" else clean_phone
     action = _build_action(session_id, state.client_id, to, body, source)
     sent = asyncio.run(_dispatch_message(action))

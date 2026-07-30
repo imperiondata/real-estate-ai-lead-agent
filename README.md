@@ -374,18 +374,24 @@ n8n is the **external ops plane** for IREIOS — Gmail alerts, Google Sheets CRM
 
 ```powershell
 # 1. Start n8n
-docker compose up -d n8n
+docker compose up -d n8n redis
 # UI: http://localhost:5678 (create owner account on first visit)
 
-# 2. Set up Google credentials (one-time)
-#    Follow: docs/N8N_GOOGLE_CREDENTIALS_SETUP.md
-#    Creates Gmail OAuth2 + Google Sheets OAuth2 credentials in n8n
+# 2. Full Google Cloud + n8n credentials (one-time) — follow the guide:
+#    docs/N8N_GOOGLE_CREDENTIALS_SETUP.md
+#    (Gmail/Sheets/Drive/Calendar APIs, OAuth + test users, Header Auth,
+#     management JWT, Calendar service account for Python)
 
-# 3. Import all 6 workflows
-python import_n8n_workflows.py
+# 3. .env: N8N_API_KEY (webhook secret) + N8N_MANAGEMENT_API_KEY (JWT from Settings → n8n API)
+# 4. Import workflows
+uv run python import_n8n_workflows.py
 
-# 4. Verify
-curl http://localhost:5678/api/v1/workflows -H "X-N8N-API-KEY: local-n8n-webhook-secret"
+# 5. In n8n UI: set Gmail To + Publish all 6 workflows (repo ships empty sendTo)
+# 6. Smoke webhook (use webhook secret, not management JWT):
+curl -X POST "http://localhost:5678/webhook/ireios_hot_lead_alert" `
+  -H "Authorization: Bearer local-n8n-webhook-secret" `
+  -H "Content-Type: application/json" `
+  -d "{\"event_type\":\"lead.hot\",\"tenant_id\":\"Client_1\",\"entity_id\":\"1\",\"payload\":{\"name\":\"Demo\",\"trigger\":\"hot_threshold\",\"score\":90}}"
 ```
 
 ### Active workflows

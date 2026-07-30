@@ -402,7 +402,7 @@ npm run lint
 
 - `NEXT_PUBLIC_API_URL` → backend (e.g. `http://localhost:8000`)
 - Auth: HttpOnly `jwt` cookie via server login action
-- Live SSE cutover still backlog: `docs/FRONTEND_BACKLOG.md` (replace MockSSE)
+- FE SSE: partial cutover (`dashboard-mvp` EventSource); remaining work: `docs/FRONTEND_BACKLOG.md`
 
 ---
 

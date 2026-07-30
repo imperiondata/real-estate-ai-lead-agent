@@ -1,5 +1,5 @@
 {
-  "name": "IREIOS \u2014 WF-6: DLQ Depth Monitor \u2192 Gmail",
+  "name": "IREIOS — WF-6: DLQ Depth Monitor → Gmail",
   "nodes": [
     {
       "parameters": {
@@ -16,10 +16,7 @@
       "name": "Every 15 Minutes",
       "type": "n8n-nodes-base.scheduleTrigger",
       "typeVersion": 1.2,
-      "position": [
-        240,
-        300
-      ]
+      "position": [240, 300]
     },
     {
       "parameters": {
@@ -42,23 +39,17 @@
       "name": "Fetch Metrics",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
-      "position": [
-        480,
-        300
-      ]
+      "position": [480, 300]
     },
     {
       "parameters": {
-        "jsCode": "const text = $input.first().json.data || $input.first().json.body || '';\nconst match = text.match(/dlq_pending_events\\s+(\\d+)/);\nconst pending = match ? parseInt(match[1], 10) : 0;\nreturn [{ json: { pending, raw: text.substring(0, 500) } }];"
+        "jsCode": "const text = $input.first().json.data || $input.first().json.body || '';\nconst match = String(text).match(/dlq_pending_events\\s+(\\d+)/);\nconst pending = match ? parseInt(match[1], 10) : 0;\nreturn [{ json: { pending, raw: String(text).substring(0, 500) } }];"
       },
       "id": "code-parse",
       "name": "Parse DLQ Count",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [
-        720,
-        300
-      ]
+      "position": [720, 300]
     },
     {
       "parameters": {
@@ -87,91 +78,51 @@
       "name": "DLQ > 0?",
       "type": "n8n-nodes-base.if",
       "typeVersion": 2,
-      "position": [
-        960,
-        300
-      ]
+      "position": [960, 300]
     },
     {
       "parameters": {
-        "sendTo": "maitridj01@gmail.com",
+        "sendTo": "",
         "subject": "=DLQ Alert: {{ $json.pending }} pending events",
         "emailType": "html",
-        "message": "=<h2>DLQ Alert</h2><p>There are <b>{{ $json.pending }}</b> pending dead-letter events that need attention.</p><p>Check the DLQ with: <code>python dlq_replay.py</code></p><p><a href='http://localhost:8000/docs'>View API Docs \u2192</a></p>",
+        "message": "=<h2>DLQ Alert</h2><p>There are <b>{{ $json.pending }}</b> pending dead-letter events that need attention.</p><p>Check the DLQ with: <code>python dlq_replay.py</code></p><p><a href='http://localhost:8000/docs'>View API Docs →</a></p><p><b>NOTE:</b> Set Gmail <code>To</code> in n8n UI before relying on this alert.</p>",
         "options": {}
       },
       "id": "gmail-dlq",
-      "name": "Gmail \u2014 DLQ Alert",
+      "name": "Gmail — DLQ Alert",
       "type": "n8n-nodes-base.gmail",
       "typeVersion": 2.1,
-      "position": [
-        1200,
-        200
-      ],
-      "credentials": {}
+      "position": [1200, 200],
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "",
+          "name": "Gmail account"
+        }
+      }
     },
     {
       "parameters": {},
       "id": "noop-clear",
-      "name": "No DLQ \u2014 Skip",
+      "name": "No DLQ — Skip",
       "type": "n8n-nodes-base.noOp",
       "typeVersion": 1,
-      "position": [
-        1200,
-        400
-      ]
+      "position": [1200, 400]
     }
   ],
   "connections": {
     "Every 15 Minutes": {
-      "main": [
-        [
-          {
-            "node": "Fetch Metrics",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
+      "main": [[{ "node": "Fetch Metrics", "type": "main", "index": 0 }]]
     },
     "Fetch Metrics": {
-      "main": [
-        [
-          {
-            "node": "Parse DLQ Count",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
+      "main": [[{ "node": "Parse DLQ Count", "type": "main", "index": 0 }]]
     },
     "Parse DLQ Count": {
-      "main": [
-        [
-          {
-            "node": "DLQ > 0?",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
+      "main": [[{ "node": "DLQ > 0?", "type": "main", "index": 0 }]]
     },
     "DLQ > 0?": {
       "main": [
-        [
-          {
-            "node": "Gmail \u2014 DLQ Alert",
-            "type": "main",
-            "index": 0
-          }
-        ],
-        [
-          {
-            "node": "No DLQ \u2014 Skip",
-            "type": "main",
-            "index": 0
-          }
-        ]
+        [{ "node": "Gmail — DLQ Alert", "type": "main", "index": 0 }],
+        [{ "node": "No DLQ — Skip", "type": "main", "index": 0 }]
       ]
     }
   },

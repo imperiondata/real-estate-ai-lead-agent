@@ -91,31 +91,62 @@ docker compose up -d n8n redis
 
 | Item | Value |
 |------|--------|
-| Image | `n8nio/n8n` service `n8n` in `docker-compose.yml` |
+| Image | `n8nio/n8n:2.31.5` service `n8n` in `docker-compose.yml` |
 | UI / API base | `http://localhost:5678` |
 | Data volume | `n8ndata` |
-| Webhooks | `http://localhost:5678/webhook/<path>` (workflow must be **Active**) |
+| Webhooks | `http://localhost:5678/webhook/<path>` (workflow must be **Published/Active**) |
 
-**Create credentials in the UI**
+### Two keys (do not mix)
 
-1. Open http://localhost:5678 → finish owner setup.  
-2. **Create Google OAuth2 credentials** — see **[`docs/N8N_GOOGLE_CREDENTIALS_SETUP.md`](N8N_GOOGLE_CREDENTIALS_SETUP.md)** for full step-by-step Google Cloud Console setup.
-   - One OAuth Client covers Gmail + Google Sheets (enable both APIs in Step 2)
-   - Required credentials: `Gmail OAuth2` + `Google Sheets OAuth2`
-3. Create **Header Auth** credential for IREIOS webhook auth:
-   - Name: `IREIOS API Key`
-   - Header: `Authorization`
-   - Value: `Bearer {N8N_API_KEY}` (same as `.env`)
-4. New workflow → **Webhook** node:
-   - Method: POST  
-   - Path: e.g. `ireios_hot_lead_alert`  
-   - Authentication: **Header Auth** → select `IREIOS API Key`  
-5. Add **Gmail** node (or Set-only for smoke) → **Activate**.  
-6. Point IREIOS at the instance:
+| Env var | What it is | Used by | n8n UI |
+|---------|------------|---------|--------|
+| `N8N_API_KEY` | Shared **webhook** secret | Backend `n8n_client` / bridge → `Authorization: Bearer {secret}` on `POST /webhook/*` | Header Auth credential **IREIOS API Key**: header name `Authorization`, value `Bearer {same secret}` |
+| `N8N_MANAGEMENT_API_KEY` | JWT from **Settings → n8n API** | `import_n8n_workflows.py` only → header `X-N8N-API-KEY` on `/api/v1/*` | Create at http://localhost:5678/settings/api |
+
+Putting the webhook secret in `N8N_MANAGEMENT_API_KEY` (or feeding it to the import script) always returns **401 unauthorized** on workflow create. That is expected.
+
+**Do not** set container env `N8N_API_KEY` hoping it enables the Public API — n8n does not use that for `/api/v1`.
+
+### Onboarding (Google Cloud + credentials + import)
+
+**Full step-by-step (APIs, OAuth External + test users, OAuth client, Calendar service account,
+Header Auth, management JWT, import, set To, Publish, smoke tests):**
+
+→ **[`docs/N8N_GOOGLE_CREDENTIALS_SETUP.md`](N8N_GOOGLE_CREDENTIALS_SETUP.md)**
+
+Short path after Cloud Console is done:
+
+1. n8n owner setup at http://localhost:5678  
+2. Credentials with **exact names**: `IREIOS API Key` (Header Auth), `Gmail account`, `Google Sheets account`  
+3. Header Auth value = `Bearer {N8N_API_KEY}` (include `Bearer `)  
+4. Settings → n8n API → JWT → `.env` `N8N_MANAGEMENT_API_KEY`  
+5. `uv run python import_n8n_workflows.py`  
+6. Set Gmail **To** (WF-1/2/3/6) + WF-5 Code `const to = '…'` + WF-4 sheet ID → **Save + Publish** all  
+7. Restart uvicorn if `.env` changed  
+
+Importer resolves credentials **by name**. Repo Gmail `sendTo` is empty on purpose.  
+**Calendar create** = Python `GOOGLE_CALENDAR_*` (service account), not n8n.
+
+### CLI fallback (no management JWT)
+
+```powershell
+docker cp n8n_workflows n8n-local:/tmp/n8n_workflows
+docker exec -u node n8n-local n8n import:workflow --separate --input=/tmp/n8n_workflows
+docker exec -u node n8n-local n8n list:workflow
+# For each id:
+docker exec -u node n8n-local n8n publish:workflow --id=<ID>
+docker restart n8n-local
+```
+
+Then link credentials + set **To** in the UI (CLI import may not bind empty credential IDs).  
+**Never wipe the `n8ndata` volume** just to fix credential ID mismatches — re-link in the UI or re-import with the Python script instead.
+
+### Point IREIOS at the instance
 
 ```env
 N8N_BASE_URL=http://localhost:5678
 N8N_API_KEY=local-n8n-webhook-secret
+N8N_MANAGEMENT_API_KEY=   # JWT — import only
 N8N_BRIDGE_ENABLED=true
 N8N_BRIDGE_GROUP=ireios-n8n
 ```
@@ -129,7 +160,10 @@ Restart uvicorn after changing `.env`. Bridge POSTs
 
 ```env
 N8N_BASE_URL=http://localhost:5678
+# Webhook Header Auth secret (backend bridge)
 N8N_API_KEY=shared-secret-matching-n8n-header-auth
+# JWT from n8n Settings → n8n API (import_n8n_workflows.py only)
+N8N_MANAGEMENT_API_KEY=
 N8N_BRIDGE_ENABLED=true
 N8N_BRIDGE_GROUP=ireios-n8n
 # Optional JSON override of event_type → webhook path

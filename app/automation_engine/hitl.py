@@ -112,12 +112,15 @@ async def resolve(
     manager_id: Optional[str] = None,
     reason: Optional[str] = None,
     db: Optional[Session] = None,
+    client_id: Optional[int] = None,
 ) -> dict:
     """Approve/reject an approval request.
 
     - approve: returns the stored ``action_payload`` so the caller can resume
       execution (re-submit through the Automation Engine without the flag).
     - reject: marks the request rejected and publishes ``approval.resolved``.
+
+    When ``client_id`` is set, the row must belong to that tenant (IDOR guard).
     """
     decision = decision.lower()
     if decision not in ("approve", "approved", "reject", "rejected"):
@@ -127,7 +130,10 @@ async def resolve(
     if own_db:
         db = SessionLocal()
     try:
-        row = db.query(ApprovalRequest).filter(ApprovalRequest.id == approval_id).first()
+        q = db.query(ApprovalRequest).filter(ApprovalRequest.id == approval_id)
+        if client_id is not None:
+            q = q.filter(ApprovalRequest.client_id == client_id)
+        row = q.first()
         if row is None:
             raise LookupError(f"approval {approval_id} not found")
         if row.status != "pending":

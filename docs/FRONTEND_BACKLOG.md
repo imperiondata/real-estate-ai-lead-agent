@@ -1,6 +1,10 @@
 # Frontend Backlog (Post–Backend IREIOS 3.0 + G3)
 
-Backend Waves A–D / Gate G3 are **code-complete**. FE cutover (Expansion Phase 9.3–9.7) remains **Mayank-owned**. This file is the checklist for that work.
+Backend Waves A–D / Gate G3 are **code-complete**. FE cutover (Expansion Phase 9.3–9.7) is **Mayank-owned**. This file is the live checklist.
+
+**Last reviewed:** 2026-07-30
+
+---
 
 ## Already available from backend
 
@@ -16,7 +20,7 @@ Backend Waves A–D / Gate G3 are **code-complete**. FE cutover (Expansion Phase
 | `GET /api/v1/predictions/inventory` | JWT | Inventory unit counts |
 | `GET /api/v1/predictions/cashflow` | JWT | Heuristic cashflow slice |
 | `GET /api/v1/graph/leads/{id}/context` | API key / JWT | Neo4j similar leads |
-| `GET /api/v1/approvals` + approve/reject | JWT | HITL |
+| `GET /api/v1/approvals` + approve/reject | JWT | HITL (tenant-scoped) |
 | `POST /api/v1/leads/{id}/sales-ai` | JWT | Sales copilot action (also bus-driven backend) |
 | `POST /api/v1/chat` | API key | Reply; may include `media_url` after brochure/floorplan turn |
 | `POST /api/v1/lifecycle/events` | Admin | Ops inject booking/payment/document events |
@@ -26,41 +30,63 @@ Backend Waves A–D / Gate G3 are **code-complete**. FE cutover (Expansion Phase
 Contracts: `plans/IREIOS_3.0_API_SSE_CONTRACTS.md`, OpenAPI `plans/openapi_ireios3.json`.  
 Backend depth log: `plans/IREIOS_3.0_WAVE_A_D_CHANGELOG.md`.
 
+---
+
+## Progress (Mayank)
+
+| Item | Status | Evidence |
+|------|--------|----------|
+| Real SSE on command-center dashboard | **Partial `[~]`** | `a10aa68` — `dashboard-mvp/page.tsx` uses `EventSource` → `/api/v1/events/stream?api_key=…` |
+| Lead timeline API | **Partial `[~]`** | `a10aa68` — `sales-copilot/page.tsx` fetches `/api/v1/events/leads/1/timeline` (hardcoded lead `1` + api_key) |
+| Delete / stop using `MockSSEService` | **Open** | Class still in `frontend/src/lib/api/mockService.ts`; not used by dashboard-mvp anymore but file remains |
+| Forecast widgets → real predictions API | **Open** | `dashboard-mvp` still seeds KPIs/forecast from `mockForecastData` |
+| JWT cookie auth for SSE (not hard-coded api_key) | **Open** | Dev uses `secret-client-key-123` query param |
+| Approvals UI | **Open** | Backend ready; no FE list/approve flow confirmed |
+| Sales AI button | **Open** | Backend `POST /api/v1/leads/{id}/sales-ai` ready |
+| Graph panel | **Open** | Optional |
+| Media preview from chat `media_url` | **Open** | Optional |
+| Main `(dashboard)` route group vs command-center | **Clarify** | Primary product routes may still differ from MVP pages |
+
+---
+
 ## Required FE work (still open)
 
-### 1. Remove MockSSEService
-- File: `frontend/src/lib/api/mockService.ts` (`MockSSEService`)
-- Replace with `EventSource` (or fetch-stream) against  
-  `${NEXT_PUBLIC_API_URL}/api/v1/events/stream`  
-- Auth: prefer **cookie JWT** (HttpOnly `jwt`) so EventSource works same-origin / proxy.
-- If cross-origin: Next.js rewrite proxy that attaches cookie, or `?api_key=` only in dev.
+### 1. Finish MockSSE cutover
+- [x] MVP dashboard uses live `EventSource` (not MockSSE)
+- [ ] Remove or isolate `MockSSEService` so nothing imports it for prod paths
+- [ ] Prefer **HttpOnly `jwt` cookie** + same-origin/proxy (not hard-coded `api_key` in client bundle)
+- [ ] Graceful reconnect + ignore SSE `: ping` heartbeats
 
-### 2. Live dashboard pulse
-- Bind KPI / activity widgets to SSE `event_type` filters:  
-  `lead.created`, `lead.scored`, `lead.assigned`, `conversation.updated`, `whatsapp.sent`, `approval.requested`, `marketing.report.generated`
-- Graceful reconnect + `: ping` ignore
+### 2. Live dashboard pulse (harden)
+- [x] Basic mapping: `lead.created`, `lead.scored`, `approval.requested`, `marketing.report.generated`
+- [ ] Bind real KPIs from APIs (not artificial `+150000` demo math)
+- [ ] Cover: `lead.assigned`, `conversation.updated`, `whatsapp.sent`, `lead.hot`, `site_visit.scheduled`
 
 ### 3. Lead timeline (Sales Copilot)
-- `GET /api/v1/events/leads/{id}/timeline` → replace static/mock timeline
-- Render envelope: `event_type`, `timestamp`, `payload` summary
+- [x] Calls real timeline endpoint
+- [ ] Use **selected lead id** (not hardcoded `1`)
+- [ ] Auth via JWT; tenant 404 handling
+- [ ] Poll or SSE refresh after new events
 
-### 4. Graph panel (optional but recommended)
-- `GET /api/v1/graph/leads/{id}/context` when `available`
+### 4. Graph panel (optional)
+- [ ] `GET /api/v1/graph/leads/{id}/context` when `available`
 
 ### 5. Approvals UI
-- List pending from `GET /api/v1/approvals`; approve / reject
+- [ ] List `GET /api/v1/approvals`; approve / reject (tenant-scoped)
 
 ### 6. Sales AI button
-- `POST /api/v1/leads/{id}/sales-ai` → show recommended next action + stage
+- [ ] `POST /api/v1/leads/{id}/sales-ai` → show recommended next action + stage
 
 ### 7. Forecast widgets
-- Replace `mockForecastData` with `/api/v1/predictions/*` (heuristic MVP)
+- [ ] Replace `mockForecastData` with `/api/v1/predictions/*`
 
 ### 8. Optional media preview
-- When chat returns `media_url`, show PDF/image link in UI
+- [ ] When chat returns `media_url`, show PDF/image link
 
 ### 9. Env / proxy
-- `NEXT_PUBLIC_API_URL` → backend; cookie path works for SSE
+- [ ] `NEXT_PUBLIC_API_URL` → backend; cookie path works for SSE in prod
+
+---
 
 ## Out of scope for FE
 - Changing bus schema (frozen in Phase 1b)
@@ -68,9 +94,12 @@ Backend depth log: `plans/IREIOS_3.0_WAVE_A_D_CHANGELOG.md`.
 - Twilio webhooks
 - Backend Wave A–D implementation (done)
 
-## Acceptance
-- [ ] `MockSSEService` unused / deleted
-- [ ] Dashboard shows live event within 2s of chat/WA message (with API up)
-- [ ] Timeline loads for owned lead; 404 for cross-tenant
+---
+
+## Acceptance (production FE)
+- [ ] `MockSSEService` unused / deleted for shipped routes
+- [ ] Dashboard shows live event within 2s of chat/WA message (API up)
+- [ ] Timeline loads for **selected owned lead**; 404 for cross-tenant
 - [ ] No console errors on SSE disconnect/reconnect
 - [ ] Forecast widgets not using hardcoded mock revenue only
+- [ ] No hard-coded `secret-client-key-123` in client source

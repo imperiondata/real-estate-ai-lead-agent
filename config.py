@@ -115,6 +115,7 @@ class Settings(BaseSettings):
     # n8n automation (Phase 2) — empty = n8n_not_configured (safe)
     N8N_BASE_URL: str = ""
     N8N_API_KEY: str = ""
+    N8N_MANAGEMENT_API_KEY: str = ""
     # Bus→n8n webhook bridge (separate consumer group; stock n8n cannot XREADGROUP)
     N8N_BRIDGE_ENABLED: bool = True
     N8N_BRIDGE_GROUP: str = "ireios-n8n"

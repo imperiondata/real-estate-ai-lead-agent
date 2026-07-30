@@ -190,7 +190,8 @@ IS_PRODUCTION=false
 - `FEATURE_WHATSAPP_V3` (**default `true`** — production) — WhatsApp/chat routes use `WhatsAppAgent`; set `false` to roll back to `app.agents.qualification.process_chat` only.
 - `FOLLOWUP_ENGINE` (**default `v3`** — production) — `legacy|v3|shadow`. Prod = `v3` (AE→EE). `legacy` is emergency rollback only.
 - `NEO4J_URI` / `NEO4J_USER` / `NEO4J_PASSWORD` — Neo4j (Phase 7). Empty = graph no-op. Local: `bolt://localhost:7687` / `neo4j`/`localpass`.
-- `N8N_BASE_URL` / `N8N_API_KEY` — n8n optional ops plane. Empty = `n8n_not_configured`.  
+- `N8N_BASE_URL` / `N8N_API_KEY` — n8n optional ops plane (webhook Header Auth secret; backend sends `Authorization: Bearer`). Empty = `n8n_not_configured`.  
+- `N8N_MANAGEMENT_API_KEY` — JWT from n8n UI Settings → n8n API; **only** for `import_n8n_workflows.py` (`X-N8N-API-KEY` on `/api/v1/*`). Never reuse the webhook secret (always 401).  
 - **Bus→n8n bridge:** `app/automation_engine/n8n_bridge.py` (group `ireios-n8n`, not CEO `ireios-cg`). Stock n8n cannot XREADGROUP Streams. Env: `N8N_BRIDGE_ENABLED`, `N8N_BRIDGE_GROUP`, optional `N8N_WEBHOOK_MAP`. Gmail-first recipes: **`plans/N8N_LIVE_WORKFLOWS_PLAN.md`**. See **`docs/N8N_INTEGRATION.md`**.
 - `COMPETITOR_KEYWORDS` — comma-separated watch-list for the competitor monitor (empty = job no-ops).
 - `GOOGLE_CALENDAR_ID` / `GOOGLE_CALENDAR_CREDENTIALS_JSON` / `GOOGLE_CALENDAR_TIMEZONE` — real Google Calendar for `CalendarExecutor`. Empty = synthetic `visit_id` stub fallback (AE contract unchanged).
@@ -251,10 +252,10 @@ Sales hot escalate: notify_agent + create_task → agent_tasks
 ## Docs pointers
 
 - **Timeouts & timings (all race/TTL/scheduler values):** `docs/TIMEOUTS_AND_TIMINGS.md`
-- n8n: Compose + AE path + **bridge** shipped; **6/6 workflows active** (Gmail + Google Sheets via OAuth2). See `docs/N8N_INTEGRATION.md`, `docs/N8N_GOOGLE_CREDENTIALS_SETUP.md`. Brochure HTTPS URLs optional until set.
+- n8n: Compose + AE path + **bridge** shipped; **6/6 workflows** (Gmail + Sheets). Full Cloud Console + import runbook: `docs/N8N_GOOGLE_CREDENTIALS_SETUP.md`. Arch: `docs/N8N_INTEGRATION.md`. Brochure HTTPS URLs optional until set.
 - **Post-G3 automations closeout (Step 24):** `plans/PHASE3_AUTOMATIONS_CLOSEOUT.md`. Canonical bus (`lead.hot` + `trigger`). HubSpot Python stays skipped.
 - **BA-1…BA-7 + bridge:** `lead_hot.py`; `chat_context`; EE visit merge; HITL paths; calendar REST; **`n8n_bridge`** (not stock Redis→n8n). Tests: `tests/test_e18_*.py`, `tests/test_e20_n8n_bridge.py`.
-- Frontend remaining work: `docs/FRONTEND_BACKLOG.md` (MockSSE cutover still open)
+- Frontend remaining work: `docs/FRONTEND_BACKLOG.md` (Mayank: partial SSE in `a10aa68`; MockSSE file + mocks + JWT SSE still open)
 - Evidence: `plans/IREIOS_3.0_EVIDENCE_PACK.md` (G2 + G3)
 - **Post-G2 Waves A–D (depth fill, G3 green):** living log `plans/IREIOS_3.0_WAVE_A_D_CHANGELOG.md`; how-to `plans/IREIOS_3.0_WAVE_A_D_EXPANSION.md`; tests `tests/test_e14_wave_a.py`…`test_e17_wave_d.py`. UNIFIED Steps **20–23** + Gate **G3** = `[x]`.
 

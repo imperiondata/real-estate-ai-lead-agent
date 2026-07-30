@@ -1,5 +1,5 @@
 {
-  "name": "IREIOS \u2014 WF-4: CRM Note \u2192 Google Sheets",
+  "name": "IREIOS — WF-4: CRM Note → Google Sheets",
   "nodes": [
     {
       "parameters": {
@@ -13,17 +13,24 @@
       "name": "Webhook",
       "type": "n8n-nodes-base.webhook",
       "typeVersion": 2,
-      "position": [
-        240,
-        300
-      ],
+      "position": [240, 300],
       "webhookId": "ireios-crm-append",
       "credentials": {
         "httpHeaderAuth": {
-          "id": "cred-header-auth",
+          "id": "",
           "name": "IREIOS API Key"
         }
       }
+    },
+    {
+      "parameters": {
+        "jsCode": "const root = $input.first().json || {};\nconst body = root.body && typeof root.body === 'object' ? root.body : root;\nconst payload = (body.payload && typeof body.payload === 'object') ? body.payload : {};\nreturn [{\n  json: {\n    event_type: body.event_type || root.event_type || '',\n    tenant_id: body.tenant_id || root.tenant_id || '',\n    entity_id: body.entity_id || root.entity_id || payload.lead_id || '',\n    timestamp: body.timestamp || root.timestamp || '',\n    payload,\n  }\n}];"
+      },
+      "id": "flatten-crm",
+      "name": "Flatten",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [460, 300]
     },
     {
       "parameters": {
@@ -33,31 +40,28 @@
         "nodeCredentialType": "googleSheetsOAuth2Api",
         "sendBody": true,
         "specifyBody": "json",
-        "jsonBody": "={\n  \"values\": [[\n    \"{{ $json.body.payload.name }}\",\n    \"{{ $json.body.payload.phone }}\",\n    \"{{ $json.body.payload.location }}\",\n    \"{{ $json.body.payload.budget }}\",\n    \"{{ $json.body.payload.property_type }}\",\n    \"{{ $json.body.payload.visit_date }}\",\n    \"{{ $json.body.timestamp }}\",\n    \"{{ $json.body.tenant_id }}\",\n    \"{{ $json.body.entity_id }}\"\n  ]]\n}",
+        "jsonBody": "={\n  \"values\": [[\n    \"{{ $json.payload.name }}\",\n    \"{{ $json.payload.phone }}\",\n    \"{{ $json.payload.location }}\",\n    \"{{ $json.payload.budget }}\",\n    \"{{ $json.payload.property_type }}\",\n    \"{{ $json.payload.visit_date }}\",\n    \"{{ $json.timestamp }}\",\n    \"{{ $json.tenant_id }}\",\n    \"{{ $json.entity_id }}\"\n  ]]\n}",
         "options": {}
       },
       "id": "sheets-api",
       "name": "Google Sheets API",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
-      "position": [
-        520,
-        300
-      ],
-      "credentials": {}
+      "position": [700, 300],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "",
+          "name": "Google Sheets account"
+        }
+      }
     }
   ],
   "connections": {
     "Webhook": {
-      "main": [
-        [
-          {
-            "node": "Google Sheets API",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
+      "main": [[{ "node": "Flatten", "type": "main", "index": 0 }]]
+    },
+    "Flatten": {
+      "main": [[{ "node": "Google Sheets API", "type": "main", "index": 0 }]]
     }
   },
   "settings": {

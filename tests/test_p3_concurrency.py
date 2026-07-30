@@ -36,8 +36,11 @@ class TestBackgroundLockReacquisition:
         assert "lock.acquire" in MAIN_SRC or "redis_client.lock" in MAIN_SRC
 
     def test_background_lock_uses_session_id(self):
-        """Lock key includes session_id for per-session serialization."""
-        assert "session_lock:{session_id}" in MAIN_SRC
+        """Lock key includes session_id for per-session serialization (tenant-scoped preferred)."""
+        assert (
+            "session_lock:{session_id}" in MAIN_SRC
+            or "session_lock:{scoped_session_id}" in MAIN_SRC
+        )
 
     def test_background_lock_released_in_finally(self):
         """Lock must be released when done."""
@@ -109,8 +112,13 @@ class TestInterimMessageDedup:
         )
 
     def test_interim_dedup_checks_before_sending(self):
-        """Must check if interim was already sent before sending again."""
-        assert "if already_sent" in MAIN_SRC or "send_interim = False" in MAIN_SRC
+        """Must check if interim was already sent before sending again (atomic SET NX preferred)."""
+        assert (
+            "if already_sent" in MAIN_SRC
+            or "send_interim = False" in MAIN_SRC
+            or "nx=True" in MAIN_SRC
+            or "send_interim = bool(was_set)" in MAIN_SRC
+        )
 
 
 # ---------------------------------------------------------------------------

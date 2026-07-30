@@ -1,5 +1,5 @@
 {
-  "name": "IREIOS \u2014 WF-2: Site Visit Fan-out \u2192 Gmail",
+  "name": "IREIOS — WF-2: Site Visit Fan-out → Gmail",
   "nodes": [
     {
       "parameters": {
@@ -13,17 +13,24 @@
       "name": "Webhook",
       "type": "n8n-nodes-base.webhook",
       "typeVersion": 2,
-      "position": [
-        240,
-        300
-      ],
+      "position": [240, 300],
       "webhookId": "ireios-visit-fanout",
       "credentials": {
         "httpHeaderAuth": {
-          "id": "cred-header-auth",
+          "id": "",
           "name": "IREIOS API Key"
         }
       }
+    },
+    {
+      "parameters": {
+        "jsCode": "const root = $input.first().json || {};\nconst body = root.body && typeof root.body === 'object' ? root.body : root;\nconst payload = { ...((body.payload && typeof body.payload === 'object') ? body.payload : {}) };\n\nfunction formatVisitDate(raw) {\n  if (raw == null || raw === '') return '';\n  const s = String(raw).trim();\n  // Already DD-MM-YYYY or DD-MM-YYYY HH:mm\n  if (/^\\d{2}-\\d{2}-\\d{4}/.test(s)) return s;\n  const d = new Date(s);\n  if (Number.isNaN(d.getTime())) return s;\n  // Prefer IST wall-clock from offset in string when present\n  const m = s.match(/^(\\d{4})-(\\d{2})-(\\d{2})[T ](\\d{2}):(\\d{2})/);\n  if (m) {\n    const dd = m[3], mm = m[2], yyyy = m[1], hh = m[4], min = m[5];\n    return `${dd}-${mm}-${yyyy} ${hh}:${min}`;\n  }\n  const pad = (n) => String(n).padStart(2, '0');\n  // Fallback: local components from Date (UTC if Z-only)\n  return `${pad(d.getUTCDate())}-${pad(d.getUTCMonth()+1)}-${d.getUTCFullYear()} ${pad(d.getUTCHours())}:${pad(d.getUTCMinutes())}`;\n}\n\nconst visit_date_raw = payload.visit_date || '';\nconst visit_date_fmt = formatVisitDate(visit_date_raw);\npayload.visit_date_fmt = visit_date_fmt;\npayload.visit_date_display = visit_date_fmt;\n\n// Only keep calendar link if it looks like a real Google Calendar event URL\nconst link = String(payload.html_link || '').trim();\nconst linkOk = /^https:\\/\\/calendar\\.google\\.com\\//i.test(link)\n  && !/[?&]eid=test\\b/i.test(link)\n  && !/eid=$/i.test(link)\n  && link.length > 40;\nconst entityId = body.entity_id || root.entity_id || payload.lead_id || '';\nconst calendar_href = linkOk ? link : `http://localhost:3000/crm?lead_id=${entityId}`;\nconst calendar_cta = linkOk ? 'View in Google Calendar →' : 'View Lead in CRM (no live calendar link) →';\n\nreturn [{\n  json: {\n    event_type: body.event_type || root.event_type || '',\n    tenant_id: body.tenant_id || root.tenant_id || '',\n    entity_id: entityId,\n    timestamp: body.timestamp || root.timestamp || '',\n    visit_date_fmt,\n    calendar_href,\n    calendar_cta,\n    payload,\n  }\n}];"
+      },
+      "id": "flatten-visit",
+      "name": "Flatten",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [460, 300]
     },
     {
       "parameters": {
@@ -52,76 +59,60 @@
       "name": "Google Calendar?",
       "type": "n8n-nodes-base.if",
       "typeVersion": 2,
-      "position": [
-        480,
-        300
-      ]
+      "position": [680, 300]
     },
     {
       "parameters": {
-        "sendTo": "maitridj01@gmail.com",
-        "subject": "=Site Visit Booked \u2014 {{ $json.payload.name }} on {{ $json.payload.visit_date }}",
+        "sendTo": "",
+        "subject": "=Site Visit Booked — {{ $json.payload.name }} on {{ $json.visit_date_fmt }}",
         "emailType": "html",
-        "message": "=<h2>Site Visit Booked (Google Calendar)</h2><table border='1' cellpadding='8' cellspacing='0' style='border-collapse:collapse;'><tr><td><b>Lead</b></td><td>{{ $json.payload.name }}</td></tr><tr><td><b>Phone</b></td><td>{{ $json.payload.phone }}</td></tr><tr><td><b>Location</b></td><td>{{ $json.payload.location }}</td></tr><tr><td><b>Visit Date</b></td><td>{{ $json.payload.visit_date }}</td></tr><tr><td><b>Visit ID</b></td><td>{{ $json.payload.visit_id }}</td></tr></table><br/><p><a href='{{ $json.payload.html_link }}'>View in Google Calendar \u2192</a></p><br/><p><a href='http://localhost:3000/crm?lead_id={{ $json.entity_id }}'>View Lead in CRM \u2192</a></p>",
+        "message": "=<h2>Site Visit Booked (Google Calendar)</h2><table border='1' cellpadding='8' cellspacing='0' style='border-collapse:collapse;'><tr><td><b>Lead</b></td><td>{{ $json.payload.name }}</td></tr><tr><td><b>Phone</b></td><td>{{ $json.payload.phone }}</td></tr><tr><td><b>Location</b></td><td>{{ $json.payload.location }}</td></tr><tr><td><b>Visit Date</b></td><td>{{ $json.visit_date_fmt }}</td></tr><tr><td><b>Visit ID</b></td><td>{{ $json.payload.visit_id }}</td></tr></table><br/><p><a href='{{ $json.calendar_href }}'>{{ $json.calendar_cta }}</a></p><br/><p><a href='http://localhost:3000/crm?lead_id={{ $json.entity_id }}'>View Lead in CRM →</a></p><br/><p><i>Tenant: {{ $json.tenant_id }}</i></p>",
         "options": {}
       },
       "id": "gmail-google",
-      "name": "Gmail \u2014 Calendar Event",
+      "name": "Gmail — Calendar Event",
       "type": "n8n-nodes-base.gmail",
       "typeVersion": 2.1,
-      "position": [
-        720,
-        200
-      ],
-      "credentials": {}
+      "position": [920, 200],
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "",
+          "name": "Gmail account"
+        }
+      }
     },
     {
       "parameters": {
-        "sendTo": "maitridj01@gmail.com",
-        "subject": "=Site Visit Scheduled (Stub) \u2014 {{ $json.payload.name }}",
+        "sendTo": "",
+        "subject": "=Site Visit Scheduled (Stub) — {{ $json.payload.name }} on {{ $json.visit_date_fmt }}",
         "emailType": "html",
-        "message": "=<h2>Site Visit Scheduled (Stub)</h2><p>Google Calendar is not configured. The visit was recorded as a stub.</p><table border='1' cellpadding='8' cellspacing='0' style='border-collapse:collapse;'><tr><td><b>Lead</b></td><td>{{ $json.payload.name }}</td></tr><tr><td><b>Phone</b></td><td>{{ $json.payload.phone }}</td></tr><tr><td><b>Location</b></td><td>{{ $json.payload.location }}</td></tr><tr><td><b>Visit Date</b></td><td>{{ $json.payload.visit_date }}</td></tr><tr><td><b>Visit ID</b></td><td>{{ $json.payload.visit_id }}</td></tr></table><br/><p><a href='http://localhost:3000/crm?lead_id={{ $json.entity_id }}'>View Lead in CRM \u2192</a></p>",
+        "message": "=<h2>Site Visit Scheduled (Stub)</h2><p>Google Calendar is not configured. The visit was recorded as a stub.</p><table border='1' cellpadding='8' cellspacing='0' style='border-collapse:collapse;'><tr><td><b>Lead</b></td><td>{{ $json.payload.name }}</td></tr><tr><td><b>Phone</b></td><td>{{ $json.payload.phone }}</td></tr><tr><td><b>Location</b></td><td>{{ $json.payload.location }}</td></tr><tr><td><b>Visit Date</b></td><td>{{ $json.visit_date_fmt }}</td></tr><tr><td><b>Visit ID</b></td><td>{{ $json.payload.visit_id }}</td></tr></table><br/><p><a href='http://localhost:3000/crm?lead_id={{ $json.entity_id }}'>View Lead in CRM →</a></p><br/><p><i>Tenant: {{ $json.tenant_id }} | Time: {{ $json.timestamp }}</i></p>",
         "options": {}
       },
       "id": "gmail-stub",
-      "name": "Gmail \u2014 Stub Visit",
+      "name": "Gmail — Stub Visit",
       "type": "n8n-nodes-base.gmail",
       "typeVersion": 2.1,
-      "position": [
-        720,
-        400
-      ],
-      "credentials": {}
+      "position": [920, 400],
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "",
+          "name": "Gmail account"
+        }
+      }
     }
   ],
   "connections": {
     "Webhook": {
-      "main": [
-        [
-          {
-            "node": "Google Calendar?",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
+      "main": [[{ "node": "Flatten", "type": "main", "index": 0 }]]
+    },
+    "Flatten": {
+      "main": [[{ "node": "Google Calendar?", "type": "main", "index": 0 }]]
     },
     "Google Calendar?": {
       "main": [
-        [
-          {
-            "node": "Gmail \u2014 Calendar Event",
-            "type": "main",
-            "index": 0
-          }
-        ],
-        [
-          {
-            "node": "Gmail \u2014 Stub Visit",
-            "type": "main",
-            "index": 0
-          }
-        ]
+        [{ "node": "Gmail — Calendar Event", "type": "main", "index": 0 }],
+        [{ "node": "Gmail — Stub Visit", "type": "main", "index": 0 }]
       ]
     }
   },

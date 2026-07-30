@@ -41,20 +41,30 @@ def _google_configured() -> bool:
 _DAY_NAMES = ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"]
 
 
-def _parse_start(visit_date) -> datetime:
-    """Best-effort parse of visit_date into a datetime.
+def _calendar_tz():
+    name = getattr(settings, "GOOGLE_CALENDAR_TIMEZONE", None) or "Asia/Kolkata"
+    try:
+        from zoneinfo import ZoneInfo
 
-    Handles:
-      - ISO-8601 strings (e.g. "2026-08-01T10:00:00")
-      - Natural language day + time (e.g. "Saturday 10:00 AM", "Friday 2:30 PM")
-      - Fallback: tomorrow at current UTC time
+        return ZoneInfo(name), name
+    except Exception:  # noqa: BLE001
+        return timezone.utc, "UTC"
+
+
+def _parse_start(visit_date) -> datetime:
+    """Best-effort parse of visit_date into a timezone-aware datetime.
+
+    Wall-clock times without offset are interpreted in GOOGLE_CALENDAR_TIMEZONE
+    (default Asia/Kolkata), not UTC — matches how sales agents phrase visits.
     """
+    tz, _tz_name = _calendar_tz()
     if visit_date:
         # 1. Try ISO-8601
         try:
-            dt = datetime.fromisoformat(str(visit_date).replace("Z", "+00:00"))
+            raw = str(visit_date).replace("Z", "+00:00")
+            dt = datetime.fromisoformat(raw)
             if dt.tzinfo is None:
-                dt = dt.replace(tzinfo=timezone.utc)
+                dt = dt.replace(tzinfo=tz)
             return dt
         except (ValueError, TypeError):
             pass
@@ -71,7 +81,6 @@ def _parse_start(visit_date) -> datetime:
             time_str = match.group(2)
             ampm = (match.group(3) or "").upper()
 
-            # Parse hour/minute
             parts = time_str.split(":")
             hour, minute = int(parts[0]), int(parts[1])
             if ampm == "PM" and hour != 12:
@@ -79,8 +88,7 @@ def _parse_start(visit_date) -> datetime:
             elif ampm == "AM" and hour == 12:
                 hour = 0
 
-            # Resolve to next occurrence of that weekday
-            now = datetime.now(timezone.utc)
+            now = datetime.now(tz)
             target_weekday = _DAY_NAMES.index(day_name)
             days_ahead = target_weekday - now.weekday()
             if days_ahead <= 0:
@@ -90,8 +98,8 @@ def _parse_start(visit_date) -> datetime:
             )
             return target
 
-    # 3. Fallback: tomorrow at current UTC time
-    return datetime.now(timezone.utc) + timedelta(days=1)
+    # 3. Fallback: tomorrow at current local wall-clock
+    return datetime.now(tz) + timedelta(days=1)
 
 
 class CalendarExecutor(BaseExecutor):
@@ -115,7 +123,10 @@ class CalendarExecutor(BaseExecutor):
         service = build("calendar", "v3", credentials=creds, cache_discovery=False)
         start = _parse_start(params.get("visit_date"))
         end = start + timedelta(hours=1)
-        tz = getattr(settings, "GOOGLE_CALENDAR_TIMEZONE", "Asia/Kolkata")
+        _tzinfo, tz_name = _calendar_tz()
+        # Naive local wall-clock + timeZone avoids UTC offset vs zone mismatch.
+        start_local = start.astimezone(_tzinfo).replace(tzinfo=None) if start.tzinfo else start
+        end_local = end.astimezone(_tzinfo).replace(tzinfo=None) if end.tzinfo else end
         summary = f"Site visit — {params.get('name') or entity_id}"
         description = (
             f"Lead: {params.get('name') or ''}\nPhone: {params.get('phone') or ''}\n"
@@ -125,8 +136,8 @@ class CalendarExecutor(BaseExecutor):
             "summary": summary,
             "description": description,
             "location": params.get("location", ""),
-            "start": {"dateTime": start.isoformat(), "timeZone": tz},
-            "end": {"dateTime": end.isoformat(), "timeZone": tz},
+            "start": {"dateTime": start_local.isoformat(), "timeZone": tz_name},
+            "end": {"dateTime": end_local.isoformat(), "timeZone": tz_name},
         }
         event = service.events().insert(
             calendarId=settings.GOOGLE_CALENDAR_ID, body=body
@@ -149,7 +160,16 @@ class CalendarExecutor(BaseExecutor):
                             result.get("visit_id"), entity_id)
                 return {"status": "success", "scheduled_at":
                         datetime.now(timezone.utc).isoformat(), **result}
-            except Exception as exc:  # noqa: BLE001 - fall back to stub, never fail HITL
+            except Exception as exc:  # noqa: BLE001
+                # Prod + configured: surface failure (no fake "booked" success).
+                # Dev/test: stub so local demos keep working without a live portal.
+                if getattr(settings, "IS_PRODUCTION", False):
+                    logger.error("Google Calendar create failed in production: %s", exc)
+                    return {
+                        "status": "error",
+                        "error": f"google_calendar_failed:{type(exc).__name__}",
+                        "provider": "google_calendar",
+                    }
                 logger.warning("Google Calendar create failed; using stub: %s", exc)
 
         visit_id = f"visit_{uuid.uuid4().hex[:12]}"

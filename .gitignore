@@ -167,3 +167,9 @@ temp_*.sqlite*
 n8n_export.json
 n8n_workflows_fixed/
 temp_mount/
+
+# Local session dumps / scratch (never commit)
+session-ses_*.md
+post n8n.md
+n8n workflows.md
+calc.py

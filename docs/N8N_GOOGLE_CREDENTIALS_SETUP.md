@@ -1,334 +1,433 @@
-# n8n Google Credentials Setup — Step-by-Step Guide
+# IREIOS — Google Cloud + n8n Setup Guide (self-hosted Docker)
 
-Complete guide to set up Google OAuth2 credentials in Google Cloud Console and connect them to your self-hosted n8n instance for Gmail and Google Sheets integration.
+**Audience:** ops / automation owner setting up a **fresh** machine (or onboarding Mayank).  
+**Last updated:** 2026-07-31 · n8n image `n8nio/n8n:2.31.5` · Docker Compose service `n8n` → `http://localhost:5678`
 
-> **Scope:** Gmail OAuth2 (send emails, read labels) + Google Sheets OAuth2 (append rows).  
-> One OAuth Client covers **both** services — you do not need separate credentials per Google API.
+This guide covers **everything** needed for:
+
+| Integration | Who uses it | Auth type |
+|-------------|-------------|-----------|
+| **Gmail** (hot lead, visit fan-out, HITL, marketing CSV, DLQ alert) | **n8n** workflows | OAuth2 (user login) |
+| **Google Sheets** (CRM append on `lead.qualified`) | **n8n** WF-4 | OAuth2 (same OAuth client) |
+| **Google Drive API** | Required by Sheets (enable only) | — |
+| **Google Calendar** (create site-visit events) | **Python** `CalendarExecutor` — **not** n8n | **Service account** JSON |
+
+> **n8n does not create Calendar events.** Python creates the event and publishes `site_visit.scheduled`; n8n only emails the fan-out (with real `html_link` when Calendar worked).
+
+Architecture / bridge: [`docs/N8N_INTEGRATION.md`](N8N_INTEGRATION.md).  
+Official n8n reference: [Google OAuth2 single service](https://docs.n8n.io/integrations/builtin/credentials/google/oauth-single-service/).
 
 ---
 
 ## Prerequisites
 
-- A Google account (personal Gmail or Google Workspace)
-- Access to [Google Cloud Console](https://console.cloud.google.com)
-- n8n running locally (`docker compose up -d n8n`) at `http://localhost:5678`
-- n8n owner account created (first visit setup)
+- Docker + this repo (`docker compose up -d n8n redis`)
+- Python venv with project deps (`uv run` or activated `.venv`)
+- Google account(s) for:
+  - **Cloud Console owner** (creates project / OAuth / SA)
+  - **n8n OAuth test users** (who click “Sign in with Google” — can be same or different Gmail)
+  - **Ops inbox** (who **receives** alert emails — set later in n8n Gmail **To**)
+- Browser access to `http://localhost:5678`
 
 ---
 
-## Step 1 — Create a Google Cloud Project
+## Part A — Google Cloud Console
+
+### A0. Open the correct project
 
 1. Go to [Google Cloud Console](https://console.cloud.google.com)
-2. Click the **project dropdown** in the top navigation bar (next to "Google Cloud")
-3. Click **New Project**
-4. Enter a project name: `ireios-n8n`
-5. Select your organization (or "No organization" for personal accounts)
-6. Click **Create**
-7. Wait 10–15 seconds, then **select the new project** from the dropdown
-
-> **Already have a project?** Skip to Step 2.
+2. Top bar → **project dropdown** → select your project **or** **New Project**
+3. Suggested name: `ireios-n8n` (or reuse an existing project)
+4. Confirm the selected project name stays visible in the top bar for all later steps
 
 ---
 
-## Step 2 — Enable Required APIs
+### A1. Enable APIs
 
-You need to enable two APIs: **Gmail API** and **Google Sheets API**.
+Path: **APIs & Services → Library**  
+Direct: https://console.cloud.google.com/apis/library
 
-### Enable Gmail API
+Search and **Enable** each of these (one by one):
 
-1. Go to **APIs & Services > Library** ([direct link](https://console.cloud.google.com/apis/library))
-2. Search for `Gmail API`
-3. Click the **Gmail API** card
-4. Click **Enable**
-5. Wait for the confirmation
+| API | Why |
+|-----|-----|
+| **Gmail API** | n8n Gmail nodes + WF-5 Gmail HTTP send |
+| **Google Sheets API** | n8n WF-4 append rows |
+| **Google Drive API** | **Required** by Sheets (n8n / Google docs) |
+| **Google Calendar API** | Python `CalendarExecutor` creates events |
 
-### Enable Google Sheets API
-
-1. Return to **APIs & Services > Library**
-2. Search for `Google Sheets API`
-3. Click the **Google Sheets API** card
-4. Click **Enable**
-
-### Enable Google Drive API (required for Sheets)
-
-> Google Sheets API requires Google Drive API to be enabled as well.
-
-1. Return to **APIs & Services > Library**
-2. Search for `Google Drive API`
-3. Click **Google Drive API**
-4. Click **Enable**
-
-### Verify enabled APIs
-
-Go to **APIs & Services > Enabled APIs & services**. You should see:
-
-| API | Status |
-|-----|--------|
-| Gmail API | Enabled |
-| Google Sheets API | Enabled |
-| Google Drive API | Enabled |
+Verify: **APIs & Services → Enabled APIs & services** shows all four.
 
 ---
 
-## Step 3 — Configure OAuth Consent Screen
+### A2. OAuth consent screen (Google Auth Platform)
 
-This screen appears when n8n asks for permission to access your Google account.
+Path: **APIs & Services → OAuth consent screen**  
+(Google may redirect to **Google Auth Platform → Overview**)
 
-1. Go to **APIs & Services > OAuth consent screen** ([direct link](https://console.cloud.google.com/apis/credentials/consent))
-2. Click **Get started**
-3. Fill in **App information**:
-   - **App name:** `IREIOS n8n`
-   - **User support email:** your email address
-4. Click **Next**
-5. **Audience:** Select **External** (works for any Google account)
+1. Click **Get started** (if first time)
+2. **App information**
+   - App name: `IREIOS n8n`
+   - User support email: your Google address
+   - **Next**
+3. **Audience**
+   - Choose **External** (personal Gmail / any Google account)
    - **Internal** only works for Google Workspace org members
-6. Click **Next**
-7. **Contact information:** Enter your email address
-8. Click **Next**
-9. Check the checkbox to agree to Google's User Data Policy
-10. Click **Continue** then **Create**
+   - **Next**
+4. **Contact information** — your email → **Next**
+5. Accept User Data Policy → **Continue** → **Create**
 
-### Add authorized domain
+#### Branding / authorized domains (optional for localhost)
 
-1. In the left sidebar, click **Branding**
-2. Under **Authorized domains**, click **Add domain**
-3. Enter: `localhost`
-   - For production: enter your actual domain (e.g., `yourcompany.com`)
-4. Click **Save**
+1. Left nav → **Branding** (or OAuth branding)
+2. **Authorized domains** — for pure `localhost` dev you can skip; for a real domain add it here
+3. **Save**
 
-### Add test users
+#### Audience = Testing + test users (**critical**)
 
-> **Critical:** In Testing mode, only accounts listed here can complete the OAuth flow.
+While status is **Testing**, **only Test users** can complete OAuth.
 
-1. In the left sidebar, click **Audience**
-2. Under **Test users**, click **Add users**
-3. Enter the Gmail address you want to connect to n8n (e.g., `maitridj01@gmail.com`)
-4. Click **Add**
-5. Click **Save**
+1. Left nav → **Audience**  
+   Direct: https://console.cloud.google.com/auth/audience
+2. Confirm **Publishing status: Testing** and **User type: External**
+3. **Test users → + Add users**
+4. Add every Google account that will:
+   - Click **Sign in with Google** inside n8n, **and/or**
+   - Own the Gmail that sends mail
+5. Examples: `you@gmail.com`, teammate Gmails  
+6. **Save**
 
-> **Note:** Up to 100 test users are allowed. Your app stays in Testing mode until you submit for Google verification (not required for development/internal use).
-
----
-
-## Step 4 — Create OAuth Client Credentials
-
-1. Go to **APIs & Services > Credentials** ([direct link](https://console.cloud.google.com/apis/credentials))
-2. Click **+ Create credentials** > **OAuth client ID**
-3. **Application type:** Select **Web application**
-4. **Name:** `ireios-n8n-oauth`
-5. **Authorized JavaScript origins:** (leave empty for now)
-6. **Authorized redirect URIs:**
-   - Click **Add URI**
-   - Enter: `http://localhost:5678/rest/oauth2-credential/callback`
-   - This is the callback URL n8n uses for local development
-7. Click **Create**
-8. **Immediately copy both values:**
-
-| Field | Format | Example |
-|-------|--------|---------|
-| Client ID | `数字-字母.apps.googleusercontent.com` | `123456789-abc123.apps.googleusercontent.com` |
-| Client Secret | `GOCSPX-字母数字` | `GOCSPX-abc123xyz789` |
-
-> **Warning:** The Client Secret is only shown once. If you lose it, you must create a new OAuth client.
-
-9. Click **OK** to close the modal
+> **Do not “Publish app”** unless you complete Google verification. Testing mode is fine for internal/dev (token refresh can expire ~7 days — just re-Sign in in n8n).
 
 ---
 
-## Step 5 — Create Gmail Credential in n8n
+### A3. OAuth 2.0 Client ID (for **n8n** Gmail + Sheets)
 
-1. Open n8n at `http://localhost:5678`
-2. Go to **Credentials** (left sidebar)
-3. Click **Add Credential** (top right)
-4. Search for `Gmail OAuth2`
-5. Select **Gmail OAuth2 API**
-6. Fill in:
-   - **Credential Name:** `Gmail account`
-   - **Client ID:** paste from Step 4
-   - **Client Secret:** paste from Step 4
-7. Click **Save**
-8. Click **Sign in with Google**
-9. A new browser tab opens — select the Gmail account you added as a test user
-10. Click **Continue** on the permission screen
-11. Review the scopes (should include Gmail access)
-12. Click **Continue** to grant access
-13. Browser redirects back to n8n with a success message
-14. Click **Save** again
+This is a **Web application** OAuth client. One client is enough for both Gmail and Sheets credentials in n8n.
 
-### Verify connection
+1. **APIs & Services → Credentials**  
+   https://console.cloud.google.com/apis/credentials
+2. **+ Create credentials → OAuth client ID**
+3. Application type: **Web application**
+4. Name: `ireios-n8n-oauth` (or `test-ireios-n8n`)
+5. **Authorized JavaScript origins** — leave empty for local n8n
+6. **Authorized redirect URIs → + Add URI**
 
-The credential should show a green indicator. If you see an error, see [Troubleshooting](#troubleshooting) below.
+   ```text
+   http://localhost:5678/rest/oauth2-credential/callback
+   ```
 
----
+   - Must match **exactly** (scheme, host, port, path)
+   - If n8n is exposed on another host later, add that callback too
+7. **Create**
+8. **Copy immediately:**
+   - **Client ID** (`….apps.googleusercontent.com`)
+   - **Client secret** (shown once — store in a password manager)
 
-## Step 6 — Create Google Sheets Credential in n8n
-
-> **One OAuth Client, multiple services.** You can reuse the same Client ID and Secret from Step 4.
-
-1. In n8n, go to **Credentials** > **Add Credential**
-2. Search for `Google Sheets`
-3. Select **Google Sheets OAuth2 API**
-4. Fill in:
-   - **Credential Name:** `Google Sheets account`
-   - **Client ID:** paste the same Client ID from Step 4
-   - **Client Secret:** paste the same Client Secret from Step 4
-5. Click **Save**
-6. Click **Sign in with Google**
-7. Select the same Gmail account
-8. Grant Google Sheets access
-9. Redirect back to n8n — success
-10. Click **Save**
-
-> **Why one credential works for both:** OAuth2 credentials are scoped by the APIs you enabled in Step 2. When you authorize, Google requests permission for all enabled scopes. The same Client ID can authenticate for Gmail, Sheets, Drive, Calendar, etc.
+Optional: on the client detail page you can **Download JSON** (OAuth client JSON).  
+That file is for **reference only** — n8n wants Client ID + Secret pasted into the UI, not the SA key.
 
 ---
 
-## Step 7 — Import IREIOS Workflows
+### A4. Service account (for **Python Google Calendar** — not n8n)
 
-With credentials created, import the 6 pre-built IREIOS workflows:
+n8n OAuth ≠ Calendar executor. Backend needs a **service account**.
 
-```powershell
-# From the project root (venv active)
-python import_n8n_workflows.py
+1. **APIs & Services → Credentials → + Create credentials → Service account**
+2. Name: `calendar-ireios` (or similar)
+3. Create and open the service account
+4. **Keys → Add key → Create new key → JSON → Create**
+5. Save the downloaded JSON **outside the git repo** (never commit it), e.g.
+
+   ```text
+   D:/secrets/ireios-calendar-sa.json
+   ```
+
+6. Note the SA email, e.g. `calendar-ireios@PROJECT.iam.gserviceaccount.com`
+
+#### Share a real Google Calendar with the SA
+
+1. Open [Google Calendar](https://calendar.google.com) as the human who owns the calendar
+2. Create or pick a calendar → **Settings and sharing**
+3. **Share with specific people** → add the **service account email**
+4. Permission: **Make changes to events**
+5. Copy **Calendar ID** (often your email, or an `…@group.calendar.google.com` id under Integrate calendar)
+
+#### `.env` (backend — not n8n)
+
+```env
+GOOGLE_CALENDAR_ID=your-calendar-id-or-email
+# Windows: prefer forward slashes
+GOOGLE_CALENDAR_CREDENTIALS_JSON=D:/secrets/ireios-calendar-sa.json
+GOOGLE_CALENDAR_TIMEZONE=Asia/Kolkata
 ```
 
-This will:
-1. Check n8n health at `http://localhost:5678`
-2. Create 6 workflows from `n8n_workflows/*.json`
-3. Activate each workflow
-4. Print the webhook URLs
-
-### Verify workflows
-
-In the n8n UI, go to **Workflows**. You should see:
-
-| WF | Name | Webhook Path | Status |
-|----|------|-------------|--------|
-| WF-1 | IREIOS — Hot Lead Alert → Gmail | `ireios_hot_lead_alert` | Active |
-| WF-2 | IREIOS — Site Visit Fan-out → Gmail | `ireios_visit_fanout` | Active |
-| WF-3 | IREIOS — HITL Manager Notify → Gmail | `ireios_hitl_notify` | Active |
-| WF-4 | IREIOS — CRM Note → Google Sheets | `ireios_crm_append` | Active |
-| WF-5 | IREIOS — Marketing Report → Gmail | `ireios_marketing_csv` | Active |
-| WF-6 | IREIOS — DLQ Depth Monitor → Gmail | (cron, no webhook) | Active |
+Restart **uvicorn** after changing these. Leave empty → CalendarExecutor uses **stub** (`provider=stub`, no real `html_link`).
 
 ---
 
-## Step 8 — Test the Connection
+### A5. Google Sheet for WF-4 (CRM append)
 
-### Test Gmail (WF-1)
+1. Create a Sheet in the Google account you will connect to n8n Sheets OAuth  
+2. Tab name default used by WF-4: **`Sheet1`**  
+3. Optional header row: `name, phone, location, budget, property_type, visit_date, timestamp, tenant_id, entity_id`
+4. Copy spreadsheet ID from the URL:
 
-```powershell
-python publish_stub_event.py --event-type lead.hot --tenant-id Client_1 --entity-id 1 --payload "{\"lead_id\":1,\"name\":\"Demo Lead\",\"phone\":\"+919999999999\",\"trigger\":\"hot_threshold\",\"score\":90,\"reason\":\"stub test\",\"chat_context\":\"User: hi\"}"
-```
+   ```text
+   https://docs.google.com/spreadsheets/d/SPREADSHEET_ID/edit
+   ```
 
-Check your Gmail inbox — you should receive a "Hot Lead Alert" email.
+5. WF-4 JSON embeds a default sheet ID — **after import**, open WF-4 → Google Sheets API node → paste **your** spreadsheet ID in the URL if different:
 
-### Test Google Sheets (WF-4)
-
-```powershell
-python publish_stub_event.py --event-type lead.qualified --tenant-id Client_1 --entity-id 2 --payload "{\"name\":\"Sheet Test\",\"phone\":\"+918888888888\",\"location\":\"Baner\",\"budget\":\"50L\",\"property_type\":\"2BHK\",\"visit_date\":\"2026-08-01\"}"
-```
-
-Check your Google Sheet — a new row should be appended.
+   ```text
+   https://sheets.googleapis.com/v4/spreadsheets/YOUR_ID/values/Sheet1:append?valueInputOption=USER_ENTERED
+   ```
 
 ---
 
-## Current Credential IDs (IRIOS Local)
+## Part B — Docker n8n + IREIOS env
 
-These are the credential IDs in your local n8n instance. Reference these when editing workflow JSONs:
+### B1. Start n8n
 
-| Credential | Type | n8n ID |
-|-----------|------|--------|
-| IREIOS API Key | httpHeaderAuth | `G00Bi1IyHkT5zo68` |
-| Gmail account | gmailOAuth2 | `13auoI7CTqojlGZh` |
-| Google Sheets account | googleSheetsOAuth2Api | `wpcizRhlDTPwGFM8` |
+```powershell
+docker compose up -d n8n redis
+```
 
-> **Note:** These IDs are generated by n8n and may change if you delete and recreate credentials.
+- UI: http://localhost:5678  
+- First visit: create **owner** email/password  
+- Data volume: `n8ndata` (persists credentials — **do not wipe** casually)
+
+### B2. Two secrets in project `.env` (do not mix)
+
+| Variable | Purpose | Example |
+|----------|---------|---------|
+| `N8N_BASE_URL` | n8n base | `http://localhost:5678` |
+| `N8N_API_KEY` | **Webhook** Header Auth secret (backend → n8n) | `local-n8n-webhook-secret` |
+| `N8N_MANAGEMENT_API_KEY` | JWT from n8n **Settings → n8n API** (import script only) | paste JWT |
+| `N8N_BRIDGE_ENABLED` | Bus → webhook bridge | `true` |
+
+```env
+N8N_BASE_URL=http://localhost:5678
+N8N_API_KEY=local-n8n-webhook-secret
+N8N_MANAGEMENT_API_KEY=
+N8N_BRIDGE_ENABLED=true
+N8N_BRIDGE_GROUP=ireios-n8n
+```
+
+Restart **uvicorn** after edits so the bridge picks up keys.
+
+---
+
+## Part C — Credentials inside n8n UI
+
+Open http://localhost:5678 → **Credentials** (or Overview → Credentials).
+
+Exact **names** matter — `import_n8n_workflows.py` resolves by name:
+
+| Name (exact) | Type | Purpose |
+|--------------|------|---------|
+| `IREIOS API Key` | **Header Auth** | Protect `/webhook/*` |
+| `Gmail account` | **Gmail OAuth2 API** | Send mail |
+| `Google Sheets account` | **Google Sheets OAuth2 API** | WF-4 |
+
+### C1. Header Auth — `IREIOS API Key`
+
+1. **Create credential → Header Auth**
+2. Name: `IREIOS API Key`
+3. **Name** (header name): `Authorization`
+4. **Value**: `Bearer local-n8n-webhook-secret`  
+   - Must match `.env` `N8N_API_KEY` **including** the word `Bearer ` and a space
+5. Save
+
+### C2. Gmail OAuth2 — `Gmail account`
+
+1. **Create credential → Gmail OAuth2 API** (or Gmail OAuth2)
+2. Name: `Gmail account`
+3. **Client ID** / **Client Secret** from Part A3
+4. Save
+5. **Sign in with Google** → pick a **test user** from A2
+6. Allow Gmail scopes → return to n8n → Save again  
+7. Credential should show connected / green
+
+### C3. Google Sheets OAuth2 — `Google Sheets account`
+
+1. **Create credential → Google Sheets OAuth2 API**
+2. Name: `Google Sheets account`
+3. **Same** Client ID + Secret as Gmail
+4. **Sign in with Google** (same or another test user that can edit the Sheet)
+5. Save
+
+### C4. Management API key (for import script)
+
+1. n8n → **Settings → n8n API** (http://localhost:5678/settings/api)
+2. **Create API key** → copy the **JWT**
+3. Put in `.env`:
+
+   ```env
+   N8N_MANAGEMENT_API_KEY=eyJ...   # full JWT — NOT the webhook secret
+   ```
+
+4. Using `N8N_API_KEY` here always returns **401** on `/api/v1/workflows`
+
+---
+
+## Part D — Import workflows
+
+From **repo root** (venv / uv):
+
+```powershell
+uv run python import_n8n_workflows.py
+# or: python import_n8n_workflows.py
+```
+
+What it does:
+
+1. Health-check n8n  
+2. Lists existing workflows  
+3. Resolves credentials by **name** (REST or `docker exec … export:credentials`)  
+4. Creates WF-1…WF-6 from `n8n_workflows/*.json`  
+5. Tries activate/publish  
+
+### If import fails with 401
+
+- `N8N_MANAGEMENT_API_KEY` missing or equals webhook secret → fix C4  
+- See CLI fallback in `docs/N8N_INTEGRATION.md`
+
+### If workflows already exist
+
+Script skips create by name and tries activate. To re-import cleanly: delete workflows in UI (or archive), then re-run — **do not wipe the whole volume** just to fix IDs.
+
+---
+
+## Part E — After import (required before emails work)
+
+Repo JSON intentionally leaves Gmail **To** empty (no surprise mail to old addresses).
+
+For **each** of WF-1, WF-2, WF-3, WF-6:
+
+1. Open workflow in editor  
+2. Click **Gmail** node(s)  
+3. Set **To** = ops inbox (e.g. your test Gmail)  
+4. Confirm credential dropdown = `Gmail account`  
+5. **Save**  
+6. **Publish** (n8n v2 runs the **published** version — draft-only changes do not fire production webhooks)
+
+**WF-4:**
+
+1. Confirm Sheets credential = `Google Sheets account`  
+2. URL spreadsheet ID = your sheet (A5)  
+3. Save + Publish  
+
+**WF-5:**
+
+1. Open **Build MIME + Send** (Code node — middle node, `{ }` icon)  
+2. Find:
+
+   ```js
+   const to = 'OPS_EMAIL_PLACEHOLDER';
+   ```
+
+3. Change **only that string** to your email (do **not** find-replace the whole file — that can break the validation `if`)  
+4. Save + Publish  
+
+**WF-6** is cron (every 15 min) — no webhook; still needs Gmail **To**.
+
+---
+
+## Part F — Smoke tests
+
+### F1. Direct webhook (no bus)
+
+```powershell
+curl -X POST "http://localhost:5678/webhook/ireios_hot_lead_alert" `
+  -H "Authorization: Bearer local-n8n-webhook-secret" `
+  -H "Content-Type: application/json" `
+  -d "{\"event_type\":\"lead.hot\",\"tenant_id\":\"Client_1\",\"entity_id\":\"1\",\"timestamp\":\"2026-07-31T12:00:00+00:00\",\"payload\":{\"lead_id\":1,\"name\":\"Demo\",\"phone\":\"+9199\",\"location\":\"Baner\",\"budget\":\"80L\",\"property_type\":\"2BHK\",\"score\":90,\"trigger\":\"hot_threshold\",\"assigned_agent\":\"Sneha\"}}"
+```
+
+Expect **200** + Gmail in the **To** inbox.  
+**403** → Header Auth mismatch.  
+**404** → workflow not Published / wrong path.
+
+### F2. Via IREIOS bus (uvicorn + bridge)
+
+```powershell
+python publish_stub_event.py --event-type lead.hot --tenant-id Client_1 --entity-id 1 --payload "{\"lead_id\":1,\"name\":\"Demo\",\"phone\":\"+9199\",\"trigger\":\"hot_threshold\",\"score\":90,\"reason\":\"stub\"}"
+```
+
+API log should show `n8n_bridge_forwarded`.
+
+### F3. Sheets (WF-4)
+
+```powershell
+python publish_stub_event.py --event-type lead.qualified --tenant-id Client_1 --entity-id 2 --payload "{\"name\":\"Sheet Test\",\"phone\":\"+9188\",\"location\":\"Baner\",\"budget\":\"50L\",\"property_type\":\"2BHK\",\"visit_date\":\"2026-08-01\"}"
+```
+
+### F4. Real calendar link (not n8n-only)
+
+Needs Part A4 + a real WhatsApp/sales path that fires `schedule_visit`.  
+Stub/test payloads with `html_link=…eid=test` will **not** open in Google (by design).
+
+---
+
+## Part G — What Mayank (or any new machine) must do — checklist
+
+Order matters:
+
+1. [ ] `docker compose up -d n8n redis` + owner account  
+2. [ ] Google project + enable **Gmail, Sheets, Drive, Calendar** APIs  
+3. [ ] OAuth consent **External / Testing** + **test users**  
+4. [ ] OAuth **Web** client + redirect `http://localhost:5678/rest/oauth2-credential/callback`  
+5. [ ] (Optional for real visits) Service account JSON + share Calendar + `.env` `GOOGLE_CALENDAR_*`  
+6. [ ] n8n credentials: Header Auth + Gmail + Sheets (exact names)  
+7. [ ] n8n Settings → API key → `N8N_MANAGEMENT_API_KEY` in `.env`  
+8. [ ] `N8N_API_KEY` matches Header Auth value  
+9. [ ] `uv run python import_n8n_workflows.py`  
+10. [ ] Set Gmail **To** (+ WF-5 Code `to`) on all mail workflows  
+11. [ ] **Publish** all 6 workflows  
+12. [ ] Fix WF-4 spreadsheet ID if needed  
+13. [ ] Smoke F1–F3; restart uvicorn if env changed  
+14. [ ] FE work is **separate** — see [`docs/FRONTEND_BACKLOG.md`](FRONTEND_BACKLOG.md)
+
+**Not enough** to only “create Google credentials + run import” without steps 6–11.
 
 ---
 
 ## Troubleshooting
 
-### `redirect_uri_mismatch`
-
-The redirect URI in Google Cloud Console doesn't match what n8n sends.
-
-**Fix:** Copy the **OAuth Redirect URL** from the n8n credential panel and paste it *exactly* into Google Console's **Authorized redirect URIs**. Must include `http://localhost:5678/rest/oauth2-credential/callback`.
-
-### `invalid_client`
-
-Client ID or Secret doesn't match.
-
-**Fix:** Go back to Google Cloud Console > Credentials, copy both values fresh, and re-enter in n8n. Watch for accidental spaces.
-
-### `Access blocked: This app's request is invalid`
-
-The OAuth consent screen is not configured or the app is in Testing mode and your account is not added as a test user.
-
-**Fix:**
-1. Go to **OAuth consent screen > Audience**
-2. Add your Gmail address as a **Test user**
-3. Try the OAuth flow again
-
-### `403 access_denied` during OAuth
-
-Same as above — your account is not in the test users list.
-
-**Fix:** Add your email under OAuth consent screen > Test Users.
-
-### Gmail node `options.attachments` not working
-
-The Gmail node v2.1 in n8n v2.31.5 has a known issue with `options.attachments` — binary data is not attached to emails.
-
-**Workaround (used in WF-5):** Build the MIME message in a Code node and send via Gmail API using an HTTP Request node. See `n8n_workflows/wf5_marketing_report.json` for the pattern.
-
-### n8n shows "Connection tested successfully" but emails don't send
-
-Check that:
-1. The workflow is **Active** (toggle in top-right)
-2. The Webhook node has the correct path
-3. The bridge is forwarding events (`N8N_BRIDGE_ENABLED=true`)
-
-### Token expired / credential needs re-auth
-
-OAuth tokens can expire. In n8n:
-1. Go to **Credentials**
-2. Click the credential
-3. Click **Sign in with Google** to re-authorize
+| Symptom | Fix |
+|---------|-----|
+| `redirect_uri_mismatch` | Redirect URI must be exact callback above |
+| Google hasn’t verified this app | Add account under **Audience → Test users** |
+| `invalid_client` | Re-copy Client ID/Secret; no trailing spaces |
+| OAuth worked then died after ~7 days | Testing mode token expiry — Sign in with Google again in n8n |
+| Import `401 unauthorized` | Use management JWT, not webhook secret |
+| Webhook `403` | Header Auth = `Authorization` + `Bearer {N8N_API_KEY}` |
+| Webhook `404` | Publish workflow; path e.g. `ireios_hot_lead_alert` |
+| Gmail “To is required” | Set To in UI + Publish (repo ships empty To) |
+| WF-5 always throws after find-replace | Only edit `const to = '…'`; don’t replace validation strings |
+| Empty email fields / `—` in subject | Flatten node should ship in WF JSON; ensure published version is latest |
+| Calendar link 400 | Fake `eid=test` or stub provider — need real CalendarExecutor + SA share |
+| Sheets 403 | Sheet not shared with the Google user who OAuth’d Sheets credential |
+| Wiped volume lost OAuth | Recreate C2–C3; do not wipe to “fix” IDs |
 
 ---
 
-## OAuth Scopes Reference
+## Security notes
 
-| Service | Scope | Purpose |
-|---------|-------|---------|
-| Gmail (full) | `https://mail.google.com/` | Send, read, modify, delete emails |
-| Gmail (modify) | `https://www.googleapis.com/auth/gmail.modify` | Read + send (no delete) |
-| Gmail (readonly) | `https://www.googleapis.com/auth/gmail.readonly` | Read only |
-| Google Sheets | `https://www.googleapis.com/auth/spreadsheets` | Read/write spreadsheets |
-| Google Drive | `https://www.googleapis.com/auth/drive.file` | Access files created by the app |
-
-> **Recommended:** Use `https://mail.google.com/` for full Gmail access in automation workflows.
+- Never commit OAuth client secrets, SA JSON, or management JWTs  
+- `.env` and secret paths stay local  
+- `N8N_ENCRYPTION_KEY` in Compose pins credential encryption across container recreates (change in real prod)  
+- Prefer not wiping `n8ndata`; re-link credentials in UI instead  
 
 ---
 
-## Production Considerations
+## Related docs
 
-### App verification
-
-In Testing mode, your app works for test users only. To use with any Google account:
-1. Go to **OAuth consent screen > Audience**
-2. Click **Publish App**
-3. Submit for Google verification (takes 1–7 days)
-
-> **For internal use:** You can stay in Testing mode and just add all required email addresses as test users.
-
-### Token refresh
-
-OAuth tokens expire. n8n automatically refreshes them using the refresh token obtained during the initial authorization flow. If refresh fails:
-- Re-authorize the credential in n8n
-- Check that the OAuth client is still active in Google Cloud Console
-
-### Domain restriction
-
-For Google Workspace accounts, you can set the consent screen to **Internal** to restrict access to your organization's users only.
+| Doc | Contents |
+|-----|----------|
+| [`N8N_INTEGRATION.md`](N8N_INTEGRATION.md) | Bridge architecture, envelope, two-key table, CLI fallback |
+| [`TIMEOUTS_AND_TIMINGS.md`](TIMEOUTS_AND_TIMINGS.md) | WA 13s race / LLM 22s |
+| [`FRONTEND_BACKLOG.md`](FRONTEND_BACKLOG.md) | Mayank remaining FE work |
+| `n8n_workflows/*.json` | WF-1…WF-6 definitions |
+| `import_n8n_workflows.py` | REST import + credential name injection |

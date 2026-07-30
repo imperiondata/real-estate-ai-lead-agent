@@ -80,6 +80,10 @@ class N8NBridge:
         self._running = False
         self._task: Optional[asyncio.Task] = None
         self._drained_pending = False
+        self._fetch_tick = 0
+        # msg_id -> consecutive retryable failures (cap then ACK + log)
+        self._retry_counts: dict[str, int] = {}
+        self._max_retries = 8
 
     @property
     def enabled(self) -> bool:
@@ -139,8 +143,12 @@ class N8NBridge:
         logger.info("n8n bridge stopped: stream=%s group=%s", self.stream, self.group)
 
     async def _fetch_entries(self):
+        """Read new messages; periodically reclaim PEL so retryable 5xx are not stuck."""
         assert self._redis is not None
-        if not self._drained_pending:
+        self._fetch_tick += 1
+        # Startup drain + every ~20 idle cycles re-read pending ("0") for reclaim.
+        reclaim = (not self._drained_pending) or (self._fetch_tick % 20 == 0)
+        if reclaim:
             self._drained_pending = True
             try:
                 resp = await asyncio.wait_for(
@@ -151,10 +159,9 @@ class N8NBridge:
                 )
             except (asyncio.TimeoutError, aioredis.RedisError) as exc:
                 logger.warning("n8n bridge pending-drain skipped: %s %r", type(exc).__name__, exc)
-                return []
-            if resp:
+                resp = None
+            if resp and resp[0][1]:
                 return resp[0][1]
-            return []
         resp = await self._redis.xreadgroup(
             self.group, self._consumer, {self.stream: ">"}, count=10, block=250
         )
@@ -214,26 +221,52 @@ class N8NBridge:
                 path,
                 envelope.get("event_id"),
             )
+            self._retry_counts.pop(msg_id, None)
             await self._redis.xack(self.stream, self.group, msg_id)
             return
 
-        if err == "n8n_not_configured" or err.startswith("n8n_http_4"):
-            logger.warning(
-                "n8n_bridge_error permanent type=%s path=%s err=%s; acking",
+        if (
+            err in ("n8n_not_configured", "n8n_misconfigured")
+            or err.startswith("n8n_http_4")
+        ):
+            # Auth failures are permanent for this credential set — ACK so PEL
+            # does not grow, but log ERROR so ops notice (401/403 misconfig).
+            level = logger.error if err in (
+                "n8n_http_401", "n8n_http_403", "n8n_misconfigured"
+            ) else logger.warning
+            level(
+                "n8n_bridge_error permanent type=%s path=%s err=%s; acking "
+                "(check N8N_API_KEY Header Auth if 401/403)",
                 event_type,
                 path,
                 err,
             )
+            self._retry_counts.pop(msg_id, None)
             await self._redis.xack(self.stream, self.group, msg_id)
             return
 
-        # Retryable — leave in PEL for next drain / restart.
+        # Retryable — leave in PEL; reclaim loop will redeliver. Cap retries.
+        n = self._retry_counts.get(msg_id, 0) + 1
+        self._retry_counts[msg_id] = n
+        if n >= self._max_retries:
+            logger.error(
+                "n8n_bridge_error exhausted retries=%s type=%s path=%s err=%s msg=%s; acking",
+                n,
+                event_type,
+                path,
+                err,
+                msg_id,
+            )
+            self._retry_counts.pop(msg_id, None)
+            await self._redis.xack(self.stream, self.group, msg_id)
+            return
         logger.warning(
-            "n8n_bridge_error retryable type=%s path=%s err=%s msg=%s",
+            "n8n_bridge_error retryable type=%s path=%s err=%s msg=%s attempt=%s",
             event_type,
             path,
             err,
             msg_id,
+            n,
         )
 
     async def forward_envelope(

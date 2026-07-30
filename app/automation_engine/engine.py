@@ -109,11 +109,18 @@ async def submit(action_request: dict, attempt: int = 1) -> dict:
     return result
 
 
-async def resume(approval_id: int, manager_id: Optional[str] = None, reason: Optional[str] = None) -> dict:
+async def resume(
+    approval_id: int,
+    manager_id: Optional[str] = None,
+    reason: Optional[str] = None,
+    client_id: Optional[int] = None,
+) -> dict:
     """Resume an approved action through the Automation Engine (flag stripped)."""
     from app.automation_engine.hitl import resolve as hitl_resolve
 
-    res = await hitl_resolve(approval_id, "approve", manager_id=manager_id, reason=reason)
+    res = await hitl_resolve(
+        approval_id, "approve", manager_id=manager_id, reason=reason, client_id=client_id
+    )
     if res.get("status") != "approved":
         return res
     action_request = dict(res["action_request"])
@@ -121,14 +128,18 @@ async def resume(approval_id: int, manager_id: Optional[str] = None, reason: Opt
     return await submit(action_request, attempt=1)
 
 
-def reject(approval_id: int, manager_id: Optional[str] = None, reason: Optional[str] = None) -> dict:
-    """Reject a pending approval (sync wrapper around HITL.resolve)."""
+async def reject(
+    approval_id: int,
+    manager_id: Optional[str] = None,
+    reason: Optional[str] = None,
+    client_id: Optional[int] = None,
+) -> dict:
+    """Reject a pending approval (async — no nested event-loop)."""
     from app.automation_engine.hitl import resolve as hitl_resolve
 
-    async def _run():
-        return await hitl_resolve(approval_id, "reject", manager_id=manager_id, reason=reason)
-
-    return asyncio.get_event_loop().run_until_complete(_run())
+    return await hitl_resolve(
+        approval_id, "reject", manager_id=manager_id, reason=reason, client_id=client_id
+    )
 
 
 async def _execute_with_retry(action_request: dict, attempt: int) -> dict:

@@ -38,6 +38,11 @@ class N8NClient:
     def configured(self) -> bool:
         return bool(self.base_url and self.api_key)
 
+    @property
+    def misconfigured(self) -> bool:
+        """True when only one of URL/key is set (ops thinks n8n is on but it no-ops)."""
+        return bool(self.base_url) ^ bool(self.api_key)
+
     async def trigger_workflow(self, workflow_id: str, payload: dict) -> dict:
         """Trigger an n8n workflow by id/path with the given payload.
 
@@ -45,6 +50,14 @@ class N8NClient:
         when the service is not configured. Uses an async httpx client with a
         sensible timeout. Empty / non-JSON success bodies are treated as success.
         """
+        if self.misconfigured:
+            logger.error(
+                "n8n misconfigured: set both N8N_BASE_URL and N8N_API_KEY "
+                "(got url=%s key=%s)",
+                bool(self.base_url),
+                bool(self.api_key),
+            )
+            return {"status": "error", "error": "n8n_misconfigured"}
         if not self.configured:
             logger.warning("n8n trigger skipped: not configured (N8N_BASE_URL/N8N_API_KEY)")
             return {"status": "error", "error": "n8n_not_configured"}

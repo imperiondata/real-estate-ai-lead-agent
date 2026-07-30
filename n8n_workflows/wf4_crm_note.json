@@ -13,11 +13,14 @@
       "name": "Webhook",
       "type": "n8n-nodes-base.webhook",
       "typeVersion": 2,
-      "position": [240, 300],
+      "position": [
+        240,
+        300
+      ],
       "webhookId": "ireios-crm-append",
       "credentials": {
         "httpHeaderAuth": {
-          "id": "G00Bi1IyHkT5zo68",
+          "id": "cred-header-auth",
           "name": "IREIOS API Key"
         }
       }
@@ -37,13 +40,11 @@
       "name": "Google Sheets API",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
-      "position": [520, 300],
-      "credentials": {
-        "googleSheetsOAuth2Api": {
-          "id": "wpcizRhlDTPwGFM8",
-          "name": "Google Sheets account"
-        }
-      }
+      "position": [
+        520,
+        300
+      ],
+      "credentials": {}
     }
   ],
   "connections": {

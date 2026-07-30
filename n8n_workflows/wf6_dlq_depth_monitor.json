@@ -108,12 +108,7 @@
         1200,
         200
       ],
-      "credentials": {
-        "gmailOAuth2": {
-          "id": "13auoI7CTqojlGZh",
-          "name": "Gmail account"
-        }
-      }
+      "credentials": {}
     },
     {
       "parameters": {},

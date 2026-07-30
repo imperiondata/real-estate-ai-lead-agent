@@ -1,5 +1,11 @@
 {
+  "updatedAt": "2026-07-29T10:10:42.000Z",
+  "createdAt": "2026-07-29T10:07:31.794Z",
+  "id": "MgbZY4C4bcM0TZO2",
   "name": "IREIOS \u2014 WF-1: Hot Lead Alert \u2192 Gmail",
+  "description": null,
+  "active": true,
+  "isArchived": false,
   "nodes": [
     {
       "parameters": {
@@ -20,7 +26,7 @@
       "webhookId": "ireios-hot-lead",
       "credentials": {
         "httpHeaderAuth": {
-          "id": "G00Bi1IyHkT5zo68",
+          "id": "cred-header-auth",
           "name": "IREIOS API Key"
         }
       }
@@ -135,12 +141,7 @@
         1200,
         300
       ],
-      "credentials": {
-        "gmailOAuth2": {
-          "id": "13auoI7CTqojlGZh",
-          "name": "Gmail account"
-        }
-      }
+      "credentials": {}
     }
   ],
   "connections": {
@@ -210,5 +211,38 @@
   "settings": {
     "executionOrder": "v1"
   },
-  "staticData": null
+  "staticData": null,
+  "meta": null,
+  "nodeGroups": [],
+  "pinData": null,
+  "versionId": "93c31ca5-9554-49d8-87b5-95b8fa7cdffb",
+  "activeVersionId": "93c31ca5-9554-49d8-87b5-95b8fa7cdffb",
+  "versionCounter": 1,
+  "triggerCount": 1,
+  "sourceWorkflowId": null,
+  "tags": [],
+  "shared": [
+    {
+      "updatedAt": "2026-07-29T10:07:31.808Z",
+      "createdAt": "2026-07-29T10:07:31.808Z",
+      "role": "workflow:owner",
+      "workflowId": "MgbZY4C4bcM0TZO2",
+      "projectId": "vcCQdTk1Qcc6PLky",
+      "project": {
+        "updatedAt": "2026-07-29T09:51:08.578Z",
+        "createdAt": "2026-07-23T15:50:13.668Z",
+        "id": "vcCQdTk1Qcc6PLky",
+        "name": "Maitri Shah <maitrishah142004@gmail.com>",
+        "type": "personal",
+        "icon": null,
+        "description": null,
+        "customTelemetryTags": [],
+        "creatorId": "4cbd280f-14f0-4eba-a382-3e9fb6bf7dd6"
+      }
+    }
+  ],
+  "versionMetadata": {
+    "name": null,
+    "description": null
+  }
 }

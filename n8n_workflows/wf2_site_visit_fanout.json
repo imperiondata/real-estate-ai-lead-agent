@@ -20,7 +20,7 @@
       "webhookId": "ireios-visit-fanout",
       "credentials": {
         "httpHeaderAuth": {
-          "id": "G00Bi1IyHkT5zo68",
+          "id": "cred-header-auth",
           "name": "IREIOS API Key"
         }
       }
@@ -73,12 +73,7 @@
         720,
         200
       ],
-      "credentials": {
-        "gmailOAuth2": {
-          "id": "13auoI7CTqojlGZh",
-          "name": "Gmail account"
-        }
-      }
+      "credentials": {}
     },
     {
       "parameters": {
@@ -96,12 +91,7 @@
         720,
         400
       ],
-      "credentials": {
-        "gmailOAuth2": {
-          "id": "13auoI7CTqojlGZh",
-          "name": "Gmail account"
-        }
-      }
+      "credentials": {}
     }
   ],
   "connections": {

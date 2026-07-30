@@ -73,6 +73,7 @@ services:
       N8N_PORT: 5678
       N8N_PROTOCOL: http
       N8N_SECURE_COOKIE: "false"
+      N8N_API_KEY: ${N8N_API_KEY:-local-n8n-webhook-secret}
       WEBHOOK_URL: http://localhost:5678/
       GENERIC_TIMEZONE: Asia/Kolkata
       TZ: Asia/Kolkata

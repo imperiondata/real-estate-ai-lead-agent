@@ -13,11 +13,14 @@
       "name": "Webhook",
       "type": "n8n-nodes-base.webhook",
       "typeVersion": 2,
-      "position": [240, 300],
+      "position": [
+        240,
+        300
+      ],
       "webhookId": "ireios-marketing-csv",
       "credentials": {
         "httpHeaderAuth": {
-          "id": "G00Bi1IyHkT5zo68",
+          "id": "cred-header-auth",
           "name": "IREIOS API Key"
         }
       }
@@ -30,7 +33,10 @@
       "name": "Build MIME + Send",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [480, 300]
+      "position": [
+        480,
+        300
+      ]
     },
     {
       "parameters": {
@@ -47,13 +53,11 @@
       "name": "Gmail API \u2014 Send with Attachment",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
-      "position": [720, 300],
-      "credentials": {
-        "gmailOAuth2": {
-          "id": "13auoI7CTqojlGZh",
-          "name": "Gmail account"
-        }
-      }
+      "position": [
+        720,
+        300
+      ],
+      "credentials": {}
     }
   ],
   "connections": {

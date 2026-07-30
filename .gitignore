@@ -25,6 +25,7 @@ __pycache__/
 # Database files
 *.db
 *.sqlite3
+*.sqlite
 
 # Log files
 app.log
@@ -140,3 +141,29 @@ generate_report*.py
 export_csv.py
 check_leads.py
 get_live_key.py
+
+# n8n dev/ops scripts (one-off credential mgmt, testing, DB probing)
+activate_wf*.py
+check_creds.py
+check_export.py
+clean_cred_refs.py
+clean_db.py
+e2e_test.py
+fire_wf*.py
+fix_cred_ids.py
+fix_db.py
+fix_db_final.py
+import_fixes.py
+prepare_fixes.py
+push_fixes.py
+read_db*.py
+verify_creds.py
+verify_links.py
+update_cred_ids.py
+
+# n8n temp artifacts
+temp_*.json
+temp_*.sqlite*
+n8n_export.json
+n8n_workflows_fixed/
+temp_mount/

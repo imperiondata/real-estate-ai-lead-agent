@@ -36,38 +36,3 @@ export const mockKPIs = {
   leadVelocity: 85 // Leads per day
 };
 
-// Simulate an SSE connection for pulsing live KPI updates and alerts
-export class MockSSEService {
-  private callbacks: ((data: any) => void)[] = [];
-  private intervalId: any;
-
-  subscribe(callback: (data: any) => void) {
-    this.callbacks.push(callback);
-    
-    // Simulate initial data
-    callback({ type: 'kpi_update', data: mockKPIs });
-    callback({ type: 'alert_update', data: mockAlerts });
-
-    // Start simulating live data
-    if (!this.intervalId) {
-      this.intervalId = setInterval(() => {
-        const randomFluctuation = Math.floor(Math.random() * 50000) - 20000;
-        const newData = {
-          ...mockKPIs,
-          totalRevenue: mockKPIs.totalRevenue + randomFluctuation,
-          leadVelocity: mockKPIs.leadVelocity + (Math.floor(Math.random() * 5) - 2),
-        };
-        
-        // Notify subscribers
-        this.callbacks.forEach(cb => cb({ type: 'kpi_update', data: newData }));
-      }, 5000); // Pulse every 5 seconds
-    }
-
-    return () => {
-      this.callbacks = this.callbacks.filter(cb => cb !== callback);
-      if (this.callbacks.length === 0) clearInterval(this.intervalId);
-    };
-  }
-}
-
-export const mockSSEService = new MockSSEService();

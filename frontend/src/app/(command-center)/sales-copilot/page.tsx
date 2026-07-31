@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, Suspense } from 'react';
 // Removed mock timeline import; using real types below.
 type TimelineEvent = {
   id: string;
@@ -12,16 +12,20 @@ type TimelineEvent = {
   amount?: number;
 };
 import { MessageCircle, DollarSign, Calendar, UserPlus, Cpu, AlertCircle, Search, Filter } from 'lucide-react';
+import { useSearchParams } from 'next/navigation';
 
-export default function SalesCopilotPage() {
+function SalesCopilotContent() {
+  const searchParams = useSearchParams();
+  const leadId = searchParams.get('lead_id') || '1'; // Fallback to 1 if not provided
   const [events, setEvents] = useState<TimelineEvent[]>([]);
   const [filter, setFilter] = useState<string>('all');
 
   useEffect(() => {
     const fetchTimeline = async () => {
+      if (!leadId) return;
       try {
         const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
-        const res = await fetch(`${apiUrl}/api/v1/events/leads/1/timeline?api_key=secret-client-key-123`, {
+        const res = await fetch(`${apiUrl}/api/v1/events/leads/${leadId}/timeline?api_key=secret-client-key-123`, {
           // Send cookies if available
           credentials: 'omit' // use api_key for now to bypass CORS cookie issues during dev
         });
@@ -36,15 +40,19 @@ export default function SalesCopilotPage() {
             actor: evt.payload?.agent_type || 'System',
           }));
           setEvents(mappedEvents);
+        } else if (res.status === 404) {
+          console.warn(`Lead ${leadId} timeline not found (404)`);
+          setEvents([]); // Clean 404 handling
         } else {
-          console.error("Failed to fetch timeline");
+          console.error("Failed to fetch timeline", res.status);
+          setEvents([]);
         }
       } catch (err) {
         console.error("Error fetching timeline:", err);
       }
     };
     fetchTimeline();
-  }, []);
+  }, [leadId]);
 
   const filteredEvents = events.filter(e => {
     if (filter === 'all') return true;
@@ -184,5 +192,13 @@ export default function SalesCopilotPage() {
 
       </div>
     </div>
+  );
+}
+
+export default function SalesCopilotPage() {
+  return (
+    <Suspense fallback={<div className="flex h-screen items-center justify-center text-white">Loading Copilot...</div>}>
+      <SalesCopilotContent />
+    </Suspense>
   );
 }

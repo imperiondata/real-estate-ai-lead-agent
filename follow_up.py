@@ -49,7 +49,9 @@ def resolve_current_followup_stage(
 
 
 # P6.4: derive the next follow-up stage AND the inter-stage day gap directly
-# from the ML `followups` sequence, so the scheduler (hour_map day units) and
+# from the ML `followups` sequence. Note: sequence "day" values are HOUR offsets
+# (0, 24, 72, 168), not calendar days — scheduler uses timedelta(hours=gap).
+# from the ML `followups` sequence, so the scheduler (hour_map hour units) and
 # strategy B (sequence day units) can never diverge. Replaces the hardcoded
 # 24/72/168 fallback constants.
 _STAGE_INDEX = {"Day 0": 0, "Day 1": 1, "Day 3": 2, "Day 7": 3}
@@ -320,14 +322,14 @@ def generate_followup_payload(
 # ==========================================
 
 def apply_quiet_hours(target_utc_time: datetime) -> datetime:
-    """Shifts follow-up times to 8:00 AM if they fall between 9 PM and 8 AM IST."""
+    """Shifts follow-up times to 8:00 AM IST if they fall between 10 PM and 8 AM IST."""
     ist = pytz.timezone('Asia/Kolkata')
     target_ist = target_utc_time.astimezone(ist)
 
-    if target_ist.hour >= 22:  # After 9 PM
+    if target_ist.hour >= 22:  # After 10 PM IST
         target_ist += timedelta(days=1)
         target_ist = target_ist.replace(hour=8, minute=0, second=0)
-    elif target_ist.hour < 8:  # Before 8 AM
+    elif target_ist.hour < 8:  # Before 8 AM IST
         target_ist = target_ist.replace(hour=8, minute=0, second=0)
 
     return target_ist.astimezone(timezone.utc)
@@ -390,6 +392,14 @@ def check_and_send_followups():
                 lead = db.query(Lead).filter(Lead.session_id == session_id).first()
 
                 if not session:
+                    # Orphan FollowUpState — stop so it is not retried every tick.
+                    state.follow_up_status = "stopped"
+                    state.next_follow_up_at = None
+                    db.commit()
+                    logger.warning(
+                        "Follow-up stopped: session missing for state session_id=%s",
+                        session_id,
+                    )
                     continue
 
                 # --- NEW: RESOLVE AND NORMALIZE PHONE NUMBER AT START OF TURN ---
@@ -476,7 +486,9 @@ def check_and_send_followups():
                         "urgency_level": getattr(lead, "urgency_level", "low") or "low",
                         "engagement_score": getattr(lead, "engagement_score", 0) or 0,
                         "expected_closure_days": getattr(lead, "expected_closure_days", 0),
-                        "budget_alignment_status": "aligned",
+                        "budget_alignment_status": getattr(
+                            lead, "budget_alignment_status", None
+                        ) or "aligned",
                         "response_speed_score": 50, # Default or mocked
                         "inactive_lead": inactivity
                     }
@@ -494,6 +506,15 @@ def check_and_send_followups():
                     # Day 7 is the final stage — send a closure notice, not another follow-up.
                     # Skip the ML engine entirely and close the session cleanly.
                     if current_stage == "Day 7":
+                        if not lead:
+                            state.follow_up_status = "stopped"
+                            state.next_follow_up_at = None
+                            db.commit()
+                            logger.warning(
+                                "Day 7 follow-up stopped: lead missing session_id=%s",
+                                session_id,
+                            )
+                            continue
                         closure_msg = (
                             f"Hi {lead.name or 'there'}, we haven't heard back from you in a while. "
                             f"We'll pause our updates for now. Feel free to reach out anytime — "
@@ -595,9 +616,22 @@ def check_and_send_followups():
                             except Exception as ex:
                                 logger.error(f"Follow-up Twilio push failed for {session_id}: {ex}")
                                 raise ex
-                    else:
+                    elif settings.TEST_MODE or not settings.TWILIO_ACCOUNT_SID:
+                        # Dev/sim without Twilio — advance FSM so local tests stay deterministic.
                         success = True
                         logger.info(f"Simulated follow-up {current_stage} sent to {session_id}")
+                    else:
+                        # Production-ish: phone missing — hold stage, do not false-advance FSM.
+                        logger.warning(
+                            "Follow-up deferred (no phone) session=%s stage=%s",
+                            session_id,
+                            current_stage,
+                        )
+                        state.next_follow_up_at = apply_quiet_hours(
+                            datetime.now(timezone.utc) + timedelta(hours=24)
+                        )
+                        db.commit()
+                        continue
 
                     if success:
                         state.follow_up_sent_at = now

@@ -423,10 +423,48 @@ After every bug-fix slice:
 | P3.4 | **done** | WebhookLog insert-first + IntegrityError for race-safe dedup | same |
 | P3.5 | **done** | SMS follow-up stop uses client-scoped session id | same |
 | P3.5-edge | **done** | FollowUpState stop moved inside Redis lock (both normal + degraded paths) | `tests/test_p3_concurrency.py` |
+| P3.6 | **done** | WA race: no-cancel await-inflight + critical-path trim | same |
+| P3.7 | **done** | LLM timeout no-retry; race 13s / LLM 22s; CLIENT_SUPPORT_NUMBER | same |
 
 ---
 
 ## Entries
+
+### P3.6 — WhatsApp race: stop cancel-and-rerun; align timeouts
+
+**Bug / gap:** Webhook used `asyncio.wait_for` which **cancelled** in-flight `process_unified_lead` on timeout, then `background_process_and_push` re-ran the full pipeline (second Gemini call, extra latency, double-charge risk). Timeouts were also misaligned (webhook 10s vs LLM 15s; logs still said 15000ms).
+
+**Fix:**
+- `WHATSAPP_WEBHOOK_TIMEOUT` (default **12s**) + `LLM_TIMEOUT_SECONDS` (default **10s**) in `config.py` / `.env.example`.
+- WhatsApp path starts `_session_turn_locked` (private `SessionLocal` + full-turn `session_lock`) as a task and races with `asyncio.wait` — **never cancels**.
+- Slow path: interim TwiML + `_await_inflight_and_push` (await same task → EE). Legacy `background_process_and_push` kept for full re-run callers.
+- `agent.py` uses `settings.LLM_TIMEOUT_SECONDS` for `chat.send_message`.
+- **P3.6b critical-path trim:** `RAG_TIMEOUT_SECONDS=2.0`, `GRAPH_CONTEXT_TIMEOUT_SECONDS=0.5` (soft-timeout Neo4j). Post-turn score/negotiation/graph/memory deferred via `_post_turn_side_effects`; bus `_emit_turn_events` deferred via `_emit_turn_events_deferred`. Both awaited only when `TEST_MODE=true`.
+
+**Files:** `config.py`, `main.py`, `agent.py`, `app/agents/whatsapp_agent.py`, `AGENTS.md`, `README.md`, `.env.example`, `docs/BACKEND_RELIABILITY_CHECKLIST.md`, `docs/N8N_INTEGRATION.md`, `docs/BACKEND_STABILITY_REPORT.md`
+
+**Tests:** `tests/test_p3_concurrency.py` — `TestWhatsAppRaceNoCancel`
+
+---
+
+### P3.7 — LLM timeout no-retry + longer inflight budget + support number
+
+**Bug:** Complex WA turns (negotiate + visit) hit `LLM_TIMEOUT_SECONDS=10` three times
+(~30s) because `TimeoutError` was retried like a flaky 5xx. User saw interim then the
+fatal fallback with placeholder `*+91 [CLIENT_SUPPORT_NUMBER]*`. Visit fields never
+extracted.
+
+**Fix:**
+- Do **not** retry `asyncio.TimeoutError` / `TimeoutError` on main Gemini call.
+- Defaults: race **13s**, LLM **22s** (LLM may exceed race; inflight EE-push can still succeed).
+- `CLIENT_SUPPORT_NUMBER` env (default `+91 9876543210`) used in agent fatal fallback,
+  main connectivity fallbacks, and system-prompt placeholder substitution.
+
+**Files:** `config.py`, `agent.py`, `main.py`, `.env.example`, `docs/TIMEOUTS_AND_TIMINGS.md`, `AGENTS.md`
+
+**Tests:** `tests/test_p3_concurrency.py` — timeout no-retry + support number assertions
+
+---
 
 ### P3.1/P3.2 — Timeout cancels work, releases lock, full reprocess
 

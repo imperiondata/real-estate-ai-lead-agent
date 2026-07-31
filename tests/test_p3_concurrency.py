@@ -19,6 +19,7 @@ def _read_source(rel_path: str) -> str:
 
 MAIN_SRC = _read_source("main.py")
 AGENT_SRC = _read_source("agent.py")
+CONFIG_SRC = _read_source("config.py")
 
 
 # ---------------------------------------------------------------------------
@@ -35,12 +36,65 @@ class TestBackgroundLockReacquisition:
         assert "lock.acquire" in MAIN_SRC or "redis_client.lock" in MAIN_SRC
 
     def test_background_lock_uses_session_id(self):
-        """Lock key includes session_id for per-session serialization."""
-        assert "session_lock:{session_id}" in MAIN_SRC
+        """Lock key includes session_id for per-session serialization (tenant-scoped preferred)."""
+        assert (
+            "session_lock:{session_id}" in MAIN_SRC
+            or "session_lock:{scoped_session_id}" in MAIN_SRC
+        )
 
     def test_background_lock_released_in_finally(self):
         """Lock must be released when done."""
         assert "lock.release()" in MAIN_SRC
+
+
+# ---------------------------------------------------------------------------
+# WA race: no cancel / await-inflight + aligned timeouts
+# ---------------------------------------------------------------------------
+
+
+class TestWhatsAppRaceNoCancel:
+    """Webhook races the turn task; slow path awaits same task (no second Gemini)."""
+
+    def test_session_turn_locked_helper_exists(self):
+        assert "async def _session_turn_locked" in MAIN_SRC
+
+    def test_await_inflight_helper_exists(self):
+        assert "async def _await_inflight_and_push" in MAIN_SRC
+
+    def test_webhook_uses_asyncio_wait_not_wait_for_cancel(self):
+        """Slow path must use asyncio.wait race, not wait_for cancel of the turn."""
+        wa = MAIN_SRC.split("async def whatsapp_webhook")[1].split("async def twilio_status")[0]
+        assert "asyncio.wait(" in wa
+        assert "_session_turn_locked" in wa
+        assert "_await_inflight_and_push" in wa
+        assert "await_inflight_push" in wa
+
+    def test_config_has_aligned_timeouts(self):
+        assert "WHATSAPP_WEBHOOK_TIMEOUT" in CONFIG_SRC
+        assert "LLM_TIMEOUT_SECONDS" in CONFIG_SRC
+
+    def test_agent_uses_llm_timeout_setting(self):
+        assert "LLM_TIMEOUT_SECONDS" in AGENT_SRC
+
+    def test_rag_and_graph_timeout_settings(self):
+        assert "RAG_TIMEOUT_SECONDS" in CONFIG_SRC
+        assert "GRAPH_CONTEXT_TIMEOUT_SECONDS" in CONFIG_SRC
+        assert "RAG_TIMEOUT_SECONDS" in AGENT_SRC
+
+    def test_post_turn_deferred_helpers(self):
+        wa = _read_source("app/agents/whatsapp_agent.py")
+        assert "_post_turn_side_effects" in wa
+        assert "_graph_extra_context_soft" in wa
+        assert "_emit_turn_events_deferred" in MAIN_SRC
+
+    def test_llm_timeout_not_retried(self):
+        """Pure TimeoutError must short-circuit (no 3× full-budget burn)."""
+        assert "timeout_no_retry" in AGENT_SRC
+        assert "is_timeout" in AGENT_SRC
+
+    def test_client_support_number_setting(self):
+        assert "CLIENT_SUPPORT_NUMBER" in CONFIG_SRC
+        assert "CLIENT_SUPPORT_NUMBER" in AGENT_SRC
 
 
 # ---------------------------------------------------------------------------
@@ -58,8 +112,13 @@ class TestInterimMessageDedup:
         )
 
     def test_interim_dedup_checks_before_sending(self):
-        """Must check if interim was already sent before sending again."""
-        assert "if already_sent" in MAIN_SRC or "send_interim = False" in MAIN_SRC
+        """Must check if interim was already sent before sending again (atomic SET NX preferred)."""
+        assert (
+            "if already_sent" in MAIN_SRC
+            or "send_interim = False" in MAIN_SRC
+            or "nx=True" in MAIN_SRC
+            or "send_interim = bool(was_set)" in MAIN_SRC
+        )
 
 
 # ---------------------------------------------------------------------------

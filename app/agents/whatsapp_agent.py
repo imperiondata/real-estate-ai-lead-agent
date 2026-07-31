@@ -19,10 +19,11 @@ plans/IREIOS_3.0_EXPANSION_CHANGELOG.md.
 """
 from __future__ import annotations
 
+import asyncio
 import contextvars
 import logging
 import re
-from typing import Optional
+from typing import Optional, Set
 
 from config import settings
 from database import SessionLocal
@@ -33,21 +34,32 @@ from app.automation_engine.engine import submit as ae_submit
 
 logger = logging.getLogger("whatsapp_agent_v3")
 
+# Keep fire-and-forget post-turn tasks alive until done (prod path).
+_post_turn_tasks: Set[asyncio.Task] = set()
+
 _PROP_TYPE_RE = re.compile(r"\b(1bhk|2bhk|3bhk|4bhk|villa|plot|studio|penthouse|flat|apartment)\b", re.I)
 _AREA_RE = re.compile(r"\b(\d{3,5})\s*sq\s*(ft|feet)\b", re.I)
 
 # Post-G3 Approach B: structured media URL for the current turn (TwiML path).
-# ContextVar keeps concurrent requests isolated; module fallback covers tests
-# that call process_chat via asyncio.run (new context copy).
+# ContextVar keeps concurrent requests isolated; per-session map avoids races when
+# multiple turns finish under different tasks; module fallback covers tests that
+# call process_chat via asyncio.run (new context copy).
 _outbound_media_ctx: contextvars.ContextVar[Optional[str]] = contextvars.ContextVar(
     "wa_outbound_media", default=None
 )
 _outbound_media_fallback: Optional[str] = None
+_outbound_media_by_session: dict[str, str] = {}
+_outbound_media_session_ctx: contextvars.ContextVar[Optional[str]] = contextvars.ContextVar(
+    "wa_outbound_media_session", default=None
+)
 
 
-def take_outbound_media_url() -> Optional[str]:
+def take_outbound_media_url(session_id: Optional[str] = None) -> Optional[str]:
     """Return and clear the media URL staged for this turn (if any)."""
     global _outbound_media_fallback
+    sid = session_id or _outbound_media_session_ctx.get()
+    if sid and sid in _outbound_media_by_session:
+        return _outbound_media_by_session.pop(sid, None)
     url = _outbound_media_ctx.get()
     _outbound_media_ctx.set(None)
     if url is None:
@@ -56,14 +68,23 @@ def take_outbound_media_url() -> Optional[str]:
     return url
 
 
-def peek_outbound_media_url() -> Optional[str]:
+def peek_outbound_media_url(session_id: Optional[str] = None) -> Optional[str]:
     """Read staged media URL without clearing (tests)."""
+    sid = session_id or _outbound_media_session_ctx.get()
+    if sid and sid in _outbound_media_by_session:
+        return _outbound_media_by_session.get(sid)
     return _outbound_media_ctx.get() or _outbound_media_fallback
 
 
-def _stage_outbound_media_url(url: Optional[str]) -> None:
+def _stage_outbound_media_url(url: Optional[str], session_id: Optional[str] = None) -> None:
     global _outbound_media_fallback
     val = url if url else None
+    sid = session_id or _outbound_media_session_ctx.get()
+    if sid:
+        if val:
+            _outbound_media_by_session[sid] = val
+        else:
+            _outbound_media_by_session.pop(sid, None)
     _outbound_media_ctx.set(val)
     _outbound_media_fallback = val
 
@@ -217,7 +238,7 @@ class WhatsAppAgent:
             logger.debug("graph upsert skipped: %s", e)
 
     def _graph_extra_context(self, lead: Optional[Lead], client_id: int) -> str:
-        """BD-5: best-effort Neo4j context for the LLM (never raises / blocks hard)."""
+        """BD-5: sync Neo4j context for the LLM (never raises). Prefer async wrapper."""
         if not lead or not getattr(lead, "id", None):
             return ""
         try:
@@ -232,6 +253,104 @@ class WhatsAppAgent:
             logger.debug("graph context skipped: %s", e)
             return ""
 
+    async def _graph_extra_context_soft(self, lead: Optional[Lead], client_id: int) -> str:
+        """BD-5 with hard budget so a slow Neo4j cannot burn the WA race window."""
+        timeout = float(getattr(settings, "GRAPH_CONTEXT_TIMEOUT_SECONDS", 0.5))
+        try:
+            return await asyncio.wait_for(
+                asyncio.to_thread(self._graph_extra_context, lead, client_id),
+                timeout=timeout,
+            )
+        except asyncio.TimeoutError:
+            logger.debug(
+                "graph context soft-timeout after %ss lead=%s",
+                timeout,
+                getattr(lead, "id", None),
+            )
+            return ""
+        except Exception as e:  # noqa: BLE001
+            logger.debug("graph context soft path skipped: %s", e)
+            return ""
+
+    async def _post_turn_side_effects(
+        self,
+        *,
+        lead_id: int,
+        client_id: int,
+        session_id: str,
+        user_message: str,
+    ) -> None:
+        """Score + negotiation Layer 2 + graph upsert + memory (own DB session).
+
+        Runs off the TwiML critical path in production (fire-and-forget).
+        Awaited when TEST_MODE so unit tests see scores immediately.
+        """
+        try:
+            with SessionLocal() as db:
+                lead = db.query(Lead).filter(Lead.id == lead_id, Lead.client_id == client_id).first()
+                if not lead:
+                    return
+
+                scores = score_lead(lead)
+                for k, v in scores.items():
+                    setattr(lead, k, v)
+                db.commit()
+
+                if scores.get("budget_alignment_status") and scores["budget_alignment_status"] not in (
+                    "aligned",
+                    "unknown",
+                ):
+                    if not lead.is_negotiating:
+                        lead.is_negotiating = True
+                        db.commit()
+                    try:
+                        from app.events.negotiation import publish_negotiation_started
+
+                        await publish_negotiation_started(
+                            client_id=client_id,
+                            lead_id=lead.id,
+                            session_id=session_id,
+                            trigger="budget_misaligned",
+                            budget=lead.budget or "",
+                            budget_alignment_status=scores["budget_alignment_status"],
+                            source="whatsapp_agent_v3",
+                        )
+                    except Exception as e:  # noqa: BLE001
+                        logger.debug("negotiation event publish skipped: %s", e)
+
+                self._upsert_lead_snapshot(lead, client_id)
+
+                try:
+                    from app.memory.conversation_memory import conversation_memory
+
+                    conversation_memory.extract_and_store(
+                        db, lead=lead, client_id=client_id, user_message=user_message or ""
+                    )
+                except Exception as e:  # noqa: BLE001
+                    logger.debug("memory auto-write skipped: %s", e)
+        except Exception as e:  # noqa: BLE001
+            logger.debug("post-turn side effects skipped: %s", e)
+
+    def _schedule_post_turn(
+        self,
+        *,
+        lead_id: int,
+        client_id: int,
+        session_id: str,
+        user_message: str,
+    ) -> asyncio.Task:
+        task = asyncio.create_task(
+            self._post_turn_side_effects(
+                lead_id=lead_id,
+                client_id=client_id,
+                session_id=session_id,
+                user_message=user_message,
+            )
+        )
+        _post_turn_tasks.add(task)
+        task.add_done_callback(_post_turn_tasks.discard)
+        return task
+
     async def process_chat(
         self,
         session_id: str,
@@ -245,7 +364,7 @@ class WhatsAppAgent:
         from app.agents.qualification import process_chat as qualify_chat
 
         lead_pre = db.query(Lead).filter(Lead.session_id == session_id).first()
-        extra = self._graph_extra_context(lead_pre, client_id)
+        extra = await self._graph_extra_context_soft(lead_pre, client_id)
 
         reply = await qualify_chat(
             session_id,
@@ -260,22 +379,14 @@ class WhatsAppAgent:
         if not lead:
             return reply
 
-        # v3 enrichment: keep scores fresh on every turn.
-        scores = score_lead(lead)
-        for k, v in scores.items():
-            setattr(lead, k, v)
-        db.commit()
+        _outbound_media_session_ctx.set(session_id)
+        # Clear any stale staged media from a prior turn for this session.
+        _stage_outbound_media_url(None, session_id=session_id)
 
-        # Post-turn graph sync so location/name changes in this turn land same-turn.
-        self._upsert_lead_snapshot(lead, client_id)
+        final_reply = reply
 
-        # Clear any stale staged media from a prior turn in this context.
-        _stage_outbound_media_url(None)
-
-        # v3 tool routing: brochure/floorplan reply is returned to the caller
-        # (TwiML /chat JSON). Do NOT also AE-send here — that double-delivers on
-        # the Twilio webhook path. Async/out-of-band sends use dispatch_via_ae=True.
-        # Approach B: stage media_url via contextvar for TwiML <Media> (W2 path).
+        # v3 tool routing stays on critical path (changes the user-visible reply).
+        # Do NOT also AE-send here on the Twilio webhook path (double-deliver).
         intent = detect_tool_intent(user_message)
         if intent and lead.whatsapp_opt_in:
             media_url = resolve_tool_media_url(intent)
@@ -311,9 +422,9 @@ class WhatsAppAgent:
                     except Exception as e:  # pragma: no cover
                         logger.debug("tool sent event publish skipped: %s", e)
             else:
-                # Default WA path: stage URL for TwiML builder; single delivery.
                 if media_url:
-                    _stage_outbound_media_url(media_url)
+                    _stage_outbound_media_url(media_url, session_id=session_id)
+
                 try:
                     from app.clients.event_bus_client import event_bus
 
@@ -334,9 +445,19 @@ class WhatsAppAgent:
                         )
                 except Exception as e:  # pragma: no cover
                     logger.debug("tool event publish skipped: %s", e)
-            return tool_reply
+            final_reply = tool_reply
 
-        return reply
+        # Score / negotiation / graph / memory — off critical path in prod.
+        post_task = self._schedule_post_turn(
+            lead_id=lead.id,
+            client_id=client_id,
+            session_id=session_id,
+            user_message=user_message or "",
+        )
+        if getattr(settings, "TEST_MODE", False):
+            await post_task
+
+        return final_reply
 
     async def _dispatch_outbound(self, session_id, client_id, lead, text, tool="brochure", media_url=None):
         try:

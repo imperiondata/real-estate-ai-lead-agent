@@ -1,0 +1,68 @@
+{
+  "name": "IREIOS — WF-3: HITL Manager Notify → Gmail",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "ireios_hitl_notify",
+        "authentication": "headerAuth",
+        "responseMode": "lastNode",
+        "options": {}
+      },
+      "id": "webhook-hitl",
+      "name": "Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [240, 300],
+      "webhookId": "ireios-hitl-notify",
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "",
+          "name": "IREIOS API Key"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const root = $input.first().json || {};\nconst body = root.body && typeof root.body === 'object' ? root.body : root;\nconst payload = (body.payload && typeof body.payload === 'object') ? body.payload : {};\nconst name = payload.name || payload.lead_name || '';\nconst action = payload.action_type || payload.action || 'approval';\nreturn [{\n  json: {\n    event_type: body.event_type || root.event_type || '',\n    tenant_id: body.tenant_id || root.tenant_id || '',\n    entity_id: body.entity_id || root.entity_id || payload.entity_id || '',\n    timestamp: body.timestamp || root.timestamp || '',\n    payload: { ...payload, name, action_type: action },\n  }\n}];"
+      },
+      "id": "flatten-hitl",
+      "name": "Flatten",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [480, 300]
+    },
+    {
+      "parameters": {
+        "sendTo": "",
+        "subject": "=Approval Required: {{ $json.payload.action_type }} — {{ $json.payload.name || $json.entity_id }}",
+        "emailType": "html",
+        "message": "=<h2>HITL Approval Required</h2><table border='1' cellpadding='8' cellspacing='0' style='border-collapse:collapse;'><tr><td><b>Action Type</b></td><td>{{ $json.payload.action_type }}</td></tr><tr><td><b>Lead / Entity</b></td><td>{{ $json.payload.name || $json.entity_id }}</td></tr><tr><td><b>Entity ID</b></td><td>{{ $json.entity_id }}</td></tr><tr><td><b>Approval ID</b></td><td>{{ $json.payload.approval_id }}</td></tr></table><br/><p>Open the dashboard to approve or reject (JWT required — email links are not unauthenticated POSTs):</p><p><a href='http://localhost:3000/crm?lead_id={{ $json.entity_id }}'>Open CRM →</a></p><br/><p><i>Tenant: {{ $json.tenant_id }} | Time: {{ $json.timestamp }}</i></p><p><b>NOTE:</b> Set Gmail <code>To</code> in n8n UI before testing.</p>",
+        "options": {}
+      },
+      "id": "gmail-hitl",
+      "name": "Gmail — HITL Notify",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.1,
+      "position": [720, 300],
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "",
+          "name": "Gmail account"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Webhook": {
+      "main": [[{ "node": "Flatten", "type": "main", "index": 0 }]]
+    },
+    "Flatten": {
+      "main": [[{ "node": "Gmail — HITL Notify", "type": "main", "index": 0 }]]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "staticData": null
+}

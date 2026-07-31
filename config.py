@@ -77,6 +77,24 @@ class Settings(BaseSettings):
     # agent — leave the lead unassigned so it can be routed/reviewed manually.
     MIN_MATCH_SCORE: int = 0
 
+    # WhatsApp webhook race window (seconds). Must stay under Twilio's ~15s HTTP
+    # limit so we can return TwiML (real reply or interim) before Twilio retries.
+    # On exceed: return interim "Just checking..." and await the *same* in-flight
+    # turn (no cancel / no second Gemini call). See main.py _session_turn_locked.
+    WHATSAPP_WEBHOOK_TIMEOUT: float = 13.0
+
+    # Per Gemini send_message hard cap (seconds). MAY exceed WHATSAPP_WEBHOOK_TIMEOUT:
+    # race only decides interim vs TwiML; the turn is not cancelled, so a slower
+    # Gemini (12–20s) can still finish and EE-push. Do not retry pure TimeoutError.
+    LLM_TIMEOUT_SECONDS: float = 22.0
+
+    # Pre-LLM context budgets (seconds) — keep tight so RAG/Neo4j cannot burn the race window.
+    RAG_TIMEOUT_SECONDS: float = 2.0
+    GRAPH_CONTEXT_TIMEOUT_SECONDS: float = 0.5
+
+    # Shown in WA fallback / system prompt escalate lines (E.164 or local display).
+    CLIENT_SUPPORT_NUMBER: str = "+91 9876543210"
+
     # AWS Secrets Manager
     AWS_REGION: str = ""
     AWS_SECRET_NAME: str = ""
@@ -97,6 +115,12 @@ class Settings(BaseSettings):
     # n8n automation (Phase 2) — empty = n8n_not_configured (safe)
     N8N_BASE_URL: str = ""
     N8N_API_KEY: str = ""
+    N8N_MANAGEMENT_API_KEY: str = ""
+    # Bus→n8n webhook bridge (separate consumer group; stock n8n cannot XREADGROUP)
+    N8N_BRIDGE_ENABLED: bool = True
+    N8N_BRIDGE_GROUP: str = "ireios-n8n"
+    # Optional JSON override of event_type → webhook path map (empty = defaults)
+    N8N_WEBHOOK_MAP: str = ""
     # Phase 8 competitor monitor watch-list (comma-separated, no network call)
     COMPETITOR_KEYWORDS: str = ""
     # Wave D.4: WhatsApp brochure/floor plan media URL (public HTTPS). Empty = text fallback.

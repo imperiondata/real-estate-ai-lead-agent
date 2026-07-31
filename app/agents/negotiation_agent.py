@@ -48,18 +48,41 @@ async def handler(envelope: dict) -> None:
         is_aligned = lead.budget_alignment_status == "aligned"
         needs_approval = not is_aligned and bool(budget_raw)
         if needs_approval:
+            # Non-blocking: keep chatting (no HITL pause) but notify manager + n8n.
             await ae_submit({
                 "action_type": "notify_agent",
                 "tenant_id": f"Client_{client_id}",
                 "entity_id": str(lead_id),
                 "parameters": {
-                    "kind": "manager_approval",
+                    "kind": "notify_admin",
                     "lead_id": lead_id,
-                    "requires_approval": True,
-                    "message": f"Negotiation required for lead {lead_id} — budget {budget_raw} needs manager review",
+                    "message": f"Lead {lead_id} is open for negotiation (Budget: {budget_raw}). Flagged on dashboard.",
                 },
                 "source": "negotiation_agent",
             })
+            # Fan-out to n8n WF-3 (approval.requested) without pausing the chat path.
+            try:
+                await event_bus.publish(
+                    "approval.requested",
+                    f"Client_{client_id}",
+                    str(lead_id),
+                    {
+                        "approval_id": None,
+                        "action_type": "negotiation.counter",
+                        "entity_id": str(lead_id),
+                        "name": lead.name or "",
+                        "parameters_summary": {
+                            "budget": budget_raw,
+                            "lead_id": lead_id,
+                            "trigger": "budget_misaligned",
+                        },
+                        "approve_path": f"/api/v1/leads/{lead_id}",
+                        "reject_path": f"/api/v1/leads/{lead_id}",
+                    },
+                    source="negotiation_agent",
+                )
+            except Exception as e:  # noqa: BLE001
+                logger.debug("negotiation approval.requested publish skipped: %s", e)
         if event_type == "lead.negotiation.counter":
             try:
                 await event_bus.publish(

@@ -141,6 +141,7 @@ TRUNCATE
   dlq_events,
   follow_up_states,
   lead_memories,
+  agent_tasks,
   approval_requests,
   agent_learning,
   notification_logs,
@@ -159,6 +160,7 @@ TRUNCATE
   dlq_events,
   follow_up_states,
   lead_memories,
+  agent_tasks,
   approval_requests,
   agent_learning,
   notification_logs,
@@ -400,7 +402,7 @@ npm run lint
 
 - `NEXT_PUBLIC_API_URL` → backend (e.g. `http://localhost:8000`)
 - Auth: HttpOnly `jwt` cookie via server login action
-- Live SSE cutover still backlog: `docs/FRONTEND_BACKLOG.md` (replace MockSSE)
+- FE SSE: partial cutover (`dashboard-mvp` EventSource); remaining work: `docs/FRONTEND_BACKLOG.md`
 
 ---
 
@@ -503,6 +505,7 @@ Structured logs use `request_id` / `tenant_id` contextvars when set.
 |-----|----------|
 | `AGENTS.md` | Agent/dev high-signal facts |
 | `README.md` | Product overview & setup |
+| `docs/TIMEOUTS_AND_TIMINGS.md` | All race/TTL/scheduler/backoff values + code anchors |
 | `docs/FRONTEND_BACKLOG.md` | FE SSE/API cutover |
 | `docs/N8N_INTEGRATION.md` | n8n config-later |
 | `plans/UNIFIED_EXECUTION_ORDER.md` | Program order / gates |

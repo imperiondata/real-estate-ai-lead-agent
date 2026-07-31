@@ -293,6 +293,7 @@ def test_n8n_trigger_success(monkeypatch):
 
     class _Resp:
         status_code = 200
+        content = b'{"ok":true}'
 
         def json(self):
             return {"ok": True}

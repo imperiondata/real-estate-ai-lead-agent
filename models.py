@@ -112,6 +112,9 @@ class Lead(Base):
     confidence_score = Column(Integer, default=100)
     requires_manual_review = Column(Boolean, default=False)
 
+    # --- NEGOTIATION UI FLAG ---
+    is_negotiating = Column(Boolean, default=False)  # True when lead shows negotiation intent
+
     session = relationship("Session", back_populates="lead")
     client = relationship("Client", back_populates="leads")
 
@@ -345,4 +348,25 @@ class PricingRule(Base):
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
     client = relationship("Client")
+
+
+class AgentTask(Base):
+    """Wave B.7: thin internal task queue for Sales escalate / ops follow-ups."""
+    __tablename__ = "agent_tasks"
+
+    id = Column(Integer, primary_key=True, index=True)
+    client_id = Column(Integer, ForeignKey("clients.id", ondelete="CASCADE"), nullable=False, index=True)
+    lead_id = Column(Integer, ForeignKey("leads.id", ondelete="SET NULL"), nullable=True, index=True)
+    title = Column(String, nullable=False)
+    description = Column(Text, nullable=True)
+    status = Column(String, default="open")  # open | done | cancelled
+    assignee = Column(String, nullable=True)
+    source = Column(String, nullable=True)
+    meta_json = Column(JSONB, nullable=True)
+
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+
+    client = relationship("Client")
+    lead = relationship("Lead")
 

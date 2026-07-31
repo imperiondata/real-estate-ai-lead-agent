@@ -21,14 +21,14 @@ Auth → get_client_by_api_key() → resolves client_id
       ↓
 Fast-path intercepts (instant replies, guardrails)
       ↓
-asyncio.wait_for(process_unified_lead(), timeout=15s)
-  ├── RAG context injection (rag.py + FAISS)
-  ├── Gemini 3.1 Flash Lite
+asyncio.create_task(_session_turn_locked) + race WHATSAPP_WEBHOOK_TIMEOUT (default 13s)
+  ├── session_lock + private DB session (full turn)
+  ├── Neo4j graph context (soft ≤0.5s) + RAG (≤2s) + Gemini (LLM_TIMEOUT default 22s)
   └── extract_lead_info() tool → saves to Lead table
       ↓
-TwiML response → WhatsApp reply
+Fast: TwiML reply  |  Slow: interim "Just checking…" + await same task → EE push
       ↓
-BackgroundTask: crm_sync.py → HubSpot (5 retries + DLQ)
+Off-path: score / memory / graph upsert + bus events (lead.created → CRM, etc.)
       ↓
 APScheduler (every 60s): follow_up.py → timed follow-up messages
       ↓
@@ -240,7 +240,7 @@ curl -UseBasicParsing http://localhost:8000/health
 
 ---
 
-### Twilio Sandbox — Connect Your WhatsApp### Twilio Sandbox — Connect Your WhatsApp
+### Twilio Sandbox — Connect Your WhatsApp
 
 1. On your WhatsApp, send `join <word>-<word>` to `+14155238886`
    (the exact words are shown in your Twilio console under Messaging → Try it out → Send a WhatsApp message)
@@ -352,7 +352,7 @@ After API start with Neo4j up: `GET http://localhost:8000/api/v1/graph/health` �
 
 ```powershell
 # Terminal A — live stream (seed client key from seed.py)
-curl -N "http://localhost:8000/api/v1/events/stream?api_key=secret-client-key-123"
+curl.exe -N "http://localhost:8000/api/v1/events/stream?api_key=secret-client-key-123"
 
 # Terminal B — inject a demo event (no WhatsApp/LLM required)
 python publish_stub_event.py --event-type lead.created --tenant-id Client_1 --payload "{\"name\":\"demo\"}"
@@ -361,7 +361,56 @@ python publish_stub_event.py --event-type lead.created --tenant-id Client_1 --pa
 Auth alternatives: `X-API-Key` header, or browser `EventSource` with HttpOnly `jwt` cookie.  
 Timeline: `GET /api/v1/events/leads/{id}/timeline`. Admin stub HTTP: `POST /api/v1/events/stub` + `X-Admin-Token`.  
 Contracts: `plans/IREIOS_3.0_API_SSE_CONTRACTS.md`, FE checklist: `docs/FRONTEND_BACKLOG.md`.  
-Full ops runbook: `docs/MAINTENANCE.md`.
+Full ops runbook: `docs/MAINTENANCE.md`.  
+Timeouts & timings map: `docs/TIMEOUTS_AND_TIMINGS.md`.
+
+---
+
+## n8n Automation Workflows (Optional)
+
+n8n is the **external ops plane** for IREIOS — Gmail alerts, Google Sheets CRM logging, HITL notifications, and marketing report emails. It runs as a sidecar and does **not** affect the WhatsApp chat reply path.
+
+### Quick start
+
+```powershell
+# 1. Start n8n
+docker compose up -d n8n redis
+# UI: http://localhost:5678 (create owner account on first visit)
+
+# 2. Full Google Cloud + n8n credentials (one-time) — follow the guide:
+#    docs/N8N_GOOGLE_CREDENTIALS_SETUP.md
+#    (Gmail/Sheets/Drive/Calendar APIs, OAuth + test users, Header Auth,
+#     management JWT, Calendar service account for Python)
+
+# 3. .env: N8N_API_KEY (webhook secret) + N8N_MANAGEMENT_API_KEY (JWT from Settings → n8n API)
+# 4. Import workflows
+uv run python import_n8n_workflows.py
+
+# 5. In n8n UI: set Gmail To + Publish all 6 workflows (repo ships empty sendTo)
+# 6. Smoke webhook (use webhook secret, not management JWT):
+curl -X POST "http://localhost:5678/webhook/ireios_hot_lead_alert" `
+  -H "Authorization: Bearer local-n8n-webhook-secret" `
+  -H "Content-Type: application/json" `
+  -d "{\"event_type\":\"lead.hot\",\"tenant_id\":\"Client_1\",\"entity_id\":\"1\",\"payload\":{\"name\":\"Demo\",\"trigger\":\"hot_threshold\",\"score\":90}}"
+```
+
+### Active workflows
+
+| WF | Webhook Path | Event | Action |
+|----|-------------|-------|--------|
+| WF-1 | `ireios_hot_lead_alert` | `lead.hot` | Gmail — hot lead alert with handoff prefix |
+| WF-2 | `ireios_visit_fanout` | `site_visit.scheduled` | Gmail — site visit booked (includes Calendar link) |
+| WF-3 | `ireios_hitl_notify` | `approval.requested` | Gmail — HITL approval request to manager |
+| WF-4 | `ireios_crm_append` | `lead.qualified` | Google Sheets — append lead row |
+| WF-5 | `ireios_marketing_csv` | `marketing.report.generated` | Gmail — CSV attachment (Gmail API) |
+| WF-6 | (cron 15min) | — | Gmail — DLQ depth monitor |
+
+### Key docs
+
+- **Credential setup:** [`docs/N8N_GOOGLE_CREDENTIALS_SETUP.md`](docs/N8N_GOOGLE_CREDENTIALS_SETUP.md) — full Google Cloud Console walkthrough
+- **Architecture:** [`docs/N8N_INTEGRATION.md`](docs/N8N_INTEGRATION.md) — bridge, envelope, workflow details
+- **Workflow JSONs:** `n8n_workflows/` — 6 workflow definitions
+- **Import script:** `import_n8n_workflows.py` — deploy via n8n REST API
 
 ---
 

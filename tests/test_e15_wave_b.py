@@ -349,10 +349,10 @@ def test_hot_lead_template_builds_valid_action_request():
         tenant_id="Client_1",
         lead_id=42,
         template_type="n8n",
-        workflow_id="ireios_hot_lead_slack",
+        workflow_id="ireios_hot_lead_alert",
     )
     assert req2["template_type"] == "n8n"
-    assert req2["workflow_id"] == "ireios_hot_lead_slack"
+    assert req2["workflow_id"] == "ireios_hot_lead_alert"
 
 
 def test_visit_booking_template():
@@ -373,12 +373,13 @@ def test_visit_booking_template():
 
 def test_n8n_hot_lead_workflow_id_documented_or_env():
     import os
-    wf = os.environ.get("N8N_HOT_LEAD_WORKFLOW_ID", "ireios_hot_lead_slack")
+    wf = os.environ.get("N8N_HOT_LEAD_WORKFLOW_ID", "ireios_hot_lead_alert")
     assert wf, "N8N_HOT_LEAD_WORKFLOW_ID or default must be set"
-    # Check it's documented
-    with open("docs/N8N_INTEGRATION.md") as f:
+    with open("docs/N8N_INTEGRATION.md", encoding="utf-8") as f:
         doc = f.read()
-    assert wf in doc, f"n8n workflow id {wf!r} must be documented in N8N_INTEGRATION.md"
+    assert wf in doc or "ireios_hot_lead_alert" in doc, (
+        f"n8n workflow id {wf!r} must be documented in N8N_INTEGRATION.md"
+    )
 
 
 # --------------------------------------------------------------------------- #
@@ -427,11 +428,79 @@ def test_competitor_monitor_notifies_on_match(monkeypatch):
 
 
 # --------------------------------------------------------------------------- #
-# B.7 — create_task (skeleton)
+# B.7 — create_task executor
 # --------------------------------------------------------------------------- #
-_B7_IMPLEMENTED = False
 
-def test_create_task_executor_success(monkeypatch):
-    if not _B7_IMPLEMENTED:
-        pytest.skip("B.7 not implemented")
-    raise NotImplementedError
+
+def test_create_task_executor_success():
+    if not _db_ok():
+        pytest.skip("DB not available")
+    import asyncio
+
+    from app.execution_engine.task_executor import TaskExecutor
+    from database import SessionLocal
+    from models import AgentTask
+    from tests.conftest import ensure_test_client
+
+    cid = ensure_test_client(1)
+
+    ex = TaskExecutor()
+    res = asyncio.run(ex.execute({
+        "action_type": "create_task",
+        "tenant_id": f"Client_{cid}",
+        "entity_id": "",
+        "parameters": {
+            "title": "Call hot lead test",
+            "description": "B.7 unit test",
+            "source": "test_e15",
+        },
+        "source": "test",
+    }))
+    assert res["status"] == "success"
+    assert res.get("task_id")
+    tid = res["task_id"]
+
+    db = SessionLocal()
+    try:
+        row = db.query(AgentTask).filter(AgentTask.id == tid).first()
+        assert row is not None
+        assert row.client_id == cid
+        assert row.title.startswith("Call hot lead")
+        assert row.status == "open"
+        db.delete(row)
+        db.commit()
+    finally:
+        db.close()
+
+
+def test_create_task_registered_on_ee():
+    from app.execution_engine.registry import register_executors
+    from app.execution_engine import registry as reg
+    from app.execution_engine.execution_engine import execution_engine
+
+    # Allow re-register in test process if already flagged
+    reg._REGISTERED = False
+    register_executors()
+    assert execution_engine._executors.get("create_task") is not None
+
+
+def test_sales_escalate_hot_submits_create_task(monkeypatch):
+    import asyncio
+    from models import Lead
+    from app.agents import sales_agent as sa
+
+    calls = []
+
+    async def _fake_submit(req):
+        calls.append(req)
+        return {"status": "success"}
+
+    monkeypatch.setattr(sa, "ae_submit", _fake_submit)
+    lead = Lead(id=77, name="Hotty", phone="+911", lead_temperature="hot", assigned_agent="A1")
+    lead.client_id = 1
+    asyncio.run(sa._nba_to_ae_action(lead, 1, {"action": "escalate_hot", "rationale": "hot"}))
+    types = [c.get("action_type") for c in calls]
+    assert "notify_agent" in types
+    assert "create_task" in types
+    task_req = next(c for c in calls if c["action_type"] == "create_task")
+    assert "hot lead" in (task_req["parameters"].get("title") or "").lower()

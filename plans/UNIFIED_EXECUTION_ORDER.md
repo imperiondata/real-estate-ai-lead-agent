@@ -77,10 +77,15 @@
 | **22** | Wave A–D | **Wave C** — 6 placeholders → active agents | Wave C exit gate | same §3 | `[x]` |
 | **23** | Wave A–D | **Wave D** — forecast/memory/n8n + brochure **Approach B** (MediaUrl PDF) | Wave D exit gate §4.7 | same §4 | `[x]` |
 | **G3** | Gate | **Waves A–D complete** | Depth-fill close | pytest full + isolation + DLQ green; evidence pack Wave section; changelog | `[x]` |
+| **24** | Automations closeout | **Bus hooks + n8n contracts** (no new product scope) | Step 24 exit in `plans/PHASE3_AUTOMATIONS_CLOSEOUT.md` §8 | `[x]` backend; n8n WF-1 still ops |  
+| **24b** | n8n delivery | **Bus→webhook bridge** + Gmail WF recipes | `n8n_bridge` + `plans/N8N_LIVE_WORKFLOWS_PLAN.md` | `[x]` bridge; WF UI pending |  
+| **G4** | Gate | **Automations production-ready** | BA-7 + bridge + n8n WF-1 Gmail smoke | `[~]` bridge done; WF-1 pending Maitri |  
 
 **Expansion Task 0.1** (doc freeze) is already done; do not re-open it as a blocking step.
 
 **Post-G2 depth fill:** detailed tasks, integration signup guides, and per-wave benefits live in `plans/IREIOS_3.0_WAVE_A_D_EXPANSION.md`. Living log: `plans/IREIOS_3.0_WAVE_A_D_CHANGELOG.md`. Tests: `tests/test_e14_wave_a.py` … `test_e17_wave_d.py`.
+
+**Post-G3 automations closeout (Step 24):** `plans/PHASE3_AUTOMATIONS_CLOSEOUT.md` — branch `phase3_automations`. Canonical events only (`lead.hot`, not invented aliases). Backend = bus payload hardening; Maitri = n8n UI workflows.
 
 ---
 
@@ -325,21 +330,51 @@ If production breaks mid-program:
 
 ---
 
-## 10. Immediate next action (post-G3)
+## 10. Immediate next action (post-G3 → Step 24)
 
 **Gates G1 / G2 / G3 are complete** (bugs + expansion Phases 0–10 + Waves A–D code).
 
-**Integration audit 2026-07-22 (HubSpot skipped):** GCal **live** · Neo4j **live** · n8n **container up, workflows incomplete** · brochure **URLs empty**.
+**Active program block:** **Step 24 — Automations closeout** on branch `phase3_automations`.  
+**Plan of record:** `plans/PHASE3_AUTOMATIONS_CLOSEOUT.md` (reconciles Mayank mandate + audit vs catalog).
 
-**Still incomplete — do next:**
+### Step 24 — Backend bus hooks (Aritro) then n8n UI (Maitri)
+
+| ID | Work | Owner | Status |
+|----|------|-------|--------|
+| BA-1 | Publish canonical **`lead.hot`** (score + handoff); never invent `lead.escalated` / `human.requested` | Aritro | `[x]` |
+| BA-2 | Add **`chat_context`** via `summarize_recent` on `_emit_turn_events` | Aritro | `[x]` |
+| BA-3 | Rich **`site_visit.scheduled`** payload (merge EE params + result) | Aritro | `[x]` |
+| BA-4 | HITL `approval.requested` deep-link path fields | Aritro | `[x]` |
+| BA-5 | Calendar REST wrapping AE (labeled stub / freebusy) | Aritro | `[x]` |
+| BA-6 | ~~Redis-primary~~ → **bridge-primary** (`ireios-n8n` → webhooks); Gmail-first | Aritro | `[x]` code+docs 2026-07-28 |  
+| BA-7 | Full gate (pytest + isolation + DLQ) | Aritro | `[x]` |  
+| WF-1 | n8n `ireios_hot_lead_alert` Active on `lead.hot` → **Gmail** | Maitri | `[~]` instance only |  
+| WF-2…6 | Visit fan-out, HITL Gmail, CRM-via-n8n, marketing CSV, DLQ alert | Maitri | `[ ]` |  
+
+**Hard rules for Step 24:**
+
+1. Event names = Architecture §4 only (`lead.hot`, `lead.qualified`, `site_visit.scheduled`, `approval.requested`, `marketing.report.generated`).  
+2. Do **not** migrate follow-up / escalation / competitor crons to n8n.  
+3. Google Calendar create stays in **`CalendarExecutor`** (already live); n8n fans out only.  
+4. HubSpot Python portal stays **skipped**; external CRM = n8n on `lead.qualified`.  
+5. n8n ingest = **`n8n_bridge`** (not stock Redis Streams). Primary ops channel = **Gmail**.  
+6. Recipes: `plans/N8N_LIVE_WORKFLOWS_PLAN.md`.  
+7. No PR/merge process in this step’s definition of done (team process separate).
+
+### Gate G4 — Automations production-ready
+
+Exit checklist = `PHASE3_AUTOMATIONS_CLOSEOUT.md` §8.
+
+### Still incomplete outside Step 24
 
 | Priority | Work | Status |
 |----------|------|--------|
-| 1 | n8n UI: owner setup → webhook `ireios_hot_lead_slack` + Header Auth → AE smoke | `[~]` instance only |
-| 2 | Host HTTPS brochure/floorplan PDFs → set `BROCHURE_MEDIA_URL` / `FLOORPLAN_MEDIA_URL` → Twilio smoke | `[ ]` |
-| 3 | FE MockSSE cutover | Mayank — `docs/FRONTEND_BACKLOG.md` |
-| 4 | Optional leftovers | D.2 memory, B.7 create_task, `task3_runner` |
-| — | HubSpot live portal | `[-]` skip |
+| Ops | HTTPS brochure/floorplan media URLs | `[x]` final-check GET PDF 200 |
+| FE | MockSSE cutover | Mayank — `docs/FRONTEND_BACKLOG.md` |
+| Done | D.2 memory auto-write, B.7 create_task | `[x]` 2026-07-23 |
+| Optional | `task3_runner` evidence | when Gemini quota OK |
+| — | HubSpot live portal (Python) | `[-]` skip |
 | — | Dual-path module delete (10.2/10.3) | **Still deferred** |
+| Later | n8n automations (incl. optional GCal fan-out nodes) | Step 24 / Maitri |
 
-Detail: `plans/IREIOS_3.0_WAVE_A_D_CHANGELOG.md` § Post-G3 integration audit, `docs/N8N_INTEGRATION.md`.
+Detail: `plans/PHASE3_AUTOMATIONS_CLOSEOUT.md`, `plans/IREIOS_3.0_WAVE_A_D_CHANGELOG.md` § Post-G3, `docs/N8N_INTEGRATION.md`.

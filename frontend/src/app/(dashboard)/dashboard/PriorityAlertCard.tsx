@@ -49,17 +49,24 @@ export default function PriorityAlertCard({ lead }: { lead: any }) {
         </p>
       </div>
       
-      {!isClaimed ? (
-        <button 
-          onClick={handleClaim}
-          disabled={isPending}
-          className="ml-2 px-3 py-1.5 bg-rose-100 hover:bg-rose-200 text-rose-700 dark:bg-rose-500/20 dark:hover:bg-rose-500/40 dark:text-rose-400 text-xs font-bold rounded-lg transition-colors whitespace-nowrap flex-shrink-0"
-        >
-          {isPending ? 'Claiming...' : '🚨 Claim'}
-        </button>
-      ) : (
-        <ArrowUpRight className="w-4 h-4 text-emerald-500 flex-shrink-0" />
-      )}
+      <div className="ml-2 flex items-center gap-2 flex-shrink-0">
+        {lead.is_negotiating && (
+          <span className="px-2 py-0.5 rounded-full text-[10px] font-bold whitespace-nowrap bg-purple-100 dark:bg-purple-500/20 text-purple-600 dark:text-purple-400 border border-purple-200 dark:border-purple-800/50">
+            🤝 Negotiate
+          </span>
+        )}
+        {!isClaimed ? (
+          <button 
+            onClick={handleClaim}
+            disabled={isPending}
+            className="px-3 py-1.5 bg-rose-100 hover:bg-rose-200 text-rose-700 dark:bg-rose-500/20 dark:hover:bg-rose-500/40 dark:text-rose-400 text-xs font-bold rounded-lg transition-colors whitespace-nowrap"
+          >
+            {isPending ? 'Claiming...' : '🚨 Claim'}
+          </button>
+        ) : (
+          <ArrowUpRight className="w-4 h-4 text-emerald-500" />
+        )}
+      </div>
     </Link>
   )
 }

@@ -146,6 +146,11 @@ export default function KanbanBoard({ initialLeads }: { initialLeads: Lead[] }) 
                           {lead.budget_alignment_status} Match
                         </span>
                       )}
+                      {lead.is_negotiating && (
+                        <span className="inline-flex self-start px-2 py-0.5 mt-1 rounded-full text-[10px] font-bold bg-purple-100 dark:bg-purple-500/20 text-purple-600 dark:text-purple-400 border border-purple-200 dark:border-purple-800/50">
+                          🤝 Open for Negotiation
+                        </span>
+                      )}
                     </div>
                     
                     <div className="flex items-center justify-between border-t border-slate-100 dark:border-zinc-800/50 pt-3 mt-1">
@@ -160,7 +165,7 @@ export default function KanbanBoard({ initialLeads }: { initialLeads: Lead[] }) 
                       </span>
                     </div>
                     
-                    {col.name === "New" && !isClaimed && (
+                    {(col.name === "New" || lead.is_negotiating) && !isClaimed && (
                       <button 
                         onClick={(e) => handleClaimLead(e, lead.id)}
                         className="mt-3 w-full py-1.5 bg-rose-50 hover:bg-rose-100 text-rose-600 dark:bg-rose-500/10 dark:hover:bg-rose-500/20 dark:text-rose-400 text-xs font-bold rounded-lg transition-colors border border-rose-200 dark:border-rose-500/30"
@@ -168,7 +173,7 @@ export default function KanbanBoard({ initialLeads }: { initialLeads: Lead[] }) 
                         🚨 Claim Lead
                       </button>
                     )}
-                    {col.name === "New" && isClaimed && (
+                    {(col.name === "New" || lead.is_negotiating) && isClaimed && (
                       <div className="mt-3 w-full py-1.5 bg-emerald-50 dark:bg-emerald-900/20 text-emerald-600 dark:text-emerald-400 text-xs font-bold rounded-lg text-center border border-emerald-200 dark:border-emerald-800/50">
                         ✓ Claimed
                       </div>

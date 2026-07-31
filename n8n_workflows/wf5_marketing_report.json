@@ -1,0 +1,70 @@
+{
+  "name": "IREIOS — WF-5: Marketing Report → Drive + Gmail",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "ireios_marketing_csv",
+        "authentication": "headerAuth",
+        "responseMode": "lastNode",
+        "options": {}
+      },
+      "id": "webhook-marketing",
+      "name": "Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [240, 300],
+      "webhookId": "ireios-marketing-csv",
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "",
+          "name": "IREIOS API Key"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const root = $input.first().json || {};\nconst body = root.body && typeof root.body === 'object' ? root.body : root;\nconst payload = (body.payload && typeof body.payload === 'object') ? body.payload : (root.payload || {});\nconst segments = payload.segments || {};\nconst suggestions = payload.suggestions || [];\nconst tenant_id = body.tenant_id || root.tenant_id || '';\nconst timestamp = body.timestamp || root.timestamp || '';\n\n// SET recipient in n8n UI: edit ONLY the string on the next line (const to = '...').\n// Do not find-replace the whole file — that can break the validation if-check.\nconst to = 'OPS_EMAIL_PLACEHOLDER';\nif (!to || !String(to).includes('@') || String(to).indexOf('PLACEHOLDER') >= 0) {\n  throw new Error('WF-5: set const to = your@email.com in Build MIME + Send before testing');\n}\n\nlet csv = 'Segment,Count,Channel,Message\\n';\nfor (const [seg, data] of Object.entries(segments)) {\n  const count = typeof data === 'object' ? (data.count || data.leads?.length || 0) : data;\n  const suggestion = suggestions.find(s => s.segment === seg) || {};\n  csv += `${seg},${count},${suggestion.channel || 'N/A'},${(suggestion.message || 'N/A').replace(/,/g, ';')}\\n`;\n}\n\nconst ts = new Date().toISOString().split('T')[0];\nconst filename = `marketing_report_${ts}.csv`;\nconst csvB64 = Buffer.from(csv).toString('base64');\n\nconst boundary = '----=_Part_IREIOS_' + Date.now();\nconst now = new Date();\nconst ist = new Date(now.getTime() + (5.5 * 60 * 60 * 1000));\nconst dateStr = ist.toISOString().split('T')[0].split('-').reverse().join('-');\nconst subjectPlain = `Weekly Marketing Report - ${dateStr}`;\nconst subjectEncoded = '=?UTF-8?B?' + Buffer.from(subjectPlain).toString('base64') + '?=';\nconst htmlBody = `<h2>Weekly Marketing Report</h2><p>Report generated for <b>${tenant_id}</b>.</p><p>Segments:</p><ul><li>Hot: ${segments.hot?.count || 0}</li><li>Warm: ${segments.warm?.count || 0}</li><li>Cold: ${segments.cold?.count || 0}</li></ul><p>CSV file attached.</p>`;\n\nconst mimeMessage = [\n  `To: ${to}`,\n  `Subject: ${subjectEncoded}`,\n  'MIME-Version: 1.0',\n  `Content-Type: multipart/mixed; boundary=\"${boundary}\"`,\n  '',\n  `--${boundary}`,\n  'Content-Type: text/html; charset=UTF-8',\n  '',\n  htmlBody,\n  '',\n  `--${boundary}`,\n  'Content-Type: text/csv; name=\"' + filename + '\"',\n  'Content-Transfer-Encoding: base64',\n  `Content-Disposition: attachment; filename=\"${filename}\"`,\n  '',\n  csvB64,\n  `--${boundary}--`\n].join('\\r\\n');\n\nconst rawB64 = Buffer.from(mimeMessage).toString('base64');\n\nreturn [{\n  json: {\n    tenant_id,\n    timestamp,\n    segments,\n    filename,\n    raw: rawB64\n  }\n}];"
+      },
+      "id": "code-csv",
+      "name": "Build MIME + Send",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [480, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://gmail.googleapis.com/gmail/v1/users/me/messages/send",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "gmailOAuth2",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"raw\": \"{{ $json.raw }}\"\n}",
+        "options": {}
+      },
+      "id": "gmail-api",
+      "name": "Gmail API — Send with Attachment",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [720, 300],
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "",
+          "name": "Gmail account"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Webhook": {
+      "main": [[{ "node": "Build MIME + Send", "type": "main", "index": 0 }]]
+    },
+    "Build MIME + Send": {
+      "main": [[{ "node": "Gmail API — Send with Attachment", "type": "main", "index": 0 }]]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  }
+}

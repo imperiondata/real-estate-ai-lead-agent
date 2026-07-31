@@ -107,7 +107,7 @@ Living record of **post-G2 depth fill** (Waves A–D). Parallel to `IREIOS_3.0_E
 | B.4 | `[x]` | Marketing + market.alert | `test_e15_wave_b.py` |
 | B.5 | `[x]` | Named templates + n8n hot-lead | `test_e15_wave_b.py` |
 | B.6 | `[x]` | Competitor → notify | `test_e15_wave_b.py` |
-| B.7 | `[-]` | `create_task` executor (optional) | `test_e15_wave_b.py` |
+| B.7 | `[x]` | `create_task` executor + Sales escalate → `agent_tasks` | `test_e15_wave_b.py` |
 | **B exit** | `[x]` | Wave B gate | full suite + isolation |
 
 ### Entry — B.1 (Sales bus + NBA→AE)
@@ -152,16 +152,17 @@ Living record of **post-G2 depth fill** (Waves A–D). Parallel to `IREIOS_3.0_E
 - **Behavior:** After publishing `market.alert.generated`, writes `NotificationLog` row with `reason="competitor_alert"` for each match.
 - **Tests:** `test_competitor_monitor_notifies_on_match` — 1 green.
 
-### Entry — B.7 (create_task — deferred)
+### Entry — B.7 (create_task executor)
 
-- **Date:** 2026-07-21
-- **Status:** `[-]` Deferred — `Task` model or HubSpot engagement not critical for MVP; revisit if NBA escalations need ticket tracking.
-- **Tests:** skeleton remains skipped.
+- **Date:** 2026-07-23
+- **Files:** `models.AgentTask`, `migrate_db.py` (`agent_tasks`), `app/execution_engine/task_executor.py`, `registry.py`, `sales_agent._nba_to_ae_action`
+- **Behavior:** EE action `create_task` inserts client-scoped `agent_tasks` row; success event `task.created`. Sales `escalate_hot` submits notify_agent **and** create_task (“Call hot lead …”).
+- **Tests:** `test_create_task_executor_success`, `test_create_task_registered_on_ee`, `test_sales_escalate_hot_submits_create_task`
 
 ### Entry — Wave B exit
 
-- **Date:** 2026-07-21
-- **pytest:** `test_e15_wave_b.py` — 16 passed, 1 skipped (B.7), 0 failed
+- **Date:** 2026-07-21 (B.7 completed 2026-07-23)
+- **pytest:** `test_e15_wave_b.py` — B.7 tests green (no longer skipped)
 - **Wave A regression:** `test_e14_wave_a.py` — 14 passed, 0 failed
 - **AGENTS.md:** Updated agent list
 - **UNIFIED Step 21:** `[~]` → `[x]`
@@ -255,9 +256,9 @@ Living record of **post-G2 depth fill** (Waves A–D). Parallel to `IREIOS_3.0_E
 | ID | Status | Summary | Tests |
 |----|--------|---------|-------|
 | D.1 | `[x]` | Revenue / cancel / inventory / cashflow routes + `prediction_service` helpers | `test_e17_wave_d.py` |
-| D.2 | `[-]` | Memory auto-write on WA turn (deferred — see note) | `test_e17_wave_d.py` |
-| D.3 | `[~]` | n8n: instance running; **workflows incomplete** (create webhook + Header Auth; then CSV/DLQ) | `docs/N8N_INTEGRATION.md` |
-| D.4 | `[x]` | **Approach B** code shipped; **HTTPS media URLs still empty** (plain-text fallback until ops sets env) | `test_e17_wave_d.py` |
+| D.2 | `[x]` | Memory auto-write on WA turn (idempotent `extract_and_store`) | `test_e17_wave_d.py` |
+| D.3 | `[~]` | n8n: instance running; **workflows incomplete** (UI + later automations) | `docs/N8N_INTEGRATION.md` |
+| D.4 | `[x]` | Approach B code + `docs/demo/*.pdf` assets; set HTTPS env for live MediaUrl | `test_e17_wave_d.py` |
 | D.5 | `[-]` | Evidence pack + G3 (deferred — see note) | — |
 | **D exit / G3** | `[x]` | Program wave complete — code + gates (pytest/isolation/DLQ). D.2/D.5/A.0 ops still deferred | full suite |
 
@@ -268,11 +269,12 @@ Living record of **post-G2 depth fill** (Waves A–D). Parallel to `IREIOS_3.0_E
 - **Behavior:** 4 new JWT-protected, client-scoped endpoints: `GET /api/v1/predictions/revenue` (sum of budget*probability), `cancellation-risk` (wrap detect_at_risk), `inventory` (counts by status), `cashflow` (30% booking probability estimate). All heuristic MVP.
 - **Tests:** 5 tests (4 function tests + 1 401-without-JWT) — 5 green.
 
-### Entry — D.2 (Memory auto-write — deferred)
+### Entry — D.2 (Memory auto-write)
 
-- **Date:** 2026-07-21
-- **Status:** `[-]` Deferred — best-effort `extract_and_store` after WA turn needs careful integration with the existing `save_message` flow without blocking the reply path. Revisit when memory becomes a bottleneck for LLM context.
-- **Tests:** skeleton remains skipped.
+- **Date:** 2026-07-23
+- **Files:** `app/memory/conversation_memory.py` (`extract_and_store` idempotent), `app/agents/whatsapp_agent.py` post-score best-effort call
+- **Behavior:** After each v3 WA/chat turn, store lead facts (name/location/budget/type/intent) only when value changed; optional preference snippet from user text. try/except — never blocks reply.
+- **Tests:** `test_memory_auto_write_after_turn`
 
 ### Entry — D.3 (n8n workflows 2-3 — partial)
 
@@ -315,6 +317,7 @@ Living record of **post-G2 depth fill** (Waves A–D). Parallel to `IREIOS_3.0_E
 | 2026-07-21 | P0 stabilize | full `tests/` **332 passed, 7 skipped** | **PASS** | **1/1 DLQ recovered** | seed.py ASCII fix; `ensure_test_client` in conftest; e14/e15/e5/e12 FK harden; remove duplicate `events_router` mount; e1b OpenAPI route check |
 | 2026-07-21 | Post-G3 brochure polish | e17+e12+e5+e6+e15 green | — | — | `take_outbound_media_url` staging; HTTPS reject; Sales NBA media; chat JSON `media_url`; no reply-text scrape |
 | 2026-07-22 | Integration audit (no HubSpot) | full `tests/` **333 passed, 7 skipped** | — | — | n8n compose+env; GCal live smoke; tests hardened for live env; brochure URLs still empty |
+| 2026-07-23 | Leftovers D.2 + B.7 | full `tests/` **338 passed, 4 skipped** | **PASS** | — | memory auto-write; create_task EE; dual-path/n8n workflows still deferred |
 
 ---
 
@@ -329,12 +332,15 @@ Living record of **post-G2 depth fill** (Waves A–D). Parallel to `IREIOS_3.0_E
 | **Google Calendar** | `[x]` | `CalendarExecutor` → `provider=google_calendar` + real `html_link` | Share calendar with SA if events stop appearing |
 | **n8n instance** | `[~]` | UI http://localhost:5678 HTTP 200; `N8N_*` set; client `configured=True` | **Yes** — owner setup + active webhook `ireios_hot_lead_slack` + Header Auth `X-N8N-API-KEY`; trigger currently `n8n_http_404` |
 | **n8n workflows 2–3** | `[ ]` | docs only | **Yes** — marketing CSV, DLQ alert |
-| **Brochure / floor plan media** | `[~]` | Approach B code green; empty env → text fallback | **Yes** — set public **HTTPS** `BROCHURE_MEDIA_URL` / `FLOORPLAN_MEDIA_URL` + Twilio smoke |
+| **Brochure / floor plan media** | `[x]` | HTTPS jsDelivr URLs resolve + GET `application/pdf` 200 (final check 2026-07-23) | Twilio sandbox bubble optional |
 | **HubSpot** | `[-]` | intentionally skipped (demo stub) | optional later |
 | **Twilio live WA** | depends on `.env` | not re-audited this pass | sandbox smoke when ready |
 | **FE MockSSE** | `[ ]` | `docs/FRONTEND_BACKLOG.md` | **Yes** — Mayank |
-| **D.2 memory / B.7 create_task / task3_runner** | `[-]`/`[ ]` | deferred leftovers | **Yes** |
+| **D.2 memory** | `[x]` | shipped 2026-07-23 | — |
+| **B.7 create_task** | `[x]` | shipped 2026-07-23 | — |
+| **task3_runner evidence** | `[ ]` | optional when Gemini quota OK | **Yes** |
 | **Dual-path 10.2/10.3 delete** | `[-]` | stay deferred | **Yes** (do not mark done) |
+| **n8n workflows / GCal-in-n8n** | `[ ]` | later (ops) | **Yes** |
 
 **Code fixes this audit (push-ready with compose/docs):**
 - `docker-compose.yml` — `n8n` service
@@ -356,3 +362,36 @@ Living record of **post-G2 depth fill** (Waves A–D). Parallel to `IREIOS_3.0_E
 | HubSpot live portal | Skipped — demo stub until private-app token |
 | n8n **workflows** (instance is up) | Owner account + activate webhook + Slack/Set node — see `docs/N8N_INTEGRATION.md` |
 | Brochure HTTPS media files | Ops — set `BROCHURE_*` / `FLOORPLAN_*` when hosted |
+
+---
+
+## Post-G3 automations closeout (2026-07-23) — plan locked
+
+**Program step:** UNIFIED **Step 24** / Gate **G4**  
+**Branch:** `phase3_automations`  
+**Plan of record:** `plans/PHASE3_AUTOMATIONS_CLOSEOUT.md`  
+**Docs updated:** `docs/N8N_INTEGRATION.md` (canonical payloads), Architecture §4.3, API SSE contracts
+
+### Audit reconciliation (no code this entry)
+
+| Third-party proposal | Decision |
+|----------------------|----------|
+| New events `human.requested`, `lead.escalated`, `session.completed` | **Reject** — use catalog `lead.hot` + `trigger`, and `lead.qualified` + `chat_context` |
+| Dummy calendar availability always-true | **Reject** — keep `CalendarExecutor`; optional freebusy later |
+| Migrate crons to n8n | **Hard no** |
+| HubSpot Python | **Stay skipped**; CRM upsert via n8n on `lead.qualified` |
+| Enrich bus + live n8n workflows | **Accept** |
+
+### Critical code gap — **closed 2026-07-23 (BA-1…BA-7)**
+
+| Gap | Fix |
+|-----|-----|
+| No `lead.hot` publisher | `app/events/lead_hot.py` + scoring handler + handoff |
+| No `chat_context` | `main.py` `_emit_turn_events(db=…)` |
+| Thin `site_visit.scheduled` | EE `_publish_success` merge params+result |
+| HITL no deep links | `hitl.py` approve/reject paths |
+| Calendar HTTP for n8n | `app/api/calendar.py` (stub labeled; confirm→AE) |
+
+**Regression:** full `tests/` **352 passed, 4 skipped**; isolation PASS; DLQ 1/1. Suite: `tests/test_e18_automations_closeout.py`.
+
+**Still open (Maitri):** n8n WF-1…WF-6 UI activation → Gate G4.

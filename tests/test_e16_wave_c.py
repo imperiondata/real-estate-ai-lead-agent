@@ -170,7 +170,7 @@ def test_negotiation_handler_requests_approval_on_misaligned_budget(monkeypatch)
     }))
 
     assert len(submitted) >= 1
-    assert submitted[0]["parameters"].get("requires_approval") is True
+    assert submitted[0]["parameters"].get("kind") == "notify_admin"
 
     db2 = SessionLocal()
     _clean(db2, sid)

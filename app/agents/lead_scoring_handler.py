@@ -4,7 +4,8 @@ CEO-registered active agent that (re)scores a lead on conversation activity
 and publishes `lead.scored` so downstream agents (crm_automation, sales,
 kg writers) can react. Deterministic — reuses `whatsapp_agent.score_lead`.
 
-PR #10: when HOT rule met, dual-publishes ``lead.hot`` + alias ``lead.escalated``.
+PR #10 / BA-1: when HOT rule met, dual-publishes ``lead.hot`` + alias
+``lead.escalated`` with ``trigger=hot_threshold`` (Redis-debounced).
 """
 from __future__ import annotations
 
@@ -48,7 +49,8 @@ def _lead_id(envelope: dict) -> Optional[int]:
 async def lead_scoring_handler(envelope: dict) -> None:
     """Score the lead; publish lead.scored; if hot, lead.hot + lead.escalated.
 
-    HOT rule: conversion_probability >= 82 OR lead_temperature == hot.
+    HOT rule: conversion_probability >= 82 OR lead_temperature == hot
+    → publish lead.hot (trigger=hot_threshold), Redis-debounced per lead.
     """
     client_id = _resolve_client_id(envelope.get("tenant_id"))
     lead_id = _lead_id(envelope)
@@ -71,6 +73,7 @@ async def lead_scoring_handler(envelope: dict) -> None:
             setattr(lead, k, v)
         db.commit()
         db.refresh(lead)
+        # Snapshot fields needed after session close
         lead_snapshot = lead
         if not session_id:
             session_id = lead.session_id

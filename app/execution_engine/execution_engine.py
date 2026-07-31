@@ -124,8 +124,9 @@ class ExecutionEngine:
             return
         if self.bus is None:
             return
-        # Merge action parameters + executor result so n8n/KG get demographics
-        # on site_visit.scheduled (CalendarExecutor stays pure I/O — EE owns publish).
+        # BA-3 / PR #10: merge action parameters + executor result so n8n/KG
+        # get demographics on site_visit.scheduled (CalendarExecutor stays pure
+        # I/O — EE owns publish).
         params = action_request.get("parameters") or {}
         if not isinstance(params, dict):
             params = {}

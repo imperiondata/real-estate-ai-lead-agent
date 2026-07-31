@@ -1,9 +1,9 @@
-import { fetchAnalytics, fetchLeads } from '@/lib/api'
+import { fetchLeads } from '@/lib/api'
 import { 
-  AreaTrendChart, SourcePieChart, FunnelChart, AgentPerformanceChart, FollowUpGauge 
+  SourcePieChart, FunnelChart, FollowUpGauge 
 } from './Charts'
 import { 
-  Users, Target, Banknote, Clock, ArrowUpRight, Flame, AlertCircle, Calendar, Briefcase, Activity, Inbox
+  Users, Target, Banknote, Clock, ArrowUpRight, Flame, AlertCircle, Briefcase, Activity, Inbox
 } from 'lucide-react'
 import Link from 'next/link'
 import GlobalFilters from './GlobalFilters'
@@ -18,10 +18,9 @@ type Props = {
 
 export default async function DashboardPage(props: Props) {
   const searchParams = await props.searchParams;
-  const analyticsData = await fetchAnalytics()
   const leadsData = await fetchLeads()
   
-  let rawLeads = leadsData?.leads || []
+  const rawLeads = leadsData?.leads || []
   let leads = [...rawLeads]
 
   // --- Stress Test Generator (1000+ Leads) ---
@@ -41,7 +40,7 @@ export default async function DashboardPage(props: Props) {
       updated_at: new Date().toISOString(),
       assigned_agent: i % 3 === 0 ? 'Jane Doe' : 'John Smith'
     }))
-    // @ts-ignore
+    // @ts-expect-error Mock leads injection for stress testing
     leads = [...leads, ...mockLeads]
   }
 
@@ -102,7 +101,6 @@ export default async function DashboardPage(props: Props) {
   const overdueFollowUps = overdueLeadsList.length;
 
   // Temperatures
-  const hotCount = leads.filter(l => l.lead_temperature?.toLowerCase() === 'hot').length
   const warmCount = leads.filter(l => l.lead_temperature?.toLowerCase() === 'warm').length
 
   // Funnel Data & Conversion by Stage
@@ -197,7 +195,7 @@ export default async function DashboardPage(props: Props) {
           {/* Top KPIs Grid */}
           <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4">
             <KPICard badge="live" title="Total Leads" value={totalLeads} icon={Users} color="text-slate-500" bg="bg-slate-500/10" border="border-slate-500/20" tooltip="Total number of people who interacted with your AI assistant. (Calculated by counting all unique lead profiles)" />
-            <KPICard badge="live" title="Hot Leads" value={hotCount} icon={Flame} color="text-emerald-500" bg="bg-emerald-500/10" border="border-emerald-500/20" tooltip="Ready to buy! Call these people immediately. (Calculated by AI based on high purchase intent & budget match)" />
+            <KPICard badge="live" title="Hot Leads" value={leads.filter(l => l.lead_temperature?.toLowerCase() === 'hot').length} icon={Flame} color="text-emerald-500" bg="bg-emerald-500/10" border="border-emerald-500/20" tooltip="Ready to buy! Call these people immediately. (Calculated by AI based on high purchase intent & budget match)" />
             <KPICard badge="live" title="Warm Leads" value={warmCount} icon={Target} color="text-amber-500" bg="bg-amber-500/10" border="border-amber-500/20" tooltip="Interested but still thinking. (Calculated by AI based on medium intent and positive engagement)" />
             <KPICard badge="live" title="Est. Pipeline Value" value={formatCurrency(activePipelineValue)} icon={Briefcase} color="text-indigo-500" bg="bg-indigo-500/10" border="border-indigo-500/20" tooltip="The total combined budget of everyone looking to buy. (Calculated by summing budgets of all non-Lost leads)" />
             <KPICard badge="live" title="Closed Revenue" value={formatCurrency(closedRevenue)} icon={Banknote} color="text-emerald-600" bg="bg-emerald-600/10" border="border-emerald-600/20" tooltip="Total money made. (Calculated by summing budgets of leads strictly in the 'Closed Won' stage)" />
@@ -218,7 +216,7 @@ export default async function DashboardPage(props: Props) {
                 <h3 className="text-sm font-medium text-emerald-600 dark:text-emerald-400 uppercase tracking-wider">Priority AI Alerts</h3>
               </div>
               <p className="text-sm text-slate-700 dark:text-zinc-300 mb-6 leading-relaxed">
-                AI has identified <span className="font-bold text-slate-900 dark:text-white">{hotCount} high-intent buyers</span>. The following leads require immediate human follow-up to close.
+                AI has identified <span className="font-bold text-slate-900 dark:text-white">{leads.filter(l => l.lead_temperature?.toLowerCase() === 'hot').length} high-intent buyers</span>. The following leads require immediate human follow-up to close.
               </p>
               <div className="space-y-3">
                 {priorityLeads.map(l => (
@@ -358,7 +356,19 @@ export default async function DashboardPage(props: Props) {
   )
 }
 
-function KPICard({ title, value, icon: Icon, color, bg, border, trend, tooltip, badge }: any) {
+type KPICardProps = {
+  title: string;
+  value: string | number;
+  icon: React.ElementType;
+  color: string;
+  bg: string;
+  border: string;
+  trend?: string;
+  tooltip?: string;
+  badge?: 'live' | 'sample';
+};
+
+function KPICard({ title, value, icon: Icon, color, bg, border, trend, tooltip, badge }: KPICardProps) {
   return (
     <Link href={`/crm?filter=${encodeURIComponent(title)}`} className={`bg-white dark:bg-zinc-900/40 border border-slate-200 dark:border-white/5 p-4 md:p-6 rounded-3xl backdrop-blur-xl relative group hover:z-50 hover:border-slate-300 dark:hover:border-white/10 transition-colors duration-300 shadow-sm block`}>
       {/* Background glow container */}

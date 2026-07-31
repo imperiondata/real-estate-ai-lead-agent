@@ -31,7 +31,7 @@ function SalesCopilotContent() {
         });
         if (res.ok) {
           const data = await res.json();
-          const mappedEvents = data.events.map((evt: any) => ({
+          const mappedEvents = data.events.map((evt: { event_id: string; event_type: string; payload?: Record<string, string>; source?: string; timestamp?: string }) => ({
             id: evt.event_id,
             type: evt.event_type,
             title: evt.event_type.replace(/_/g, ' ').toUpperCase(),

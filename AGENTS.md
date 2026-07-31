@@ -84,7 +84,7 @@ High-signal, repo-specific facts an agent would likely miss without help.
 - **Frontend badge:** "🤝 Open for Negotiation" purple badge on CRM KanbanBoard
 - **Claim button expanded:** Visible on ANY column (not just "New") when `is_negotiating = True`
 - **Debounce:** 5-minute Redis debounce per lead (TTL 300s) to prevent event spam
-- **Phrases:** `negotiate, negotiation, discount, reduce price, lower price, too expensive, can you reduce, final price, best price, cheaper, afford, budget is tight` (expandable in `agent.py`)
+- **Phrases:** `negotiate, negotiation, discount, reduce price, lower price, too expensive, can you reduce, final price, best price, cheaper, afford, budget is tight, change my budget, reduce my budget, lower my budget, budget is only, can only afford, stretch my budget` (expandable in `agent.py`)
 - **Events:** `lead.negotiation.started` with `trigger` = `user_phrase` | `budget_misaligned`
 
 ---
@@ -275,6 +275,7 @@ Sales hot escalate: notify_agent + create_task → agent_tasks
 - **Execution Engine:** `app/execution_engine/execution_engine.py` (`execution_engine` singleton) + `BaseExecutor`/`NoopExecutor` in `base_executor.py`. `dispatch` returns `{"status":"error","error":"no_executor"}` for unknown actions and writes a `DLQEvent` (via injectable `session_factory`, default `database.SessionLocal`) on any failure. `resolve_client_id` maps `Client_<id>` tenant ids to integer `client_id`. Registered: `send_whatsapp`, `update_crm`, `schedule_visit`, `notify_agent`, **`create_task`** (`TaskExecutor` → `agent_tasks`).
 - **BaseAgent:** `app/agents/base_agent.py` runs `fetch_context → analyze → decide`; `process_event` forwards any action to `app.automation_engine.engine.submit` (Phase 1 stub → EE; Phase 2 adds approval/retry).
 - `EventBusClient.publish` raises loudly if called before `start()` or if Redis is down.
+- **Bus resilience (P3.8):** `_consume_loop` retries on transient Redis errors (`TimeoutError`, `RedisError`, `ConnectionError`, `OSError`) with exponential backoff: **1s → 2s → 4s → … → cap 16s**. Counter resets on any successful fetch. Gives up after **10** consecutive failures (`_MAX_CONSUME_RETRIES`). Transient blips self-heal on the next successful read. Sustained Redis outage logs error and stops the loop (bus is dead; app continues without events).
 
 ## IREIOS 3.0 — Early API envelopes + SSE (Phase 1b, FE unblock)
 

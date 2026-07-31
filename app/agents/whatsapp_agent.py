@@ -189,8 +189,21 @@ def score_lead(lead: Lead) -> dict:
     else:
         urgency = "low"
 
-    if lead.budget and lead.property_type:
-        alignment = "aligned"
+    if lead.budget and lead.location and lead.property_type:
+        try:
+            from app.intelligence.budget_alignment import evaluate_budget_alignment
+
+            alignment_result = evaluate_budget_alignment(
+                budget_text=lead.budget,
+                location=lead.location.split(",")[0].strip(),
+                property_type=lead.property_type,
+                intent=getattr(lead, "intent", "buy") or "buy",
+            )
+            alignment = alignment_result.get("alignment_status", "unknown")
+        except Exception:
+            alignment = "unknown"
+    elif lead.budget and lead.property_type:
+        alignment = "unknown"
     else:
         alignment = "unknown"
 

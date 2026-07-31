@@ -945,6 +945,8 @@ async def process_chat(session_id: str, user_message: str, db: DBSession, client
         "negotiate", "negotiation", "discount", "reduce price",
         "lower price", "too expensive", "can you reduce", "final price",
         "best price", "cheaper", "afford", "budget is tight",
+        "change my budget", "reduce my budget", "lower my budget",
+        "budget is only", "can only afford", "stretch my budget",
     ]
     if any(phrase in msg_clean for phrase in _NEGOTIATION_PHRASES):
         if not lead.is_negotiating:

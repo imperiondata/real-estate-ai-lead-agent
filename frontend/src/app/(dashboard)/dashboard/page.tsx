@@ -359,7 +359,7 @@ export default async function DashboardPage(props: Props) {
 type KPICardProps = {
   title: string;
   value: string | number;
-  icon: React.ElementType;
+  icon: React.ElementType<{ className?: string }>;
   color: string;
   bg: string;
   border: string;

@@ -747,7 +747,7 @@ Used by `UNIFIED_EXECUTION_ORDER.md` Gate **G2**. Mark complete only when **all*
 
 ### Evidence (Task 10.4)
 
-- [x] OpenAPI / API list exported (`plans/openapi_ireios3.json`, 40 routes)
+- [x] OpenAPI / API list exported (`plans/phase3/openapi_ireios3.json`, 40 routes)
 - [x] Graph schema export attached (`neo4j_client.SCHEMA_STATEMENTS`, `:SchemaVersion{version:1}`)
 - [x] Test logs retained (full `pytest` → 253 passed, 3 skipped; isolation; DLQ)
 - [x] Architecture + workflow + implementation links in evidence pack (`ireios_evidence.py`)

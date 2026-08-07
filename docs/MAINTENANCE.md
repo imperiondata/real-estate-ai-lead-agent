@@ -1,7 +1,7 @@
 # IREIOS — End-to-End Maintenance Guide
 
 Operational runbook for the **current** codebase (FastAPI monolith + IREIOS 3.0 bus/agents/KG).  
-Companion to `AGENTS.md` (agent-oriented facts) and `plans/IREIOS_3.0_EVIDENCE_PACK.md` (release gates).
+Companion to `AGENTS.md` (agent-oriented facts), `plans/phase3/IREIOS_3.0_EVIDENCE_PACK.md` (3.0 release gates), and `plans/phase4/` (active Product Phase 4 queue).
 
 **Last aligned:** July 2026 · Branch baseline: post–Phase 10 / BD closeout
 
@@ -235,7 +235,7 @@ python publish_stub_event.py --event-type lead.created --tenant-id Client_1 --pa
 | `POST /api/v1/events/stub` | `X-Admin-Token` = `ADMIN_API_KEY` | Returns `event_id` |
 
 Envelope fields (bus): `event_id`, `event_type`, `tenant_id`, `entity_id`, `source`, `timestamp`, `correlation_id`, `payload`.  
-Contracts: `plans/IREIOS_3.0_API_SSE_CONTRACTS.md`.
+Contracts: `plans/phase3/IREIOS_3.0_API_SSE_CONTRACTS.md`.
 
 ---
 
@@ -387,7 +387,7 @@ python task3_runner.py --category HOT
 | Bug regressions | `tests/test_p*.py` |
 | Expansion / IREIOS 3.0 | `tests/test_e*.py` |
 
-Evidence: `plans/IREIOS_3.0_EVIDENCE_PACK.md`, `python ireios_evidence.py`.
+Evidence: `plans/phase3/IREIOS_3.0_EVIDENCE_PACK.md`, `python ireios_evidence.py`.
 
 ---
 
@@ -508,9 +508,13 @@ Structured logs use `request_id` / `tenant_id` contextvars when set.
 | `docs/TIMEOUTS_AND_TIMINGS.md` | All race/TTL/scheduler/backoff values + code anchors |
 | `docs/FRONTEND_BACKLOG.md` | FE SSE/API cutover |
 | `docs/N8N_INTEGRATION.md` | n8n config-later |
-| `plans/UNIFIED_EXECUTION_ORDER.md` | Program order / gates |
-| `plans/IREIOS_3.0_EVIDENCE_PACK.md` | Release evidence |
-| `plans/IREIOS_3.0_API_SSE_CONTRACTS.md` | Realtime contracts |
+| `plans/phase4/UNIFIED_EXECUTION_ORDER.md` | **Active** Product Phase 4 order / gates |
+| `plans/phase4/TEAM_LEAD_QUESTIONNAIRE.md` | Phase 4 lead decisions + false-claim audit |
+| `plans/phase3/UNIFIED_EXECUTION_ORDER.md` | Archived IREIOS 3.0 order / gates |
+| `plans/phase3/IREIOS_3.0_EVIDENCE_PACK.md` | 3.0 release evidence |
+| `plans/phase4/IREIOS_4.0_EVIDENCE_PACK.md` | 4.0 release evidence |
+| `plans/phase3/IREIOS_3.0_API_SSE_CONTRACTS.md` | 3.0 realtime contracts |
+| `plans/phase4/IREIOS_4.0_API_CONTRACTS.md` | 4.0 FE/API contracts |
 
 ---
 

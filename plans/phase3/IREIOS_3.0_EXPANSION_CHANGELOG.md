@@ -2,8 +2,8 @@
 
 Living record of expansion implementation work (Steps 8–19 of `UNIFIED_EXECUTION_ORDER.md`), kept parallel to `BUG_FIXES_CHANGELOG.md`.
 
-- **How (design/implementation detail):** `plans/IREIOS_3.0_STEP_BY_STEP_EXPANSION.md`
-- **When / order:** `plans/UNIFIED_EXECUTION_ORDER.md`
+- **How (design/implementation detail):** `plans/phase3/IREIOS_3.0_STEP_BY_STEP_EXPANSION.md`
+- **When / order:** `plans/phase3/UNIFIED_EXECUTION_ORDER.md`
 - **Supporting reference (read-only):** `IREIOS_3.0_Architecture_Diagrams.md`, `IREIOS_3.0_AI_Automation_Workflows.md`, `IREIOS_3.0_IMPLEMENTATION_PLAN.md`
 
 ## Naming convention (separation from bug fixes)
@@ -352,7 +352,7 @@ The `e` prefix guarantees the two suites never collide and can be collected/run 
 
 > **Note (post-G3):** Duplicate “all `[ ]`” Phase 5/6 skeleton tables were removed.
 > Authoritative Phase 5–10 status is earlier in this file + `UNIFIED_EXECUTION_ORDER.md`.
-> Post-G2 depth fill (Waves A–D): `plans/IREIOS_3.0_WAVE_A_D_CHANGELOG.md`.
+> Post-G2 depth fill (Waves A–D): `plans/phase3/IREIOS_3.0_WAVE_A_D_CHANGELOG.md`.
 > Placeholders: empty after Wave C (six agents active). Dual-path 10.2/10.3 remains `[-]` deferred.
 
 ---
@@ -457,5 +457,5 @@ Regression: **189** targeted unit tests passed; `gate_isolation_test.py` PASS; `
 
 ## Post-G2 / Gate G3 (Waves A–D)
 
-Living status: **`plans/IREIOS_3.0_WAVE_A_D_CHANGELOG.md`**.  
+Living status: **`plans/phase3/IREIOS_3.0_WAVE_A_D_CHANGELOG.md`**.  
 UNIFIED Steps **20–23** + **G3** = `[x]`. Placeholders empty (Wave C). Brochure Approach B + media polish shipped. HubSpot skippable (demo stub). n8n/Calendar/brochure HTTPS = ops env when ready.

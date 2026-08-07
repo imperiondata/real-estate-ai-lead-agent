@@ -16,11 +16,11 @@
 
 | Concern | Source of truth |
 |---------|-----------------|
-| Event names | `plans/IREIOS_3.0_Architecture_Diagrams.md` §4 |
+| Event names | `plans/phase3/IREIOS_3.0_Architecture_Diagrams.md` §4 |
 | Runtime spine | `Event → CEO → Agent → AE → EE → Event` |
 | n8n boundary | `docs/N8N_INTEGRATION.md` |
-| Program order | `plans/UNIFIED_EXECUTION_ORDER.md` |
-| Shipped state | `plans/IREIOS_3.0_WAVE_A_D_CHANGELOG.md` (post-G3 audit) |
+| Program order | `plans/phase3/UNIFIED_EXECUTION_ORDER.md` |
+| Shipped state | `plans/phase3/IREIOS_3.0_WAVE_A_D_CHANGELOG.md` (post-G3 audit) |
 
 ---
 
@@ -312,7 +312,7 @@ Implement on `phase3_automations`. One task at a time; mark done only with tests
 
 **Original (invalid for stock n8n):** “Redis Streams primary” — n8n has no Streams trigger.
 
-**Revised (locked):** **Python `N8NBridge`** joins separate consumer group `ireios-n8n`, filters allowlisted `event_type`, POSTs full envelope to n8n webhooks. AE `template_type=n8n` = fallback only. Do **not** dual-fanout bridge + AE for the same alert (double Gmail). See `docs/N8N_INTEGRATION.md`, `app/automation_engine/n8n_bridge.py`, `plans/N8N_LIVE_WORKFLOWS_PLAN.md`.
+**Revised (locked):** **Python `N8NBridge`** joins separate consumer group `ireios-n8n`, filters allowlisted `event_type`, POSTs full envelope to n8n webhooks. AE `template_type=n8n` = fallback only. Do **not** dual-fanout bridge + AE for the same alert (double Gmail). See `docs/N8N_INTEGRATION.md`, `app/automation_engine/n8n_bridge.py`, `plans/phase3/N8N_LIVE_WORKFLOWS_PLAN.md`.
 
 ### BA-7 — Validation gate — **P0** — `[x]` 2026-07-23
 
@@ -469,7 +469,7 @@ EE publishes site_visit.scheduled (rich payload after BA-3)
 | EE event map | `app/execution_engine/registry.py`, `execution_engine.py` `_publish_success` |
 | n8n client | `app/automation_engine/n8n_client.py` |
 | n8n bridge | `app/automation_engine/n8n_bridge.py` (group `ireios-n8n`) |
-| n8n WF recipes | `plans/N8N_LIVE_WORKFLOWS_PLAN.md` |
+| n8n WF recipes | `plans/phase3/N8N_LIVE_WORKFLOWS_PLAN.md` |
 | Hot template | `app/automation_engine/templates/hot_lead_notify.py` |
 | Visit template | `app/automation_engine/templates/visit_booking.py` |
 | HITL | `app/automation_engine/hitl.py` |
@@ -486,4 +486,4 @@ EE publishes site_visit.scheduled (rich payload after BA-3)
 |------|----------|
 | 2026-07-23 | Locked closeout plan from Mayank mandate + third-party audit **reconciled** to catalog and tree. Rejected invented events and stub calendar-only APIs. Elevated `lead.hot` publish gap to P0. |
 | 2026-07-23 | Implemented BA-1…BA-7: `app/events/lead_hot.py`, scoring+handoff publish, chat_context, EE merge, HITL paths, calendar REST, Redis-primary n8n. Tests e18 (14). pytest 352 pass. |
-| 2026-07-28 | **BA-6 revised:** stock n8n cannot XREADGROUP. Shipped `n8n_bridge` (group `ireios-n8n`) + Gmail-first recipes `plans/N8N_LIVE_WORKFLOWS_PLAN.md`. Path rename `ireios_hot_lead_alert`. |
+| 2026-07-28 | **BA-6 revised:** stock n8n cannot XREADGROUP. Shipped `n8n_bridge` (group `ireios-n8n`) + Gmail-first recipes `plans/phase3/N8N_LIVE_WORKFLOWS_PLAN.md`. Path rename `ireios_hot_lead_alert`. |

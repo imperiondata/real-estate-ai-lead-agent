@@ -2,8 +2,8 @@
 
 Living record of **post-G2 depth fill** (Waves A–D). Parallel to `IREIOS_3.0_EXPANSION_CHANGELOG.md` (Phases 0–10).
 
-- **How (tasks):** `plans/IREIOS_3.0_WAVE_A_D_EXPANSION.md`
-- **Order:** `plans/UNIFIED_EXECUTION_ORDER.md` Steps 20–23 + G3 (append when starting)
+- **How (tasks):** `plans/phase3/IREIOS_3.0_WAVE_A_D_EXPANSION.md`
+- **Order:** `plans/phase3/UNIFIED_EXECUTION_ORDER.md` Steps 20–23 + G3 (append when starting)
 - **Tests:** `tests/test_e14_wave_a.py` … `tests/test_e17_wave_d.py` (+ extend e2/e3/e6/e8/e11)
 
 ## Naming
@@ -369,7 +369,7 @@ Living record of **post-G2 depth fill** (Waves A–D). Parallel to `IREIOS_3.0_E
 
 **Program step:** UNIFIED **Step 24** / Gate **G4**  
 **Branch:** `phase3_automations`  
-**Plan of record:** `plans/PHASE3_AUTOMATIONS_CLOSEOUT.md`  
+**Plan of record:** `plans/phase3/PHASE3_AUTOMATIONS_CLOSEOUT.md`  
 **Docs updated:** `docs/N8N_INTEGRATION.md` (canonical payloads), Architecture §4.3, API SSE contracts
 
 ### Audit reconciliation (no code this entry)

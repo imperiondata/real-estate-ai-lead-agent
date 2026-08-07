@@ -248,7 +248,7 @@ SMS does **not** use the WA race/interim pattern; it awaits `process_unified_lea
 | Doc | What it covers |
 |-----|----------------|
 | `AGENTS.md` → Webhook Flow & Timeouts | Agent-oriented WA path summary |
-| `plans/BUG_FIXES_CHANGELOG.md` → P3.6 / P3.6b | Race + critical-path change history |
+| `plans/phase3/BUG_FIXES_CHANGELOG.md` → P3.6 / P3.6b | Race + critical-path change history |
 | `docs/BACKEND_RELIABILITY_CHECKLIST.md` | Ops reliability including WA race |
 | `.env.example` | Env knobs for WA/LLM/RAG/graph |
 

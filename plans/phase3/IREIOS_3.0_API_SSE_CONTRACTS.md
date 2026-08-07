@@ -45,7 +45,7 @@ Each event is one SSE `data:` line with a JSON **bus envelope**:
 
 Common `event_type` values (non-exhaustive): `lead.created`, `lead.scored`, `lead.hot`, `lead.escalated` (alias of `lead.hot`), `lead.qualified`, `lead.assigned`, `conversation.updated`, `session.completed` (PR #10 alias on close), `whatsapp.sent`, `approval.requested`, `site_visit.scheduled`, `marketing.report.generated`.
 
-n8n dual-publish / alias rules: `docs/N8N_INTEGRATION.md`. Prefer catalog names long-term; pick one of `lead.hot`|`lead.escalated` per workflow. Closeout payloads: `docs/N8N_INTEGRATION.md` § Canonical payloads and `plans/PHASE3_AUTOMATIONS_CLOSEOUT.md`.
+n8n dual-publish / alias rules: `docs/N8N_INTEGRATION.md`. Prefer catalog names long-term; pick one of `lead.hot`|`lead.escalated` per workflow. Closeout payloads: `docs/N8N_INTEGRATION.md` § Canonical payloads and `plans/phase3/PHASE3_AUTOMATIONS_CLOSEOUT.md`.
 
 ---
 
@@ -120,4 +120,4 @@ See `docs/FRONTEND_BACKLOG.md`:
 - Do not rename envelope top-level fields without versioning this doc + FE.
 - Tenant isolation is mandatory on stream and timeline.
 - Stub/`source: "stub"` is for demos only; production UI should tolerate real `source` values.
-- OpenAPI dump: `plans/openapi_ireios3.json` (regenerate via app OpenAPI if drifted).
+- OpenAPI dump: `plans/phase3/openapi_ireios3.json` (regenerate via app OpenAPI if drifted).

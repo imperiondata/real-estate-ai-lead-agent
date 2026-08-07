@@ -14,7 +14,7 @@
 
 ## Gate G3 — Waves A–D depth fill (2026-07-21)
 
-Detail: `plans/IREIOS_3.0_WAVE_A_D_CHANGELOG.md` · plan: `plans/IREIOS_3.0_WAVE_A_D_EXPANSION.md` · UNIFIED Steps 20–23 + G3.
+Detail: `plans/phase3/IREIOS_3.0_WAVE_A_D_CHANGELOG.md` · plan: `plans/phase3/IREIOS_3.0_WAVE_A_D_EXPANSION.md` · UNIFIED Steps 20–23 + G3.
 
 - [x] **Wave A:** weekly marketing cron, lifecycle inject API, AE n8n/langgraph branch, expire_approvals job, NotificationExecutor real notify paths
 - [x] **Wave B:** Sales bus + objections, CS WhatsApp, marketing market.alert, AE templates, competitor → NotificationLog; **B.7 create_task** (`agent_tasks` + EE)

@@ -200,7 +200,7 @@ Not separate long-term catalog entries — **mirrors** of primary events for wor
 
 `site_visit.scheduled` is published by the **Execution Engine** after `CalendarExecutor` success (`register_event`), not by the executor itself.
 
-Full closeout: `plans/PHASE3_AUTOMATIONS_CLOSEOUT.md`. Ops detail: `docs/N8N_INTEGRATION.md` § Dual-publish aliases.
+Full closeout: `plans/phase3/PHASE3_AUTOMATIONS_CLOSEOUT.md`. Ops detail: `docs/N8N_INTEGRATION.md` § Dual-publish aliases.
 
 ---
 

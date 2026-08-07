@@ -27,8 +27,9 @@ Backend Waves A–D / Gate G3 are **code-complete**. FE cutover (Expansion Phase
 | SSE `marketing.report.generated` | stream | Marketing / executive panels |
 | SSE `brochure.sent` / `floorplan.sent` | stream | Media share timeline |
 
-Contracts: `plans/IREIOS_3.0_API_SSE_CONTRACTS.md`, OpenAPI `plans/openapi_ireios3.json`.  
-Backend depth log: `plans/IREIOS_3.0_WAVE_A_D_CHANGELOG.md`.
+Contracts (3.0 SSE): `plans/phase3/IREIOS_3.0_API_SSE_CONTRACTS.md`, OpenAPI `plans/phase3/openapi_ireios3.json`.  
+Phase 4 contracts / queue: `plans/phase4/IREIOS_4.0_API_CONTRACTS.md`, `plans/phase4/UNIFIED_EXECUTION_ORDER.md`.  
+Backend depth log (3.0): `plans/phase3/IREIOS_3.0_WAVE_A_D_CHANGELOG.md`.
 
 ---
 

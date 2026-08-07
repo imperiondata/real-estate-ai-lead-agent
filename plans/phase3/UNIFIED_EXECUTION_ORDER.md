@@ -1,11 +1,14 @@
 # Unified Execution Order
 
-**Single source of truth for implementation order** across:
+> **ARCHIVED (IREIOS 3.0).** Active Product Phase 4 queue: [`../phase4/UNIFIED_EXECUTION_ORDER.md`](../phase4/UNIFIED_EXECUTION_ORDER.md).  
+> Paths in this file that say `plans/FOO.md` resolve on disk to `plans/phase3/FOO.md`.
+
+**Frozen source of truth for IREIOS 3.0 implementation order** across:
 
 | Plan | Path |
 |---|---|
-| Bug fixes | `plans/BUG_AUDIT_AND_PHASED_FIX_PLAN.md` |
-| IREIOS 3.0 expansion | `plans/IREIOS_3.0_STEP_BY_STEP_EXPANSION.md` |
+| Bug fixes | `plans/phase3/BUG_AUDIT_AND_PHASED_FIX_PLAN.md` |
+| IREIOS 3.0 expansion | `plans/phase3/IREIOS_3.0_STEP_BY_STEP_EXPANSION.md` |
 
 | This doc owns | Does not own |
 |---|---|
@@ -72,28 +75,28 @@
 | **18** | Expansion | Phase 9 (Tasks 9.1–9.8) | FE cutover to live SSE/APIs (contracts from 1b) | Expansion Phase 9 exit gate | `[x]` |
 | **19** | Expansion | Phase 10 (Tasks 10.1–10.5) | Placeholders, decommission, evidence | Expansion Phase 10 final gate | `[x]` |
 | **G2** | Gate | **MVP program complete** | Phases 0–10 close | Expansion plan **Program final gate (G2)** checklist + Task 10.4–10.5 | `[x]` |
-| **20** | Wave A–D | **Wave A** — dead loops + live HubSpot/Calendar/n8n hooks | Wave A exit gate | `plans/IREIOS_3.0_WAVE_A_D_EXPANSION.md` §1 | `[x]` |
+| **20** | Wave A–D | **Wave A** — dead loops + live HubSpot/Calendar/n8n hooks | Wave A exit gate | `plans/phase3/IREIOS_3.0_WAVE_A_D_EXPANSION.md` §1 | `[x]` |
 | **21** | Wave A–D | **Wave B** — deepen Sales/CS/Marketing + AE templates | Wave B exit gate | same §2 | `[x]` |
 | **22** | Wave A–D | **Wave C** — 6 placeholders → active agents | Wave C exit gate | same §3 | `[x]` |
 | **23** | Wave A–D | **Wave D** — forecast/memory/n8n + brochure **Approach B** (MediaUrl PDF) | Wave D exit gate §4.7 | same §4 | `[x]` |
 | **G3** | Gate | **Waves A–D complete** | Depth-fill close | pytest full + isolation + DLQ green; evidence pack Wave section; changelog | `[x]` |
-| **24** | Automations closeout | **Bus hooks + n8n contracts** (no new product scope) | Step 24 exit in `plans/PHASE3_AUTOMATIONS_CLOSEOUT.md` §8 | `[x]` backend; n8n WF-1 still ops |  
-| **24b** | n8n delivery | **Bus→webhook bridge** + Gmail WF recipes | `n8n_bridge` + `plans/N8N_LIVE_WORKFLOWS_PLAN.md` | `[x]` bridge; WF UI pending |  
+| **24** | Automations closeout | **Bus hooks + n8n contracts** (no new product scope) | Step 24 exit in `plans/phase3/PHASE3_AUTOMATIONS_CLOSEOUT.md` §8 | `[x]` backend; n8n WF-1 still ops |  
+| **24b** | n8n delivery | **Bus→webhook bridge** + Gmail WF recipes | `n8n_bridge` + `plans/phase3/N8N_LIVE_WORKFLOWS_PLAN.md` | `[x]` bridge; WF UI pending |  
 | **G4** | Gate | **Automations production-ready** | BA-7 + bridge + n8n WF-1 Gmail smoke | `[~]` bridge done; WF-1 pending Maitri |  
 
 **Expansion Task 0.1** (doc freeze) is already done; do not re-open it as a blocking step.
 
-**Post-G2 depth fill:** detailed tasks, integration signup guides, and per-wave benefits live in `plans/IREIOS_3.0_WAVE_A_D_EXPANSION.md`. Living log: `plans/IREIOS_3.0_WAVE_A_D_CHANGELOG.md`. Tests: `tests/test_e14_wave_a.py` … `test_e17_wave_d.py`.
+**Post-G2 depth fill:** detailed tasks, integration signup guides, and per-wave benefits live in `plans/phase3/IREIOS_3.0_WAVE_A_D_EXPANSION.md`. Living log: `plans/phase3/IREIOS_3.0_WAVE_A_D_CHANGELOG.md`. Tests: `tests/test_e14_wave_a.py` … `test_e17_wave_d.py`.
 
-**Post-G3 automations closeout (Step 24):** `plans/PHASE3_AUTOMATIONS_CLOSEOUT.md` — branch `phase3_automations`. Canonical events only (`lead.hot`, not invented aliases). Backend = bus payload hardening; Maitri = n8n UI workflows.
+**Post-G3 automations closeout (Step 24):** `plans/phase3/PHASE3_AUTOMATIONS_CLOSEOUT.md` — branch `phase3_automations`. Canonical events only (`lead.hot`, not invented aliases). Backend = bus payload hardening; Maitri = n8n UI workflows.
 
 ---
 
 ## 4. Block 1 — Bug audit (monolith stabilization)
 
-Implement using `plans/BUG_AUDIT_AND_PHASED_FIX_PLAN.md` only. Within each phase, follow item IDs in numeric order (e.g. P0.1 before P0.2).
+Implement using `plans/phase3/BUG_AUDIT_AND_PHASED_FIX_PLAN.md` only. Within each phase, follow item IDs in numeric order (e.g. P0.1 before P0.2).
 
-**Shipped fixes narrative:** update `plans/BUG_FIXES_CHANGELOG.md` after every slice (with tests).
+**Shipped fixes narrative:** update `plans/phase3/BUG_FIXES_CHANGELOG.md` after every slice (with tests).
 
 ### Step 1 — Bug Phase 0 (Safety)
 
@@ -196,9 +199,9 @@ Before **any** expansion work:
 
 ## 5. Block 2 — IREIOS 3.0 expansion
 
-Implement using `plans/IREIOS_3.0_STEP_BY_STEP_EXPANSION.md` only. Within each phase, follow task numbers in order (e.g. 1.1 before 1.2).
+Implement using `plans/phase3/IREIOS_3.0_STEP_BY_STEP_EXPANSION.md` only. Within each phase, follow task numbers in order (e.g. 1.1 before 1.2).
 
-Per-slice progress is tracked in **`plans/IREIOS_3.0_EXPANSION_CHANGELOG.md`** (parallel to `BUG_FIXES_CHANGELOG.md`); tests live in `tests/test_eN_*.py` (distinct `e` prefix from bug-fix `p` tests); API/SSE contracts in `plans/IREIOS_3.0_API_SSE_CONTRACTS.md`; G2 evidence in `plans/IREIOS_3.0_EVIDENCE_PACK.md`.
+Per-slice progress is tracked in **`plans/phase3/IREIOS_3.0_EXPANSION_CHANGELOG.md`** (parallel to `BUG_FIXES_CHANGELOG.md`); tests live in `tests/test_eN_*.py` (distinct `e` prefix from bug-fix `p` tests); API/SSE contracts in `plans/phase3/IREIOS_3.0_API_SSE_CONTRACTS.md`; G2 evidence in `plans/phase3/IREIOS_3.0_EVIDENCE_PACK.md`.
 
 Supporting architecture (read-only reference, not alternate queues) — all under `plans/`:
 
@@ -335,7 +338,7 @@ If production breaks mid-program:
 **Gates G1 / G2 / G3 are complete** (bugs + expansion Phases 0–10 + Waves A–D code).
 
 **Active program block:** **Step 24 — Automations closeout** on branch `phase3_automations`.  
-**Plan of record:** `plans/PHASE3_AUTOMATIONS_CLOSEOUT.md` (reconciles Mayank mandate + audit vs catalog).
+**Plan of record:** `plans/phase3/PHASE3_AUTOMATIONS_CLOSEOUT.md` (reconciles Mayank mandate + audit vs catalog).
 
 ### Step 24 — Backend bus hooks (Aritro) then n8n UI (Maitri)
 
@@ -358,7 +361,7 @@ If production breaks mid-program:
 3. Google Calendar create stays in **`CalendarExecutor`** (already live); n8n fans out only.  
 4. HubSpot Python portal stays **skipped**; external CRM = n8n on `lead.qualified`.  
 5. n8n ingest = **`n8n_bridge`** (not stock Redis Streams). Primary ops channel = **Gmail**.  
-6. Recipes: `plans/N8N_LIVE_WORKFLOWS_PLAN.md`.  
+6. Recipes: `plans/phase3/N8N_LIVE_WORKFLOWS_PLAN.md`.  
 7. No PR/merge process in this step’s definition of done (team process separate).
 
 ### Gate G4 — Automations production-ready
@@ -377,4 +380,4 @@ Exit checklist = `PHASE3_AUTOMATIONS_CLOSEOUT.md` §8.
 | — | Dual-path module delete (10.2/10.3) | **Still deferred** |
 | Later | n8n automations (incl. optional GCal fan-out nodes) | Step 24 / Maitri |
 
-Detail: `plans/PHASE3_AUTOMATIONS_CLOSEOUT.md`, `plans/IREIOS_3.0_WAVE_A_D_CHANGELOG.md` § Post-G3, `docs/N8N_INTEGRATION.md`.
+Detail: `plans/phase3/PHASE3_AUTOMATIONS_CLOSEOUT.md`, `plans/phase3/IREIOS_3.0_WAVE_A_D_CHANGELOG.md` § Post-G3, `docs/N8N_INTEGRATION.md`.

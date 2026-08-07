@@ -1,0 +1,9 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "IREIOS 4.0 API (placeholder)",
+    "description": "Regenerate from a running app after P4 routes land: curl -o plans/phase4/openapi_ireios4.json http://localhost:8000/openapi.json — Do not hand-edit as source of truth. Human contracts: IREIOS_4.0_API_CONTRACTS.md. Prior dump: ../phase3/openapi_ireios3.json",
+    "version": "4.0.0-placeholder"
+  },
+  "paths": {}
+}

@@ -1,7 +1,7 @@
 # IREIOS 3.0 — Wave A–D Expansion Plan (Post-G2 Depth Fill)
 
 **Status:** **Implemented (G3 code gates green 2026-07-21)** · **Target:** 31 July 2026 · **No FE demo polish required**  
-**Living log:** `plans/IREIOS_3.0_WAVE_A_D_CHANGELOG.md` (task rows `[x]`/`[-]`). This plan remains the how-to reference; do not treat remaining `[ ]` task bullets below as “not built” without checking the changelog.  
+**Living log:** `plans/phase3/IREIOS_3.0_WAVE_A_D_CHANGELOG.md` (task rows `[x]`/`[-]`). This plan remains the how-to reference; do not treat remaining `[ ]` task bullets below as “not built” without checking the changelog.  
 **Owners:** Backend AI / Automation (Maitri + Aritro) · Integrations ops as noted  
 **Does not replace:** Phases 0–10 in `IREIOS_3.0_STEP_BY_STEP_EXPANSION.md` (those are `[x]` at G2). This plan is the **next program block** after Gate G2.
 
@@ -16,9 +16,9 @@
 
 | File | Role |
 |------|------|
-| `plans/IREIOS_3.0_WAVE_A_D_CHANGELOG.md` | Status table + per-task entries (fill as you ship) |
+| `plans/phase3/IREIOS_3.0_WAVE_A_D_CHANGELOG.md` | Status table + per-task entries (fill as you ship) |
 | `tests/test_e14_wave_a.py` … `test_e17_wave_d.py` | Skeleton → real tests per wave |
-| `plans/UNIFIED_EXECUTION_ORDER.md` | Append Steps **20–23** when starting (see §0.4) |
+| `plans/phase3/UNIFIED_EXECUTION_ORDER.md` | Append Steps **20–23** when starting (see §0.4) |
 
 ---
 
@@ -55,15 +55,15 @@ python dlq_replay.py
 
 | Doc | What to flip/add |
 |-----|------------------|
-| `plans/IREIOS_3.0_WAVE_A_D_CHANGELOG.md` | Status row → `[x]` + Entry block |
-| `plans/UNIFIED_EXECUTION_ORDER.md` | Step 20–23 row when wave exits |
+| `plans/phase3/IREIOS_3.0_WAVE_A_D_CHANGELOG.md` | Status row → `[x]` + Entry block |
+| `plans/phase3/UNIFIED_EXECUTION_ORDER.md` | Step 20–23 row when wave exits |
 | `AGENTS.md` | New env vars, agents, events, degrade notes |
 | `README.md` | `.env` reference + any new seed/scripts |
 | `docs/N8N_INTEGRATION.md` | When n8n workflows go live |
 | `docs/MAINTENANCE.md` | Ops runbook if new cron/tables |
 | `docs/FRONTEND_BACKLOG.md` | New APIs FE can consume later (note only) |
-| `plans/IREIOS_3.0_AI_Automation_Workflows.md` | Agent I/O when behavior changes |
-| `plans/IREIOS_3.0_EVIDENCE_PACK.md` | Checkboxes for wave exit |
+| `plans/phase3/IREIOS_3.0_AI_Automation_Workflows.md` | Agent I/O when behavior changes |
+| `plans/phase3/IREIOS_3.0_EVIDENCE_PACK.md` | Checkboxes for wave exit |
 
 **Status legend:** `[ ]` pending · `[~]` in progress · `[x]` done · `[-]` skipped (reason required)
 
@@ -819,7 +819,7 @@ Wire EE `register_event` map if `send_whatsapp` currently only emits `whatsapp.s
 | `AGENTS.md` | Update brochure section to Approach B |
 | `docs/MAINTENANCE.md` | Hosting + Twilio media smoke |
 | `docs/FRONTEND_BACKLOG.md` | Chat may return `media_url` |
-| `plans/IREIOS_3.0_WAVE_A_D_CHANGELOG.md` | D.4 entry |
+| `plans/phase3/IREIOS_3.0_WAVE_A_D_CHANGELOG.md` | D.4 entry |
 | `tests/test_e17_wave_d.py` | Real tests (below) |
 | Keep green | `tests/test_e12_bus_wiring.py`, `tests/test_e5_whatsapp_agent.py`, `tests/test_e3_executors.py` |
 

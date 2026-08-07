@@ -337,4 +337,4 @@ n8n is **outside** the in-process CEO table. Delivery = **`n8n_bridge`** (group 
 
 **Delivery:** `n8n_bridge` (group `ireios-n8n`), not stock Redis Streams.  
 **Do not** move follow-up FSM, escalation cron, or WA TwiML into n8n.  
-Contracts: `docs/N8N_INTEGRATION.md`, `plans/N8N_LIVE_WORKFLOWS_PLAN.md`, `plans/PHASE3_AUTOMATIONS_CLOSEOUT.md`.
+Contracts: `docs/N8N_INTEGRATION.md`, `plans/phase3/N8N_LIVE_WORKFLOWS_PLAN.md`, `plans/phase3/PHASE3_AUTOMATIONS_CLOSEOUT.md`.

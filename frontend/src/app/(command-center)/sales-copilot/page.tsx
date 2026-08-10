@@ -13,6 +13,7 @@ type TimelineEvent = {
 };
 import { MessageCircle, DollarSign, Calendar, UserPlus, Cpu, AlertCircle, Search, Filter } from 'lucide-react';
 import { useSearchParams } from 'next/navigation';
+import { getNextBestAction } from './actions';
 
 function SalesCopilotContent() {
   const searchParams = useSearchParams();
@@ -28,17 +29,9 @@ function SalesCopilotContent() {
   const handleNextBestAction = async () => {
     setIsSalesAILoading(true);
     try {
-      const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
-      const res = await fetch(`${apiUrl}/api/v1/leads/${leadId}/sales-ai?api_key=secret-client-key-123`, {
-        method: 'POST',
-      });
-      if (res.ok) {
-        const data = await res.json();
-        setSalesAIResult(data);
-        setIsPreviewOpen(true);
-      } else {
-        console.error("Failed to fetch Sales AI", res.status);
-      }
+      const data = await getNextBestAction(leadId);
+      setSalesAIResult(data);
+      setIsPreviewOpen(true);
     } catch (err) {
       console.error("Error fetching Sales AI:", err);
     } finally {

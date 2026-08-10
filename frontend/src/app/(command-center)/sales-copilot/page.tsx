@@ -226,18 +226,18 @@ function SalesCopilotContent() {
             <div className="space-y-4 mb-6">
               <div className="bg-[#0f0f13] p-4 rounded-xl border border-gray-800">
                 <span className="text-xs text-gray-500 uppercase font-bold tracking-wider block mb-1">Recommended Action</span>
-                <span className="text-indigo-400 font-semibold">{salesAIResult.action}</span>
+                <span className="text-indigo-400 font-semibold">{salesAIResult.recommendation?.action}</span>
               </div>
               
               <div className="bg-[#0f0f13] p-4 rounded-xl border border-gray-800">
                 <span className="text-xs text-gray-500 uppercase font-bold tracking-wider block mb-1">Rationale</span>
-                <p className="text-sm text-gray-300">{salesAIResult.rationale}</p>
+                <p className="text-sm text-gray-300">{salesAIResult.recommendation?.rationale}</p>
               </div>
 
               <div className="grid grid-cols-2 gap-4">
                 <div className="bg-[#0f0f13] p-4 rounded-xl border border-gray-800">
                   <span className="text-xs text-gray-500 uppercase font-bold tracking-wider block mb-1">Confidence</span>
-                  <span className="text-white font-bold">{salesAIResult.confidence_score}%</span>
+                  <span className="text-white font-bold">{salesAIResult.scores?.confidence_score}%</span>
                 </div>
                 <div className="bg-[#0f0f13] p-4 rounded-xl border border-gray-800">
                   <span className="text-xs text-gray-500 uppercase font-bold tracking-wider block mb-1">Assigned To</span>

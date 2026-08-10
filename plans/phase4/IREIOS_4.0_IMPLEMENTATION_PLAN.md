@@ -3,122 +3,193 @@
 | This doc owns | Does not own |
 |---|---|
 | Frozen decisions, phase overview, target surfaces, risks | Atomic steps → `IREIOS_4.0_STEP_BY_STEP.md` |
-| Corrected program baseline | 3.0 file tree history → `../phase3/IREIOS_3.0_IMPLEMENTATION_PLAN.md` |
+| Corrected program baseline | 3.0 history → `../phase3/` |
 
-**Status:** Draft defaults · **confirm via** `TEAM_LEAD_QUESTIONNAIRE.md`  
-**Spine unchanged:** `Event → CEO → Agent/Workflow → AE → EE → Event`
-
----
-
-## 1. What Product Phase 4 is
-
-**Product Phase 4** (this folder) is **not**:
-
-- Bug Phase 4 (P4.1–P4.3 notifications) — already `[x]` in `../phase3/`
-- Expansion Phase 4 (follow-up AE→EE) — already `[x]`
-
-It **is** the 4-week sprint in `../../IREIOS_Phase_4_Master_Sprint_Plan.md`, reinterpreted against the **live codebase**.
-
-### Corrected baseline (engineering audit 2026-08-07)
-
-| Area | Sprint claim | Code reality |
-|---|---|---|
-| Progress | 0% Day 1 | Backend ~70–80% of named Week 1–2 scope already shipped under IREIOS 3.0 |
-| Neo4j | Week 1 greenfield | Schema v1, writers, `/graph/*`, reply-path context **live** |
-| Forecast | Models trained | **Heuristic** prediction APIs live; no training pipeline |
-| Sales AI | LangGraph in n8n | **Python** `SalesAgent` + `POST .../sales-ai` + bus **live** |
-| Marketing routing | In n8n | **Python** assignment/escalation; n8n = report/Gmail fan-out |
-| HubSpot bi-di | Week 2 complete | Outbound+DLQ code ready; **portal skipped**; **no inbound webhook** |
-| FE graph/forecast/twin/sales-ai | Week 2 | Mock shells; Sales AI button **missing**; forecast still mock |
-
-**Overall project ~70%** in the sprint doc is directionally OK; **Phase 4 at 0% is false** for backend.
+**Status:** **LOCKED** from `TEAM_LEAD_QUESTIONNAIRE_ANSWERED.md` (2026-08-07)  
+**Spine unchanged:** `Event → CEO → Agent/Workflow → AE → EE → Event`  
+**Release:** 2026-09-03 · **Freeze:** 2026-08-20 · **Name:** IREIOS 4.0
 
 ---
 
-## 2. Frozen decisions (defaults until lead overrides)
+## 1. Program intent
 
-| ID | Decision | Default |
+**Product Phase 4 = finish/integrate what exists** (Q0.1 = A).
+
+| Area | Baseline (lead-amended) | Phase 4 work |
 |---|---|---|
-| D1 | Program intent | Integrate + FE cutover + QA/release — **not** rebuild agents |
-| D2 | Runtime spine | Keep CEO→AE→EE; no second orchestrator |
-| D3 | Sales NBA | Python only; FE calls existing HTTP API |
-| D4 | n8n role | Ops side-plane (Gmail/Sheets/notify); **not** FSM/assignment/NBA |
-| D5 | Forecasts | Heuristic MVP + honest OpenAPI text; optional &lt;200ms smoke |
-| D6 | Graph MVP | Neighborhood `{nodes,edges}` API (ego Lead + similar + agent [+ units stretch]) |
-| D7 | Twin MVP | Live layout from `InventoryUnit` + seed; wire R3F |
-| D8 | FE surfaces | Sales AI + scores on `(dashboard)` CRM/leads; graph/twin on `(command-center)`; forecast both |
-| D9 | Auth in browser | JWT cookie / same-origin; **no** hard-coded `secret-client-key-123` in shipped bundles |
-| D10 | HubSpot | Outbound live when portal ready; bi-di only if Q2=B; else `[-]` with reason |
-| D11 | Dual-path monolith | Root `agent.py` / `crm_sync.py` / `follow_up.py` remain shared libs (3.0 defer stands) |
-| D12 | Test prefix | `tests/test_f4_*.py` for Phase 4 |
-| D13 | Feature flags | Prefer env flags for HubSpot live, twin live, graph viz if freeze threatened |
+| Backend foundation | ~75% | Neighborhood API, twin API, HubSpot outbound go-live, sales-ai preview mode |
+| FE integration | ~15% | Wire Sales AI, forecasts, graph embed, twin, JWT SSE |
+| HubSpot/ops | ~10% | Portal key + outbound stability; bi-di deferred 4.1 |
+
+**Not this phase:** rebuild Sales AI / KG / predictions; LangGraph-in-n8n; trained ML; Approvals UI; new n8n WFs.
+
+---
+
+## 2. Frozen decisions
+
+| ID | Decision | Source |
+|---|---|---|
+| D1 | Integrate only — no greenfield agent rewrite | Q0.1 |
+| D2 | CEO→AE→EE spine; n8n ops side-plane | F9, F10, Q4 |
+| D3 | Sales NBA Python SoT | Q3.1 |
+| D4 | Sales AI UI: **Preview + Confirm** (no auto side-effects on first click) | Q3.3, Q3.6 |
+| D5 | Sales AI placement: **sales-copilot first**, then Leads table | Q3.2 |
+| D6 | No LLM email draft | Q3.8 |
+| D7 | Forecasts = heuristic MVP; UI label honest; INR ₹ crores | Q1 |
+| D8 | 200ms = soft/aspirational | Q1.2, F19 |
+| D9 | Graph = ego Lead network; embed Sales Copilot; SSE refetch | Q5 |
+| D10 | Twin = live layout API; 1p/2t/10f/40u; read-only; 30s poll | Q6 |
+| D11 | FE both surfaces; JWT on command-center; home `/dashboard` | Q7 |
+| D12 | Approvals UI deferred 4.1 | Q7.4 |
+| D13 | HubSpot outbound + prod portal; bi-di 4.1 best-effort; IREIOS wins | Q2 |
+| D14 | Idempotency identity: email + phone | Q2.6 |
+| D15 | Feature flags: `FEATURE_GRAPH_VIZ`, `FEATURE_TWIN_LIVE`, `FEATURE_HUBSPOT_LIVE` | Q8.4 |
+| D16 | Tests: `tests/test_f4_*.py`; G5 includes `task3_runner` | Q9 |
+| D17 | RC1 against read-replica | Q8.3 |
+| D18 | Bug tracker: GitHub Issues | Q9.4 |
+| D19 | Secrets: escalate Piyush/Mayank — not blocking design | Q11 |
 
 ---
 
 ## 3. Phase overview
 
-| Phase | Goal | Exit |
+| Step | Goal | Primary owner |
 |---|---|---|
-| P4-0 Baseline | Truth vs sprint; non-goals | Evidence baseline signed |
-| P4-1 Contracts | Day-1 shapes for FE/BE | API_CONTRACTS approved |
-| P4-2 Graph API | Neighborhood endpoint | pytest green |
-| P4-3 Twin API | Layout + seed | pytest + seed |
-| P4-4 HubSpot | Scoped track | DoD or `[-]` |
-| P4-5…9 FE | Sales AI, forecast, graph, twin, SSE | Backlog acceptance |
-| P4-10 Ops | n8n deltas only if required | Smoke |
-| G5 | MVP gate | Full gates |
-| QA / REL | Freeze + prod | Checklist |
+| P4-0 | Re-baseline sprint docs + evidence | Mayank |
+| P4-1 | Freeze contracts + Day-1 mocks for graph/twin | Aritro |
+| P4-2 | Neighborhood graph API | Aritro |
+| P4-3 | Twin inventory API + seed | Aritro |
+| P4-4 | HubSpot outbound live (flagged) | Aritro/Maitri |
+| P4-5 | FE Sales AI preview/confirm | Mayank |
+| P4-6 | FE Forecast widgets | Mayank |
+| P4-7 | FE Graph embed | Mayank |
+| P4-8 | FE Twin wire | Mayank |
+| P4-9 | FE JWT/SSE harden | Mayank |
+| P4-10 | n8n no-op (no new WFs) | Maitri |
+| G5 → QA → REL | Gates + freeze + 2026-09-03 | Mayank |
 
 ---
 
-## 4. Target surfaces (delta vs 3.0)
+## 4. Target surfaces
 
-### Backend (likely new or extend)
+### Backend (build / extend)
 
-| Surface | Purpose |
+| Surface | Action |
 |---|---|
-| `GET /api/v1/graph/neighborhood` or extend context | `{nodes,edges}` for force-graph |
-| `GET /api/v1/inventory/twin` | Tower/floor/unit layout for R3F |
-| Optional `POST /api/v1/webhook/hubspot` | Only if bi-di chosen |
-| Existing keep | `/predictions/*`, `/leads/{id}/sales-ai`, `/graph/health`, `/events/stream` |
+| `POST /api/v1/leads/{id}/sales-ai` | Add `mode=preview\|execute` (body or query). Preview = no CRM/AE/stage commit. Execute = full pipeline + optional NBA AE. |
+| `GET /api/v1/graph/neighborhood` | **New.** Ego graph `{nodes,edges}` from Neo4j Lead/Agent + optional unit interest from PG. |
+| `GET /api/v1/inventory/twin` | **New.** Group `InventoryUnit` → project/towers/floors/units. |
+| `seed_inventory.py` or `seed_twin_demo.py` | Seed 40 units (2 towers × 10 floors × 2). May add `floor` column or `meta_json.floor`. |
+| HubSpot | Flip `CRM_API_*` when key arrives; no inbound webhook in 4.0 |
+| Predictions | **No logic change** — optional `disclaimer` + `currency` fields additive |
 
 ### Frontend
 
 | Surface | Action |
 |---|---|
-| `(dashboard)/crm` + `leads` | Sales AI button |
-| `dashboard-mvp` + product dashboard | Live forecast widgets |
-| `knowledge-graph` | Replace `mockGraphService` |
-| `digital-twin` | Replace `mockTwinService` |
-| `sales-copilot` | Selected lead + sales-ai + timeline JWT |
-| SSE clients | JWT; remove hard-coded api_key |
+| `sales-copilot` | Lead picker; Sales AI Preview/Confirm; ego graph panel; timeline JWT |
+| `(dashboard)/leads` | Sales AI button (second priority) |
+| `dashboard-mvp` + `(dashboard)/dashboard` | Forecast from live APIs; ₹ Cr formatting; heuristic badge |
+| `digital-twin` | Live twin API; read-only; 30s refresh |
+| `knowledge-graph` | Optional full-page; primary embed is copilot |
+| `proxy.ts` | Guard command-center routes with JWT |
+| Auth | Zero `secret-client-key-123` in client bundles |
 
-### Out of scope (default non-goals)
+### Explicit non-goals (Q9.3)
 
 - LangGraph-in-n8n NBA rewrite  
-- Full ML training platform  
-- Mobile native  
-- Monolith module delete  
-- Fake accuracy claims on heuristics  
+- Full multi-model ML training  
+- HubSpot bi-di (unless portal unblocks early — still 4.1 default)  
+- Monolith `agent.py` deletion  
+- Mobile native apps  
+- Multi-region  
+- Approvals UI  
+- New n8n workflows  
+- Generate Email Draft  
 
 ---
 
-## 5. Risks
+## 5. Engineering design notes (no further lead Qs)
+
+### 5.1 Sales AI Preview + Confirm
+
+Today `run_sales_ai(..., sync_crm=True)` always scores, may assign, may advance stage, commits, optionally CRM.
+
+**Contract:**
+
+```http
+POST /api/v1/leads/{id}/sales-ai
+Content-Type: application/json
+{ "mode": "preview" }   // default for FE first click
+{ "mode": "execute" }   // Confirm button
+```
+
+| mode | score in response | DB write scores | assign | stage progress | CRM AE | NBA→AE side effects |
+|---|---|---|---|---|---|---|
+| `preview` | yes (computed) | **no** | no | no | no | no |
+| `execute` | yes | yes | yes | yes | yes | yes (existing bus mapping) |
+
+Bus-driven SalesAgent path **unchanged** (still auto-executes on events) — only HTTP manual path is preview/confirm.
+
+### 5.2 Graph neighborhood
+
+- Center: requested `lead_id` (required for embed).  
+- Nodes: center Lead, assigned Agent, up to N similar leads (from existing `get_similar_leads` / context).  
+- Optional stretch: Unit nodes from PG inventory matching lead location/property_type (not full Project/Tower/Comm mock).  
+- Soft SLA; max graph size sized for ≤500 leads/tenant sampling similar only.  
+- On SSE `lead.scored` | `lead.assigned` | `lead.hot` → FE refetches neighborhood.
+
+### 5.3 Twin layout
+
+`InventoryUnit` has `project_name`, `tower`, `unit_code`, `status`, `list_price`, `bhk`, `meta_json` — **no floor column today**.
+
+**Plan:** Prefer additive `floor Integer nullable` on `inventory_units` (migrate) **or** encode floor in `meta_json.floor` for zero-migrate MVP. Seed script creates:
+
+- project: e.g. `The Summit`  
+- towers: `Tower A`, `Tower B`  
+- floors 1–10, 2 units each → 40 units  
+- statuses mix available/hold/sold  
+
+API groups by project → tower → floor → units. Read-only FE.
+
+### 5.4 Forecast display
+
+| Widget | Endpoint | Format |
+|---|---|---|
+| Expected revenue | `GET /predictions/revenue` → `total_expected_revenue` | ₹ X.XX Cr (divide by 1e7) |
+| Cashflow | `GET /predictions/cashflow` → `expected_30pct_cashflow` | ₹ Cr |
+| Inventory mix | `GET /predictions/inventory` | counts by status |
+| Cancellation / at-risk | `GET /predictions/cancellation-risk` | list length / table |
+| Per-lead (copilot) | `GET /leads/{id}/prediction` | % + days |
+
+Always show disclaimer: **Heuristic estimate (not a trained model)**.
+
+### 5.5 HubSpot
+
+- Outbound only via existing EE path.  
+- When `CRM_API_KEY` real + `FEATURE_HUBSPOT_LIVE=true`, live upsert.  
+- Else demo stub / Sheets fallback (ops).  
+- No inbound webhook in 4.0.  
+- Conflict policy documented for 4.1: IREIOS wins.
+
+---
+
+## 6. Risks
 
 | Risk | Mitigation |
 |---|---|
-| Sprint DoD vs architecture conflict | Questionnaire + D1–D4; rewrite DoD language |
-| HubSpot email/portal blocker | Isolate P4-4; flag off |
-| Graph mock >> backend schema | Ego MVP; stretch full topology |
-| Twin without seed data | `seed_inventory` / new twin seed mandatory for demo |
-| Week 3 freeze slip | Feature-flag incomplete tracks |
-| Plans path break | `plans/phase3` archive; update AGENTS pointers |
+| HubSpot key late (Q11 N/A) | Flag off; demo Sheets; don’t block G5 FE |
+| Floor column migrate | Prefer `meta_json.floor` if migrate risk |
+| Preview vs bus dual behavior | Document; HTTP-only preview |
+| Freeze 2026-08-20 slip | Cut twin/graph to flag-off before freeze |
+| Secrets all N/A | Mayank→Piyush track parallel; not design blocker |
 
 ---
 
-## 6. Success metrics (MVP)
+## 7. Success metrics
 
-- FE acceptance in `docs/FRONTEND_BACKLOG.md` all required boxes  
-- G5 evidence pack green  
-- No High/Critical open at RC1  
-- Demo scripts in questionnaire Q12 pass on staging  
+- All Q12 required demos pass on staging/read-replica  
+- G5 evidence green  
+- Zero High/Critical GitHub Issues at RC1  
+- No hard-coded client keys in FE  
+- Sprint §6 shows ~75/15/10 not 0%  

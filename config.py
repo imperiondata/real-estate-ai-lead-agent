@@ -131,6 +131,11 @@ class Settings(BaseSettings):
     GOOGLE_CALENDAR_CREDENTIALS_JSON: str = ""
     GOOGLE_CALENDAR_TIMEZONE: str = "Asia/Kolkata"
 
+    # IREIOS 4.0 feature flags
+    FEATURE_GRAPH_VIZ: bool = True
+    FEATURE_TWIN_LIVE: bool = True
+    FEATURE_HUBSPOT_LIVE: bool = False
+
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8")
 
     @property

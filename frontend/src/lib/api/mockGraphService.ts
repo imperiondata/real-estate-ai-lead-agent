@@ -1,59 +1,92 @@
 // src/lib/api/mockGraphService.ts
+// IREIOS 4.0 Day-1 mock — ego neighborhood shape (matches GET /graph/neighborhood)
 
-export const generateMockGraph = () => {
-  const nodes: any[] = [];
-  const edges: any[] = [];
-  
-  // 1. Projects
-  nodes.push({ id: 'PRJ-101', label: 'Project', properties: { name: 'The Summit', location: 'Downtown', completion_status: 'Under Construction' }, val: 50, color: '#3b82f6' }); // Blue
-  
-  // 2. Towers
-  ['Tower A', 'Tower B'].forEach((tName, i) => {
-    const tId = `T-${i+1}`;
-    nodes.push({ id: tId, label: 'Tower', properties: { name: tName, floors: 30 }, val: 30, color: '#8b5cf6' }); // Purple
-    edges.push({ source: 'PRJ-101', target: tId, type: 'HAS_TOWER' });
-    
-    // 3. Units (5 per tower)
-    for (let u = 1; u <= 5; u++) {
-      const uId = `U-${i+1}0${u}`;
-      const status = Math.random() > 0.5 ? 'Available' : (Math.random() > 0.5 ? 'Hold' : 'Sold');
-      const color = status === 'Available' ? '#10b981' : status === 'Hold' ? '#f59e0b' : '#ef4444';
-      nodes.push({ id: uId, label: 'Unit', properties: { unit_number: `${tName.charAt(tName.length-1)}-${u}0${u}`, status, price: `$${(Math.random() * 2 + 1).toFixed(1)}M` }, val: 15, color });
-      edges.push({ source: tId, target: uId, type: 'HAS_UNIT' });
-    }
+export type EgoNode = {
+  id: string;
+  label: 'Lead' | 'Agent';
+  properties: Record<string, string | number>;
+  val: number;
+  color: string;
+};
+
+export type EgoEdge = {
+  source: string;
+  target: string;
+  type: 'ASSIGNED_TO' | 'SIMILAR_TO';
+  properties: Record<string, number | string>;
+};
+
+const TEMP_COLORS: Record<string, string> = {
+  Hot: '#ef4444',
+  Warm: '#f59e0b',
+  Cold: '#3b82f6',
+};
+const AGENT_COLOR = '#8b5cf6';
+
+/** Ego graph: center lead + assigned agent + similar leads (not full Project/Tower storm). */
+export const generateMockEgoGraph = (leadId = 123) => {
+  const nodes: EgoNode[] = [];
+  const edges: EgoEdge[] = [];
+
+  nodes.push({
+    id: `lead:${leadId}`,
+    label: 'Lead',
+    properties: { name: 'Priya Sharma', score: 82, temperature: 'Hot', lead_id: leadId },
+    val: 24,
+    color: TEMP_COLORS.Hot,
   });
 
-  // 4. Leads (20 leads)
-  const firstNames = ['John', 'Jane', 'Alex', 'Sarah', 'Michael', 'Emma', 'David', 'Olivia', 'James', 'Ava', 'Robert', 'Mia', 'William', 'Isabella', 'Joseph', 'Sophia', 'Thomas', 'Charlotte', 'Charles', 'Amelia'];
-  const unitIds = nodes.filter(n => n.label === 'Unit').map(n => n.id);
-  
-  firstNames.forEach((name, i) => {
-    const lId = `L-${100 + i}`;
-    const score = Math.floor(Math.random() * 60) + 40; // 40-100
-    const temperature = score > 80 ? 'Hot' : score > 60 ? 'Warm' : 'Cold';
-    const color = temperature === 'Hot' ? '#ef4444' : temperature === 'Warm' ? '#f59e0b' : '#3b82f6';
-    
-    nodes.push({ id: lId, label: 'Lead', properties: { name: `${name} ${['Smith', 'Johnson', 'Brown', 'Davis'][i % 4]}`, score, temperature, intent: 'High' }, val: 20, color });
-    
-    // Connect to a random unit
-    const targetUnit = unitIds[Math.floor(Math.random() * unitIds.length)];
-    edges.push({ source: lId, target: targetUnit, type: 'INTERESTED_IN', properties: { strength: score / 100 } });
-    
-    // 5. Communications (2-3 per lead)
-    const commCount = Math.floor(Math.random() * 2) + 1;
-    for (let c = 0; c < commCount; c++) {
-      const cId = `C-${i}-${c}`;
-      const type = Math.random() > 0.6 ? 'Call' : (Math.random() > 0.5 ? 'WhatsApp' : 'Email');
-      nodes.push({ id: cId, label: 'Communication', properties: { type, direction: 'Inbound', sentiment: Math.random() > 0.5 ? 'Positive' : 'Neutral' }, val: 10, color: '#64748b' }); // Slate
-      edges.push({ source: lId, target: cId, type: 'ENGAGED_IN' });
-    }
+  nodes.push({
+    id: 'agent:Jane',
+    label: 'Agent',
+    properties: { name: 'Jane' },
+    val: 18,
+    color: AGENT_COLOR,
   });
+  edges.push({
+    source: `lead:${leadId}`,
+    target: 'agent:Jane',
+    type: 'ASSIGNED_TO',
+    properties: {},
+  });
+
+  const similars = [
+    { id: 456, name: 'Arjun Mehta', score: 60, temperature: 'Warm' as const },
+    { id: 789, name: 'Neha Kapoor', score: 44, temperature: 'Cold' as const },
+    { id: 321, name: 'Rohan Das', score: 71, temperature: 'Hot' as const },
+  ];
+
+  for (const s of similars) {
+    nodes.push({
+      id: `lead:${s.id}`,
+      label: 'Lead',
+      properties: {
+        name: s.name,
+        score: s.score,
+        temperature: s.temperature,
+        lead_id: s.id,
+      },
+      val: 16,
+      color: TEMP_COLORS[s.temperature],
+    });
+    edges.push({
+      source: `lead:${leadId}`,
+      target: `lead:${s.id}`,
+      type: 'SIMILAR_TO',
+      properties: { strength: 0.72 },
+    });
+  }
 
   return { nodes, edges };
 };
 
+/** @deprecated use generateMockEgoGraph — kept as alias for older imports */
+export const generateMockGraph = generateMockEgoGraph;
+
 export const mockGraphResponse = {
-  status: "success",
-  data: generateMockGraph(),
-  ai_summary: "Graph successfully loaded. Showing 50+ semantic relationships including Hot Leads, Under Construction Towers, and recent Communications."
+  status: 'success',
+  available: true,
+  lead_id: 123,
+  data: generateMockEgoGraph(123),
+  ai_summary: 'Ego network: center lead, assigned agent, and similar leads.',
 };

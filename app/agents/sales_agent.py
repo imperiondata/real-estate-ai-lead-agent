@@ -20,7 +20,9 @@ plans/IREIOS_3.0_EXPANSION_CHANGELOG.md.
 from __future__ import annotations
 
 import logging
-from typing import Optional
+from typing import Literal, Optional
+
+from pydantic import BaseModel, field_validator
 
 from config import settings
 from database import SessionLocal
@@ -31,6 +33,22 @@ from app.automation_engine.engine import submit as ae_submit
 from app.intelligence.agent_matcher import ensure_lead_assignment
 
 logger = logging.getLogger("sales_agent")
+
+
+class SalesAiBody(BaseModel):
+    """HTTP body for POST /leads/{id}/sales-ai (IREIOS 4.0)."""
+
+    mode: Literal["preview", "execute"] = "preview"
+
+    @field_validator("mode", mode="before")
+    @classmethod
+    def _mode_ok(cls, v):
+        m = (v or "preview")
+        if isinstance(m, str):
+            m = m.strip().lower()
+        if m not in ("preview", "execute"):
+            raise ValueError("mode must be 'preview' or 'execute'")
+        return m
 
 # Wave B.1: bus subscription events.
 SALES_BUS_EVENTS = ["lead.scored", "lead.hot", "conversation.updated", "lead.qualified"]
@@ -114,13 +132,33 @@ def progress_deal_stage(lead: Lead) -> Optional[str]:
 class SalesAgent:
     """Phase 6 Sales AI orchestrator."""
 
-    async def run_sales_ai(self, db, lead: Lead, client_id: int, *, sync_crm: bool = False) -> dict:
+    async def run_sales_ai(
+        self,
+        db,
+        lead: Lead,
+        client_id: int,
+        *,
+        sync_crm: bool = False,
+        mode: str = "execute",
+    ) -> dict:
         """Score, assign, recommend, and (optionally) advance + sync the lead.
 
-        All mutations are committed by the caller's session (`db`); CRM sync is
-        fired as an AE action (fire-and-forget, DLQ-protected) when `sync_crm`.
+        ``mode``:
+          * ``preview`` — compute scores/NBA/would-be assignee; **no** DB writes,
+            no CRM, no commit. ``applied=false``.
+          * ``execute`` (default for bus/legacy callers) — full pipeline + commit.
+
+        HTTP default is ``preview`` (see main endpoint). Bus path stays execute.
         """
+        mode_norm = (mode or "execute").strip().lower()
+        if mode_norm not in ("preview", "execute"):
+            raise ValueError(f"invalid sales-ai mode: {mode}")
+
         scores = score_lead(lead)
+
+        if mode_norm == "preview":
+            return self._preview_sales_ai(db, lead, client_id, scores)
+
         for k, v in scores.items():
             setattr(lead, k, v)
 
@@ -145,11 +183,55 @@ class SalesAgent:
 
         db.commit()
         return {
+            "mode": "execute",
+            "applied": True,
             "scores": scores,
             "assigned_agent": assigned,
             "recommendation": recommendation,
             "funnel_stage": lead.funnel_stage,
             "crm_sync": crm_status,
+        }
+
+    def _preview_sales_ai(self, db, lead: Lead, client_id: int, scores: dict) -> dict:
+        """Compute NBA without persisting scores, assignment, or stage."""
+        from app.intelligence.agent_matcher import match_best_agent
+
+        snapshot = {k: getattr(lead, k, None) for k in scores}
+        try:
+            for k, v in scores.items():
+                setattr(lead, k, v)
+            recommendation = recommend_next_action(lead)
+        finally:
+            for k, v in snapshot.items():
+                setattr(lead, k, v)
+
+        assigned = lead.assigned_agent
+        if getattr(lead, "conversion_status", None) != "claimed":
+            agent_data = match_best_agent(
+                db=db,
+                client_id=client_id,
+                location=getattr(lead, "location", None) or "",
+                query=lead.intent or lead.location or "",
+                apply_workload=False,
+            )
+            candidate = agent_data.get("assigned_agent")
+            match_score = agent_data.get("match_score", 0)
+            if candidate and match_score >= settings.MIN_MATCH_SCORE:
+                assigned = candidate
+
+        try:
+            db.refresh(lead)
+        except Exception:
+            db.expire(lead)
+
+        return {
+            "mode": "preview",
+            "applied": False,
+            "scores": scores,
+            "assigned_agent": assigned,
+            "recommendation": recommendation,
+            "funnel_stage": lead.funnel_stage,
+            "crm_sync": None,
         }
 
     async def sync_crm_via_ae(self, lead_id: int, client_id: int) -> dict:

@@ -1,104 +1,113 @@
-# IREIOS Phase 4 — Master Sprint Plan & Execution Matrix
+# IREIOS 4.0 — Master Sprint Plan & Execution Matrix
 
-> **Operational plans (authoritative for engineering):** [`plans/phase4/`](plans/phase4/)  
-> **Lead decisions required:** [`plans/phase4/TEAM_LEAD_QUESTIONNAIRE.md`](plans/phase4/TEAM_LEAD_QUESTIONNAIRE.md)  
-> **Archived IREIOS 3.0 plans:** [`plans/phase3/`](plans/phase3/)
+> **Authoritative engineering queue:** [`plans/phase4/`](plans/phase4/)  
+> **Locked lead decisions:** [`plans/phase4/TEAM_LEAD_QUESTIONNAIRE_ANSWERED.md`](plans/phase4/TEAM_LEAD_QUESTIONNAIRE_ANSWERED.md)  
+> **Archived IREIOS 3.0 plans:** [`plans/phase3/`](plans/phase3/)  
 >
-> **Baseline audit (2026-08-07):** Several claims below are **incorrect or overstated** relative to the live codebase (e.g. “Current Progress: 0%”, “models trained”, LangGraph-in-n8n Sales AI, bi-directional HubSpot complete, Week-1 Neo4j/Prediction APIs as greenfield blockers). Full claim-by-claim table is questionnaire **§F**. Do not treat §6 0% or the dependency matrix as engineering truth until the lead re-baselines.
->
-> **Naming:** This is **Product Phase 4 / IREIOS 4.0**. It is distinct from already-shipped Bug Phase 4 (notifications) and Expansion Phase 4 (follow-up AE→EE) in `plans/phase3/`.
-
-## 1. Sprint Milestones & Strict Delivery Dates
-
-4-week compressed execution timeline. **Deviation from these milestones is strictly prohibited.**
-
-### Week 1 — Backend Foundation
-- **Aritro**: Neo4j Knowledge Graph schemas and ingestion APIs completed and deployed to staging.
-- **Aritro**: Forecast Engine (Prediction APIs) — models trained and serving endpoints finalized.
-- **Maitri**: Marketing AI routing workflows finalized on the automation plane.
-
-### Week 2 — Integration & UI Completion
-- **Aritro**: HubSpot CRM backend integration complete and fully exposed.
-- **Maitri**: Sales AI logic (Next Best Action) deployed; HubSpot CRM automation workflows fully wired.
-- **Mayank**: All frontend UI dependencies completed and integrated with live APIs (Graph Visualization, Forecast Widgets, Digital Twin MVP UI, Sales AI Button).
-
-### Week 3 — QA & Testing
-- Hard code freeze. Zero new development permitted.
-- Internal QA and end-to-end integration testing across all full-stack layers.
-- Pilot Release Candidate (RC1) cut and validated against the production database.
-
-### Week 4 — Production Release
-- Phase 4 MVP Production Release formally deployed to the main environment.
-- Final telemetry validation and stability monitoring.
+> **Naming:** **Product Phase 4 / IREIOS 4.0** (not Bug P4 or Expansion follow-up Phase 4).  
+> **Re-baselined:** 2026-08-07 per tech lead (Mayank). DoD and dependencies below match shipped architecture (CEO→AE→EE).
 
 ---
 
-## 2. Task Ownership & Definition of Done (DoD)
+## 1. Sprint Milestones & Delivery Dates
 
-### Mayank — Frontend Lead
+4-week timeline. Scope cuts prefer feature flags over silent DoD fiction. **Hard freeze: 2026-08-20.** **Prod release: 2026-09-03.**
+
+### Week 1 — Contracts + remaining backend surfaces
+- **Aritro:** Freeze API contracts (sales-ai preview/execute, graph neighborhood, twin layout). Day-1 mocks for FE.
+- **Aritro:** `GET /api/v1/graph/neighborhood` (ego Lead network) + `GET /api/v1/inventory/twin` + 40-unit seed.
+- **Aritro:** Forecast = **heuristic MVP** endpoints already live — display contract + optional disclaimer only (no ML training).
+- **Maitri:** No new n8n WFs; Python routing remains SoT; prepare HubSpot outbound go-live when portal key arrives (Piyush).
+
+### Week 2 — FE cutover + HubSpot outbound
+- **Mayank:** Sales AI **Preview + Confirm** on sales-copilot, then Leads table; forecast widgets (₹ Cr); graph embed; twin live read-only; JWT SSE; command-center auth.
+- **Aritro/Maitri:** HubSpot **outbound** live when credentials ready (`FEATURE_HUBSPOT_LIVE`); bi-di deferred to 4.1.
+
+### Week 3 — QA & Testing (from 2026-08-20)
+- Hard code freeze. Zero new development.
+- Internal QA + E2E. RC1 against **read-replica**.
+- Gate G5: pytest, isolation, DLQ-if-HS, FE lint, `task3_runner`, Q12 demos.
+
+### Week 4 — Production Release (2026-09-03)
+- IREIOS 4.0 MVP to production. Telemetry via `/metrics`. Runbook approved by **Mayank**.
+
+---
+
+## 2. Task Ownership & Definition of Done (DoD) — rewritten
+
+### Mayank — Frontend Lead / Tech Lead
 
 | Task | Definition of Done |
 |---|---|
-| Knowledge Graph Visualization | Interactive Neo4j graph UI fully rendered, accepts real-time node updates without blocking the main thread, correctly parses Aritro's Week 1 API payload. Zero console errors. |
-| Predictive Forecast Widgets | Dashboard widgets accurately reflect prediction data streams, dynamically updating based on CRM state changes. |
-| Digital Twin MVP UI | Base MVP shell deployed and responsive, seamlessly communicating with mocked/stubbed endpoints or the core event bus as dictated by backend availability. |
-| Sales AI Button | Action button active on the lead entity; successfully triggers Maitri's Next Best Action payload and renders the actionable response in the UI with strict error boundaries. |
+| Knowledge Graph Visualization | Ego-network UI (center lead + agent + similars) on **Sales Copilot**, driven by `GET /api/v1/graph/neighborhood`. SSE refetch on `lead.scored` / `lead.assigned` / `lead.hot`. Zero console errors. Desktop-first. |
+| Predictive Forecast Widgets | Widgets on `/dashboard` + dashboard-mvp use live `/api/v1/predictions/*`. Display **₹ crores**. Label: **Heuristic estimate (not a trained model)**. |
+| Digital Twin MVP UI | R3F page loads `GET /api/v1/inventory/twin` (seeded 1 project / 2 towers / 10 floors / 40 units). **Read-only.** Poll 30s. |
+| Sales AI | **Preview + Confirm** on sales-copilot first, then Leads table. Calls `POST .../sales-ai` with `mode=preview\|execute`. Renders action, rationale, scores, stage, assignee. Error boundaries. No email draft. |
+| Auth / SSE | JWT on product + command-center routes. Home **`/dashboard`**. Zero hard-coded `secret-client-key-123`. MockSSE unused. |
 
 ### Aritro — Backend Lead
 
 | Task | Definition of Done |
 |---|---|
-| Neo4j Knowledge Graph schema/APIs | Base schema constraints enforced. Ingestion APIs fully tested under concurrent load and integrated with the Redis Event Bus. Endpoints document standard HTTP response codes and return valid JSON structures for Mayank's UI. |
-| Forecast Engine (Prediction APIs) | ML scoring algorithms deployed. API endpoints securely authenticated, fully documented via OpenAPI, capable of returning predictions within a strict 200ms latency SLA. |
-| HubSpot CRM integration | Bi-directional webhook/API sync established. Validated mapping of all core CRM fields with comprehensive retry logic and DLQ (Dead Letter Queue) handling for failed syncs. |
+| Graph neighborhood API | `GET /api/v1/graph/neighborhood` returns FROZEN `{nodes,edges}` ego payload; tenant-scoped; Neo4j-down soft-empty; OpenAPI updated. |
+| Twin layout API | `GET /api/v1/inventory/twin` + seed script for demo tenant; status `available\|hold\|sold`. |
+| Forecast Engine | Heuristic MVP endpoints remain authenticated + documented. Soft &lt;200ms aspirational. **No** “models trained” claim. |
+| HubSpot CRM | **Outbound** push via existing EE path + DLQ when `FEATURE_HUBSPOT_LIVE` + real key. Identity: email + phone. **Not** bi-directional in 4.0. |
+| Sales AI HTTP | Support `mode=preview` (no side effects) and `mode=execute` (full pipeline). Bus path unchanged. |
 
 ### Maitri — AI Automation Lead
 
 | Task | Definition of Done |
 |---|---|
-| Sales AI Logic (Next Best Action) | LangGraph reasoning agents deployed to the n8n orchestrator. Logic correctly ingests user state and outputs a deterministic, secure Next Best Action payload to the Event Bus. |
-| Marketing AI Routing | Automated routing algorithms mapped in n8n. Inbound leads successfully assigned and escalated based on predictive engagement scores with zero routing dead-ends. |
-| HubSpot CRM Automation Logic | n8n operational workflows actively listening to Event Bus triggers (`lead.escalated`, etc.) and executing Aritro's HubSpot APIs with verified idempotency. |
+| Sales AI Logic (NBA) | **Python** `SalesAgent` remains source of truth (CEO→AE→EE). **No** LangGraph-in-n8n NBA. |
+| Marketing AI Routing | **Python** assignment/escalation remains SoT. Leave unassigned if match score low. **No new n8n workflows.** n8n = ops notifications only. |
+| HubSpot CRM Automation | Outbound stability when portal live; verified idempotency via existing path + DLQ. No bi-di n8n ownership of FSM. |
 
 ---
 
-## 3. Dependency Matrix
+## 3. Dependency Matrix (corrected)
 
 | Dependent Task | Owner | Blocked By | Blocking Owner | Clears By |
 |---|---|---|---|---|
-| Knowledge Graph Visualization UI | Mayank | Neo4j APIs | Aritro | End of Week 1 |
-| Predictive Forecast Widgets | Mayank | Prediction APIs | Aritro | Week 1 |
-| Sales AI Logic | Maitri | Prediction APIs (predictive heuristic data for routing) | Aritro | Week 1 |
-| HubSpot Automation Logic | Maitri | HubSpot CRM Integration APIs | Aritro | Week 2 |
-| Sales AI Button | Mayank | Sales AI Logic (payload structure lock) | Maitri | Week 2 |
+| Knowledge Graph Visualization UI | Mayank | Neighborhood API + FE wire | Aritro | Week 1 API / Week 2 FE |
+| Predictive Forecast Widgets | Mayank | **UI wiring only** (APIs live) | — | Week 2 |
+| Sales AI Button | Mayank | Preview/execute contract + FE wire | Aritro (mode) / Mayank (UI) | Week 2 |
+| HubSpot Automation | Maitri/Aritro | **Portal credentials (Piyush)** | Piyush/Mayank | Week 2 best-effort |
+| Twin UI | Mayank | Twin API + seed | Aritro | Week 1–2 |
 
 ---
 
-## 4. Risk Assessment & Mitigation Plan
+## 4. Risk Assessment & Mitigation
 
-**Critical Risk**: Compressing a 5-week integration schedule into a 4-week window poses severe stability risks, specifically cascading backend bottlenecks centered on Aritro.
+**Critical residual risks:** FE cutover density before freeze; HubSpot org/email key delay; new neighborhood/twin surfaces.
 
 **Mitigations:**
-1. **Contract-First Development** — Aritro must publish strict, mocked API contracts (Swagger/OpenAPI JSON stubs) on Day 1 of Week 1. Mayank and Maitri build against these mocks. If final APIs deviate from the Day 1 contract, Aritro is solely responsible for writing translation layers.
-2. **Parallelization** — No developer is permitted to wait for a live endpoint. Dependency blocking is theoretical with respect to final integration; development must proceed against stubs immediately.
-3. **Ruthless Triage** — Any feature threatening the Week 3 QA hard freeze will be feature-flagged off for the MVP release. Stability supersedes scope.
+1. **Contract-first** — FROZEN contracts in `plans/phase4/IREIOS_4.0_API_CONTRACTS.md`; Day-1 mocks.
+2. **Parallelization** — FE builds against mocks immediately after P4-1.
+3. **Feature flags** — `FEATURE_GRAPH_VIZ`, `FEATURE_TWIN_LIVE`, `FEATURE_HUBSPOT_LIVE` cut incomplete work at freeze.
+4. **No rebuild** of shipped Python agents.
 
 ---
 
 ## 5. Production Readiness Checklist (Week 3 QA)
 
-- [ ] All Week 1 & 2 tickets closed, merged, and deployed to Staging.
-- [ ] Zero High or Critical severity bugs in the tracker.
-- [ ] Full end-to-end integration test executed successfully across all UI layers and n8n automations.
-- [ ] Redis Event Bus telemetry verified with simulated concurrent stress tests.
-- [ ] Neo4j Knowledge Graph queries executing under the 200ms threshold.
-- [ ] Frontend CI/CD build passing with Exit Code 0 (zero linting errors, zero TypeScript errors).
-- [ ] Production rollout runbook documented and approved by the Technical Lead.
+- [ ] All required Phase 4 tickets closed or feature-flagged off
+- [ ] Zero High/Critical bugs on **GitHub Issues**
+- [ ] E2E demos (Q12) pass
+- [ ] Redis bus healthy under smoke load
+- [ ] Graph neighborhood soft-latency acceptable (200ms aspirational)
+- [ ] Frontend lint Exit 0
+- [ ] RC1 on **read-replica**
+- [ ] Runbook approved by **Mayank**
+- [ ] `task3_runner` green or explicitly waived
 
 ---
 
 ## 6. Project Status & Release Metrics
 
-- **Current Progress**: ~~0% (Sprint Day 1)~~ — **DISPUTED by engineering baseline (2026-08-07).** Backend already includes Neo4j v1 + graph APIs, Sales AI NBA + `POST .../sales-ai`, heuristic prediction APIs, CRM outbound+DLQ, marketing/CS agents, bus/SSE, n8n bridge. FE shells exist but are largely mock-wired; Sales AI button and live forecast/graph/twin cutover remain open. See `plans/phase4/TEAM_LEAD_QUESTIONNAIRE.md` §F and `plans/phase4/IREIOS_4.0_IMPLEMENTATION_PLAN.md` §1. **Lead must re-baseline % before exec reporting.**
-- **Overall Project Completion**: 70% (sprint figure — directionally OK; confirm weighting BE/FE/ops). Justified in part by Redis Event Bus, Next.js dashboard, and n8n integrations — not by “Phase 4 not started.”
-- **Expected Phase 4 Release Date**: September 3, 2026 (Phase 4 MVP Production Release) — confirm in questionnaire Q0.
+- **Current Progress (re-baselined 2026-08-07):** Backend foundation **~75%** · FE integration **~15%** · HubSpot/ops **~10%**. Phase 4 remaining work is primarily FE cutover + neighborhood/twin APIs + HubSpot outbound go-live — not greenfield spine.
+- **Overall Project Completion:** ~70% (directionally OK).
+- **Expected IREIOS 4.0 Release Date:** **2026-09-03**.
+- **Hard freeze:** **2026-08-20**.
+- **Weekly status owner / runbook approver:** **Mayank**.
+- **Envs (names):** `staging-api.ireios`, `prod-api.ireios` (hosted URLs still ops TBD).

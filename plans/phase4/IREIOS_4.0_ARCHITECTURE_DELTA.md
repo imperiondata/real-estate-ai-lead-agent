@@ -1,8 +1,8 @@
-# IREIOS 4.0 — Architecture delta (vs 3.0)
+# IREIOS 4.0 — Architecture delta (locked)
 
 | This doc owns | Does not own |
 |---|---|
-| **New/changed** layers, APIs, events for Product Phase 4 | Full 3.0 diagrams/event catalog → `../phase3/IREIOS_3.0_Architecture_Diagrams.md` |
+| New/changed layers for Product Phase 4 | Full 3.0 diagrams → `../phase3/IREIOS_3.0_Architecture_Diagrams.md` |
 
 **Spine (unchanged):**
 
@@ -10,110 +10,92 @@
 Event → CEO → Agent/Workflow → Automation Engine → Execution Engine → Event
 ```
 
-n8n remains **ops side-plane** via `n8n_bridge` (not CEO consumer group).
+n8n remains ops side-plane via `n8n_bridge` — **no new workflows in 4.0** (Q4.2).
 
 ---
 
-## 1. What stays (do not re-litigate)
+## 1. Unchanged (do not re-litigate)
 
-| Layer | Location |
-|---|---|
-| Event bus Redis Streams | `app/clients/event_bus_client.py` |
-| CEO | `app/orchestrator/ceo_orchestrator.py` |
-| AE / EE | `app/automation_engine/*`, `app/execution_engine/*` |
-| SalesAgent NBA | `app/agents/sales_agent.py` |
-| Neo4j client + writers | `app/knowledge_graph/*` |
-| Predictions heuristic | `app/api/predictions.py`, `app/services/prediction_service.py` |
-| CRM outbound | `crm_sync.py`, `CRMExecutor`, `crm_automation` |
-| SSE | `app/api/events.py` |
+Event bus, CEO, AE, EE, SalesAgent bus NBA, Neo4j writers + context API, heuristic predictions, CRM outbound path, marketing/CS agents, SSE stream/timeline.
 
 ---
 
-## 2. Proposed deltas (pending lead)
+## 2. Deltas
 
-### 2.1 Graph neighborhood (P4-2)
+### 2.1 Sales AI HTTP preview/execute
 
 ```text
-FE force-graph
-  → GET /api/v1/graph/neighborhood?lead_id= | ?scope=tenant_sample
-  → Neo4j read (tenant-scoped) + optional PG inventory join
-  → { status, data: { nodes[], edges[] }, ai_summary?, available }
+FE Confirm flow
+  POST /sales-ai {mode:preview}  → compute only → UI
+  POST /sales-ai {mode:execute} → run_sales_ai + AE side effects → UI refresh
+Bus path (lead.scored/hot/…) → unchanged auto execute
 ```
 
-**Node labels (MVP):** `Lead`, `Agent`  
-**Stretch:** `Unit`, `Project`/`Tower` if inventory supports  
-**Not default MVP:** full Communication node storm from mock (unless lead requires)
-
-Existing `GET /graph/leads/{id}/context` remains for LLM/reply-path; neighborhood is **viz-oriented**.
-
-### 2.2 Digital twin layout (P4-3)
+### 2.2 Graph neighborhood
 
 ```text
-FE R3F
+Sales Copilot embed
+  → GET /api/v1/graph/neighborhood?lead_id=
+  → Neo4j similar + agent (+ optional PG units stretch)
+  → {nodes, edges}
+  → SSE lead.* → refetch
+```
+
+### 2.3 Twin layout
+
+```text
+Digital Twin page
   → GET /api/v1/inventory/twin
-  → Postgres InventoryUnit (+ grouping keys)
-  → { projects[] | towers[]: { floors[]: { units[] } } }
+  → Postgres InventoryUnit grouped project/tower/floor/unit
+  → R3F read-only · poll 30s
 ```
 
-Bus: optional refresh on `inventory.hold` / inventory events (poll OK for MVP).
+### 2.4 HubSpot
 
-### 2.3 HubSpot inbound (only if Q2=B)
+Outbound only when flagged live. No inbound webhook node in 4.0 architecture.
 
-```text
-HubSpot → POST /api/v1/webhook/hubspot → verify signature
-  → map fields → PG lead (client-scoped)
-  → publish catalog event (e.g. conversation.updated or lead.* — **no invented types without catalog update**)
-```
+### 2.5 FE auth
 
-### 2.4 FE auth delta
-
-Browser EventSource / fetch: **JWT cookie** preferred over `?api_key=` embedded in JS bundles.
+Command-center routes JWT-guarded like product dashboard. Browser EventSource uses cookie, not query api_key.
 
 ---
 
 ## 3. Event catalog
 
-**Default:** no new event types for Phase 4 MVP.
+**No new event types required for 4.0 MVP.**
 
-| If needed | Proposal | Gate |
-|---|---|---|
-| Twin/UI refresh hint | reuse existing inventory/lead events | Prefer |
-| NBA manually requested | optional `sales.nba.requested` | Only if lead wants timeline audit; else HTTP-only is enough |
-| HubSpot inbound applied | enrich `lead.*` payload | Catalog amend in phase3 arch doc or delta § here |
-
-Amend `../phase3/IREIOS_3.0_Architecture_Diagrams.md` §4 **or** add rows below when frozen — do not silently invent names in code.
+Optional later (not MVP): `sales.nba.executed` for timeline audit — only if execute path needs explicit bus publish; can log `EventLog` instead.
 
 ---
 
-## 4. Explicit non-deltas
-
-| Rejected (default) | Reason |
-|---|---|
-| LangGraph NBA inside n8n | Dual brain; violates n8n hard rules |
-| Second prediction service claiming ML accuracy without models | Honesty / compliance |
-| FE → Redis/Neo4j direct | Tenant + security |
-| Replacing CEO with n8n | 3.0 spine |
-
----
-
-## 5. Diagram (Phase 4 FE integration)
+## 4. Diagram
 
 ```text
-                    ┌─────────────────────────────┐
-  Twilio/WA ───────►│ FastAPI main + agents (3.0) │
-                    └─────────────┬───────────────┘
-                                  │ bus events
-                    ┌─────────────▼───────────────┐
-                    │ CEO → agents → AE → EE      │
-                    └─────────────┬───────────────┘
-                                  │
-         ┌────────────────────────┼────────────────────────┐
-         ▼                        ▼                        ▼
-   Neo4j KG                 Postgres                  HubSpot (out)
-   neighborhood API         twin + predictions         optional in
-         │                        │                        │
-         └────────────────────────┼────────────────────────┘
-                                  ▼
-                    Next.js (dashboard + command-center)
-                    JWT · SSE · Sales AI button · widgets
+WhatsApp/Twilio → FastAPI agents (3.0)
+        │
+        ▼ bus
+   CEO → agents → AE → EE ──► Twilio / CRM / Calendar / Tasks
+        │
+        ├── Neo4j ◄── neighborhood read (new)
+        ├── PG InventoryUnit ──► twin read (new)
+        └── predictions read (existing)
+
+Next.js
+  /dashboard          KPIs + forecast (live)
+  /leads              Sales AI button (2nd)
+  /sales-copilot      Sales AI preview/confirm + graph embed + timeline
+  /digital-twin       twin API
+  /dashboard-mvp      forecast + SSE pulse
 ```
+
+---
+
+## 5. Rejected
+
+| Idea | Reason |
+|---|---|
+| LangGraph NBA in n8n | Lead F9 amend + hard rules |
+| Full Project/Tower/Comm force-graph | Q5.1 ego only |
+| Twin write-back / holds from UI | Q6.4 read-only |
+| HubSpot inbound | Q2.8 → 4.1 |
+| Approvals UI | Q7.4 → 4.1 |

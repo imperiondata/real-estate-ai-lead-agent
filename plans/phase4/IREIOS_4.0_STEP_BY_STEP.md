@@ -1,219 +1,310 @@
-# IREIOS 4.0 — Step-by-step tasks
+# IREIOS 4.0 — Step-by-step tasks (implementation-ready)
 
 | This doc owns | Does not own |
 |---|---|
 | Atomic tasks: Files / Steps / Test / Done / Rollback | Order → `UNIFIED_EXECUTION_ORDER.md` |
-| | Lead decisions → `TEAM_LEAD_QUESTIONNAIRE.md` |
+| | Locked decisions → `TEAM_LEAD_QUESTIONNAIRE_ANSWERED.md` |
 
-**Status legend:** `[ ]` · `[~]` · `[x]` · `[-]` · `[?]` = blocked on lead  
-**Test prefix:** `tests/test_f4_*.py`
-
-Fill concrete schemas after questionnaire returns. Items marked ⚠ stay high-level until then.
-
----
-
-## P4-0 — Baseline audit
-
-### Task P4-0.1 — Inventory vs sprint
-- **Files:** Evidence Pack baseline; optional note in root sprint header
-- **Steps:**
-  1. Confirm shipped matrix (Sales AI, graph context, predictions, CRM outbound, n8n bridge).
-  2. List false claims from sprint (see questionnaire §F).
-  3. Freeze non-goals in Implementation Plan §2.
-- **Test:** N/A (doc)
-- **Done:** Evidence Pack § Baseline all checked; UNIFIED P4-0 → `[x]`
-- **Rollback:** N/A
-- **Status:** `[ ]`
+**Status legend:** `[ ]` · `[~]` · `[x]` · `[-]`  
+**Test prefix:** `tests/test_f4_*.py`  
+**Contracts:** `IREIOS_4.0_API_CONTRACTS.md` (FROZEN)
 
 ---
 
-## P4-1 — Contract freeze
+## P4-0 — Baseline & sprint re-baseline
 
-### Task P4-1.1 — Capture live OpenAPI for shipped routes
-- **Files:** `openapi_ireios4.json` (regen); `IREIOS_4.0_API_CONTRACTS.md` §0
+### Task P4-0.1 — Apply lead §F amendments to sprint brief
+- **Files:** `IREIOS_Phase_4_Master_Sprint_Plan.md`
 - **Steps:**
-  1. Run API locally; dump `/openapi.json`.
-  2. Document exact `sales-ai` + predictions response keys.
-  3. Mark §0 `FROZEN` after Mayank ack.
-- **Test:** Contract smoke curls in API_CONTRACTS §5 (shipped routes only)
-- **Done:** §0 FROZEN; no FE blocked on unknown keys
-- **Rollback:** Revert contract doc only
-- **Status:** `[ ]`
-
-### Task P4-1.2 — Freeze proposed neighborhood + twin shapes ⚠
-- **Files:** `IREIOS_4.0_API_CONTRACTS.md` §1–2
-- **Steps:** Apply lead Q5/Q6 answers; mark FROZEN or CUT.
+  1. §6 progress → Backend ~75% / FE ~15% / HubSpot-ops ~10%.
+  2. Rewrite DoD rows: Forecast = heuristic MVP; Sales AI = Python CEO→AE→EE; Marketing routing = Python; HubSpot = outbound complete (not bi-di).
+  3. Dependency matrix → UI wiring / neighborhood contract / portal credentials (not greenfield APIs).
+  4. Name product **IREIOS 4.0** in header.
 - **Test:** N/A
-- **Done:** FE can mock against frozen JSON
-- **Status:** `[?]`
+- **Done:** Sprint doc matches answered questionnaire; no “0%” / “models trained” / “LangGraph-in-n8n” as active DoD
+- **Rollback:** git revert doc only
+- **Status:** `[x]`
+
+### Task P4-0.2 — Evidence baseline sign-off
+- **Files:** `IREIOS_4.0_EVIDENCE_PACK.md`
+- **Steps:** Check all “already shipped” baseline boxes; note G4 n8n WF-1 ops-pending as non-blocking.
+- **Done:** Baseline section complete
+- **Status:** `[x]`
 
 ---
 
-## P4-2 — Graph neighborhood API ⚠ Q5
+## P4-1 — Contract freeze & mocks
 
-### Task P4-2.1 — Implement neighborhood endpoint
-- **Files (expected):** `app/knowledge_graph/graph_api.py`, `neo4j_kg.py` / read helpers, `tests/test_f4_graph_neighborhood.py`
+### Task P4-1.1 — Publish Day-1 FE mocks matching frozen contracts
+- **Files:** `frontend/src/lib/api/mockGraphService.ts` (align ego shape), optional `mockTwinService.ts` seed shape, `IREIOS_4.0_API_CONTRACTS.md` (already frozen)
 - **Steps:**
-  1. Add JWT tenant-scoped `GET .../neighborhood`.
-  2. Map Neo4j Lead/Agent (+ stretch units) → `{nodes,edges}`.
-  3. Soft-fail when Neo4j down (`available: false`).
-  4. Optional: PG hydrate names/scores like event writers.
-- **Test:** `pytest tests/test_f4_graph_neighborhood.py -v`; isolation if queries touch client_id
-- **Done:** Contract §1 satisfied; p95 smoke noted in Evidence Pack
-- **Rollback:** Feature-flag route off; FE keeps mock
-- **Status:** `[?]`
+  1. Adjust mock graph generator to **ego** shape (center lead + agent + similars) matching §2 contract — not full Project/Tower/Comm storm as sole mock.
+  2. Align twin mock to 1 project / 2 towers / 10 floors / 40 units.
+  3. Document sales-ai preview response fixture for FE.
+- **Test:** FE builds against mocks without live API
+- **Done:** Mayank unblocked parallel to BE
+- **Status:** `[x]` ego + twin mocks aligned 2026-08-10
 
-### Task P4-2.2 — Schema stretch (only if lead Q5=B)
-- **Files:** `neo4j_client.migrate_schema`, writers, seed
-- **Status:** `[?]`
+### Task P4-1.2 — Capture live OpenAPI baseline
+- **Files:** `openapi_ireios4.json`
+- **Steps:** Dump `/openapi.json` from running app (pre-change); after P4-2/3 re-dump.
+- **Status:** `[x]` regenerated 2026-08-10 from live `/openapi.json`
 
 ---
 
-## P4-3 — Twin inventory API ⚠ Q6
+## P4-2 — Graph neighborhood API
 
-### Task P4-3.1 — Layout endpoint + seed
-- **Files (expected):** new router or `app/api/inventory.py`, model usage `InventoryUnit`, `seed_*.py`, `tests/test_f4_twin.py`
+### Task P4-2.1 — Implement `GET /api/v1/graph/neighborhood`
+- **Files:**
+  - Edit: `app/knowledge_graph/graph_api.py`
+  - Edit: `app/knowledge_graph/neo4j_kg.py` and/or `app/clients/graph_client.py` (read helpers)
+  - Create: `tests/test_f4_graph_neighborhood.py`
+  - Optional: `config.py` / `.env.example` → `FEATURE_GRAPH_VIZ`
 - **Steps:**
-  1. Define grouping (project/tower/floor) from existing columns or additive columns ⚠ lead.
-  2. `GET /api/v1/inventory/twin` client-scoped.
-  3. Seed script for demo tenant (Client_1).
-  4. Wire counts consistency with `/predictions/inventory` where possible.
+  1. JWT via existing graph/events auth (`get_events_client` or `get_current_client`).
+  2. Require `lead_id`; 404 if `Lead.client_id` mismatch.
+  3. Build nodes: center lead (hydrate name/score/temp from PG), assigned agent, similar leads from existing graph context helpers.
+  4. Edges: `ASSIGNED_TO`, `SIMILAR_TO` (+ strength if available).
+  5. Node ids stable: `lead:{id}`, `agent:{name}`.
+  6. Colors per contract; `ai_summary` static string.
+  7. Neo4j down → `available: false`, empty arrays, HTTP 200.
+  8. Honor `FEATURE_GRAPH_VIZ=false` → same as unavailable.
+  9. Soft latency: no hard fail; log if &gt;200ms.
+- **Test:**
+  ```bash
+  pytest tests/test_f4_graph_neighborhood.py -v
+  python gate_isolation_test.py
+  ```
+- **Done:** Contract §2 satisfied; tenant 404 proven
+- **Rollback:** Remove route; flag false
+- **Status:** `[x]` 2026-08-10
+
+### Task P4-2.2 — Stretch Unit nodes (optional, cut if freeze risk)
+- **Files:** same + PG `InventoryUnit` query by location
+- **Status:** `[-]` deferred (not required for G5)
+
+---
+
+## P4-3 — Twin inventory API + seed
+
+### Task P4-3.1 — Floor field + twin endpoint
+- **Files:**
+  - Edit: `models.py` (`InventoryUnit` — add `floor = Column(Integer, nullable=True)` **or** use `meta_json["floor"]` only)
+  - Create: `app/api/inventory.py` (or extend predictions router — prefer dedicated `inventory` router)
+  - Edit: `main.py` mount router
+  - Edit: `migrate_db.py` / migration path used by project
+  - Create: `tests/test_f4_twin.py`
+  - Edit: `config.py` → `FEATURE_TWIN_LIVE`
+- **Steps:**
+  1. Prefer `floor` column if migrate is cheap; else `meta_json.floor`.
+  2. `GET /api/v1/inventory/twin` JWT client-scoped.
+  3. Group rows: single project (first `project_name` or fixed demo name) → tower → floor level → units.
+  4. Map status to lowercase `available|hold|sold`.
+  5. `counts` aggregate; `price` = `list_price`; `currency` = `INR`.
+  6. Empty inventory → empty towers + zeros zeros.
+  7. Flag off → empty + `available`-style message or 200 empty.
 - **Test:** `pytest tests/test_f4_twin.py -v`
-- **Done:** Seeded tenant returns ≥1 tower with units; empty tenant → empty towers[]
-- **Rollback:** Flag route; FE mock
-- **Status:** `[?]`
+- **Done:** Contract §3 JSON shape
+- **Rollback:** Unmount router; flag false
+- **Status:** `[x]` 2026-08-10 (`meta_json.floor`)
 
----
-
-## P4-4 — HubSpot track ⚠ Q2
-
-### Task P4-4.1 — Decision record
-- **Files:** Evidence Pack HubSpot section; `.env.example` notes only if needed
-- **Steps:** Apply Q2 A/B/C/D; if D mark UNIFIED `[-]` with reason.
-- **Status:** `[?]`
-
-### Task P4-4.2 — Live outbound (if A or B)
-- **Files:** `crm_sync.py` config only if mapping changes; no chat-path `sync_lead_to_crm` calls
-- **Steps:** Real `CRM_API_*`; portal property create; drill `gate_dlq_drill` + replay
-- **Done:** One real contact upsert in sandbox/prod portal
-- **Status:** `[?]`
-
-### Task P4-4.3 — Inbound webhook (if B only)
-- **Files:** new route, signature verify, tests `test_f4_hubspot_inbound.py`
-- **Steps:** ⚠ full design from Q2.4–2.6
-- **Status:** `[?]`
-
-### Task P4-4.4 — n8n HubSpot node (if C only)
-- **Files:** `n8n_workflows/*`, `docs/N8N_INTEGRATION.md`
-- **Status:** `[?]`
-
----
-
-## P4-5 — FE Sales AI button
-
-### Task P4-5.1 — CRM + Leads button
-- **Files (expected):** `frontend/src/app/(dashboard)/crm/KanbanBoard.tsx`, `leads/LeadsTable.tsx`, small API helper
+### Task P4-3.2 — Seed demo twin inventory
+- **Files:** Edit `seed_inventory.py` or create `seed_twin_demo.py`
 - **Steps:**
-  1. JWT fetch `POST /api/v1/leads/{id}/sales-ai`.
-  2. Loading + error boundary; render action/rationale/scores/stage.
-  3. Optional: refresh lead row after success.
-- **Test:** Manual + `npm run lint`
-- **Done:** No mock NBA on these surfaces; works on seeded lead
-- **Rollback:** Hide button behind flag
-- **Status:** `[ ]`
+  1. For client_id=1 (seed client): 1 project **The Summit**, towers **Tower A/B**, floors 1–10, 2 units/floor = 40.
+  2. unit_code pattern `A-101`, `A-102`, … status mix ~50/25/25 available/hold/sold.
+  3. list_price in INR absolute (e.g. 1.2e7–2.5e7).
+  4. Idempotent re-run (delete client inventory first or upsert by unit_code).
+- **Test:** run seed → GET twin returns 40 units
+- **Done:** Demo tenant ready for FE
+- **Status:** `[x]` `seed_twin_demo.py`
 
-### Task P4-5.2 — Sales copilot wire
-- **Files:** `frontend/src/app/(command-center)/sales-copilot/page.tsx`
-- **Steps:** Selected lead id (not hardcoded `1`); call sales-ai; timeline JWT
-- **Done:** FRONTEND_BACKLOG §6 + timeline §3
-- **Status:** `[ ]`
+---
+
+## P4-4 — HubSpot outbound go-live
+
+### Task P4-4.1 — Feature flag + credential wiring
+- **Files:** `config.py`, `.env.example`, `crm_sync.py` (only if needed for email+phone identity notes), `AGENTS.md`
+- **Steps:**
+  1. Add `FEATURE_HUBSPOT_LIVE` default false.
+  2. When false: existing demo stub behavior.
+  3. When true + real `CRM_API_URL`/`CRM_API_KEY`: real push.
+  4. Document identity match email+phone for portal property setup (ops/Piyush).
+  5. No inbound webhook.
+- **Test:** `gate_dlq_drill.py` with stub; live sandbox when key arrives
+- **Done:** Flag documented; live path verified **or** UNIFIED note Sheets fallback until key
+- **Status:** `[x]` flag + stub gate shipped 2026-08-10
+- **Blocked externally:** HubSpot key from Piyush (Q11) — do not block G5 FE
+
+### Task P4-4.2 — Maitri ops smoke (if live)
+- **Files:** none code; DLQ replay runbook
+- **Steps:** One real contact upsert; DLQ replay green
+- **Status:** `[-]` key not delivered — Sheets/demo stub until portal
+
+---
+
+## P4-5 — FE Sales AI (Preview + Confirm)
+
+### Task P4-5.1 — API helper + sales-copilot UI
+- **Files:**
+  - `frontend/src/app/(command-center)/sales-copilot/page.tsx`
+  - Optional helper `frontend/src/lib/api/salesAi.ts`
+- **Steps:**
+  1. Lead selector (not hard-coded id `1`).
+  2. Button **Get recommendation** → `POST .../sales-ai` `{mode:"preview"}` with JWT.
+  3. Render: `recommendation.action`, `rationale`, `scores`, `funnel_stage`, `assigned_agent`.
+  4. Button **Confirm & apply** → `{mode:"execute"}`; loading + error boundary; disable double-submit.
+  5. Refresh timeline after execute.
+  6. No “Generate Email Draft” (out of scope).
+- **Test:** `cd frontend && npm run lint`; manual with seeded lead
+- **Done:** Q12 Sales AI demo path works on copilot
+- **Status:** `[x]` 2026-08-10
+
+### Task P4-5.2 — Leads table button (second priority)
+- **Files:** `frontend/src/app/(dashboard)/leads/LeadsTable.tsx` (+ modal/drawer for preview/confirm)
+- **Steps:** Same preview/confirm pattern; compact UI
+- **Done:** Second surface live
+- **Status:** `[x]`
+- **Note:** CRM Kanban **not** required (Q3.2 override vs older DoD draft)
 
 ---
 
 ## P4-6 — FE Forecast widgets
 
-### Task P4-6.1 — Replace mockForecastData
-- **Files:** `dashboard-mvp/page.tsx`, optional product `dashboard/page.tsx` / Charts, `mockService.ts`
+### Task P4-6.1 — dashboard-mvp live predictions
+- **Files:** `frontend/src/app/(command-center)/dashboard-mvp/page.tsx`, `frontend/src/lib/api/mockService.ts`
 - **Steps:**
-  1. Fetch `/predictions/revenue|cashflow|inventory|cancellation-risk`.
-  2. Map to existing cards/charts.
-  3. Remove demo `+150000` SSE math for KPIs where replaced by APIs.
-  4. Label UI as estimate/heuristic if required by Q1.
-- **Test:** lint; manual network tab
-- **Done:** FRONTEND_BACKLOG §7; no hardcoded mock revenue as sole source
-- **Status:** `[ ]`
+  1. Fetch revenue, cashflow, inventory, cancellation-risk with JWT.
+  2. Format money as **₹ X.XX Cr** (`value / 1e7`).
+  3. Show disclaimer badge: “Heuristic estimate (not a trained model)”.
+  4. Stop using `mockForecastData` as sole source; remove demo `+150000` KPI math where replaced.
+- **Test:** lint + network tab
+- **Done:** FRONTEND_BACKLOG forecast item
+- **Status:** `[x]`
+
+### Task P4-6.2 — Product dashboard forecast strip
+- **Files:** `frontend/src/app/(dashboard)/dashboard/page.tsx`, `Charts.tsx` as needed
+- **Steps:** Add compact forecast cards from same endpoints (home is `/dashboard`)
+- **Status:** `[x]`
 
 ---
 
-## P4-7 — FE Graph panel ⚠ depends P4-2
+## P4-7 — FE Graph embed
 
-### Task P4-7.1 — Wire knowledge-graph page
-- **Files:** `knowledge-graph/page.tsx`, `GraphWrapper.tsx`, replace/retire `mockGraphService` prod path
-- **Steps:** JWT fetch neighborhood; empty/unavailable states; filter UI keeps working
-- **Done:** Sprint Mayank graph DoD (live payload, no console errors)
-- **Status:** `[?]`
+### Task P4-5 depends P4-2 for live data; mocks OK until then
+
+### Task P4-7.1 — Ego graph on Sales Copilot
+- **Files:** reuse `GraphWrapper.tsx` or extract shared component; `sales-copilot/page.tsx`
+- **Steps:**
+  1. Fetch `/api/v1/graph/neighborhood?lead_id=` for selected lead.
+  2. Handle `available:false` empty state.
+  3. On SSE events `lead.scored|lead.assigned|lead.hot` for that lead → refetch.
+  4. Desktop-first layout.
+- **Test:** lint; manual with Neo4j up/down
+- **Done:** Q12 graph demo
+- **Status:** `[x]`
+
+### Task P4-7.2 — knowledge-graph page optional
+- **Files:** `knowledge-graph/page.tsx`
+- **Steps:** Lead id query param or selector; same API; or link “open in copilot”
+- **Status:** `[x]`
 
 ---
 
-## P4-8 — FE Digital Twin ⚠ depends P4-3
+## P4-8 — FE Digital Twin
 
 ### Task P4-8.1 — Wire R3F to twin API
-- **Files:** `digital-twin/page.tsx`, `mockTwinService.ts`
-- **Steps:** Fetch twin layout; status colors; hide sold if existing UX; empty state
-- **Done:** Seeded demo renders real unit ids/statuses
-- **Status:** `[?]`
+- **Files:** `frontend/src/app/(command-center)/digital-twin/page.tsx`, `mockTwinService.ts`
+- **Steps:**
+  1. Fetch `/api/v1/inventory/twin` JWT.
+  2. Map towers/floors/units to existing R3F scene.
+  3. Status colors available/hold/sold; read-only (no hold writes).
+  4. Poll every **30s**.
+  5. Empty state if no inventory / flag off.
+  6. Cap client render at 500 units.
+- **Test:** lint; seeded 40 units visible
+- **Done:** Q12 twin demo
+- **Status:** `[x]`
 
 ---
 
-## P4-9 — FE SSE / JWT harden
+## P4-9 — FE SSE / JWT / routing harden
 
-### Task P4-9.1 — Remove hard-coded api_key from client
-- **Files:** `dashboard-mvp/page.tsx`, `sales-copilot/page.tsx`, any EventSource callers
-- **Steps:** Cookie/same-origin pattern; reconnect; ignore `: ping`
-- **Done:** FRONTEND_BACKLOG acceptance; grep client src has no `secret-client-key-123`
-- **Status:** `[ ]`
+### Task P4-9.1 — Remove hard-coded api_key
+- **Files:** all FE `EventSource` / fetch callers (`dashboard-mvp`, `sales-copilot`, …)
+- **Steps:** Cookie credentials / same-origin proxy; grep must find **zero** `secret-client-key-123` under `frontend/src`
+- **Done:** Q7.5
+- **Status:** `[x]` rewrite + purge
 
 ### Task P4-9.2 — MockSSE quarantine
 - **Files:** `frontend/src/lib/api/mockService.ts`
-- **Steps:** Delete or move under `__mocks__` / dev-only; no prod imports
-- **Status:** `[ ]`
+- **Steps:** Delete class or move to dev-only path; no prod imports
+- **Status:** `[x]` no MockSSE; mock chart series only
 
-### Task P4-9.3 — Command-center auth parity ⚠ Q7.2
-- **Files:** `frontend/src/proxy.ts` (middleware)
-- **Steps:** If lead Yes — guard command-center routes like dashboard
-- **Status:** `[?]`
+### Task P4-9.3 — Middleware guard command-center
+- **Files:** `frontend/src/proxy.ts` (Next middleware)
+- **Steps:** Protect `/dashboard-mvp`, `/sales-copilot`, `/knowledge-graph`, `/digital-twin`, `/ai-chat` like `/dashboard/*`; redirect `/login`
+- **Status:** `[x]`
+
+### Task P4-9.4 — Post-login home `/dashboard`
+- **Files:** login redirect / middleware default
+- **Steps:** Ensure successful login lands on `/dashboard` not mvp
+- **Status:** `[x]`
+
+### Task P4-9.5 — Timeline selected lead only
+- **Files:** `sales-copilot/page.tsx`
+- **Steps:** Bind timeline to selected lead id; 404 handling
+- **Status:** `[x]`
 
 ---
 
-## P4-10 — Ops / n8n ⚠ Q4
+## P4-10 — Ops / n8n
 
-### Task P4-10.1 — Only lead-requested WF deltas
-- **Default:** no code if Q4 says accept Python routing
-- **Status:** `[?]`
+### Task P4-10.1 — No new workflows
+- **Steps:** Confirm Q4.2 None; do not add WF-7+. Optional smoke existing bridge if env ready.
+- **Status:** `[-]` no-op default
 
 ---
 
-## G5 — Phase 4 MVP gate
+## G5 — MVP gate
 
-### Task G5.1 — Gate run
+### Task G5.1 — Full gate
 - **Steps:**
-  1. `pytest tests/ -q` (or agreed subset + all `test_f4_*`)
+  1. `pytest tests/test_f4_*.py -v` and `pytest tests/ -q` (or agreed matrix)
   2. `python gate_isolation_test.py`
   3. `python gate_dlq_drill.py` (+ replay if HubSpot live)
-  4. `cd frontend && npm run lint`
-  5. Manual demos Q12
-  6. Evidence Pack G5 all `[x]` or `[~]` with owner
+  4. `python task3_runner.py` (Q9.2) — or document quota skip with Mayank ack
+  5. `cd frontend && npm run lint`
+  6. Q12 demos on local/staging
+  7. Evidence Pack G5 all checked
+  8. Zero High/Critical on GitHub Issues
 - **Done:** UNIFIED G5 → `[x]`
 - **Status:** `[ ]`
 
 ---
 
-## P4-QA / P4-REL
+## P4-QA — Hard freeze (2026-08-20)
 
-### Task QA.1 — Hard freeze
-- Zero new features; bugfix only; RC1 cut
+### Task QA.1
+- Zero new features after freeze; bugfix only; RC1 against **read-replica**
 - **Status:** `[ ]`
 
-### Task REL.1 — Production
-- Flip go-live env flags per AGENTS checklist; runbook; telemetry watch
+---
+
+## P4-REL — Production (2026-09-03)
+
+### Task REL.1
+- Flip go-live flags per AGENTS checklist; Mayank approves runbook; `/metrics` watch
+- Secrets from Piyush track must be filled before flip
 - **Status:** `[ ]`
+
+---
+
+## Suggested calendar (compressed)
+
+| Window | Focus |
+|---|---|
+| Through Week 1 EOW | P4-0, P4-1, P4-2, P4-3 seed, P4-4 flag prep |
+| Week 2 | P4-5…P4-9 FE + HubSpot live if key |
+| 2026-08-20+ | Freeze / G5 / RC1 |
+| 2026-09-03 | Prod release |

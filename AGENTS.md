@@ -14,7 +14,9 @@ High-signal, repo-specific facts an agent would likely miss without help.
 | Docker services | `docker compose up -d` (pg, redis, neo4j, ngrok, frontend, **n8n**) · n8n only: `docker compose up -d n8n` → http://localhost:5678 |
 | Seed local test clients | `python seed.py` → keys `secret-client-key-123` / `secret-client-key-456` |
 | Seed 1000 dummy leads + Neo4j | `python seed_dummy_leads.py` (`--count`, `--purge-only`, `--no-neo4j`) |
+| Seed twin inventory (40 units) | `python seed_twin_demo.py --client-id 1` (`--clear`) |
 | Project PG leads → Neo4j | `python project_leads_to_neo4j.py` (`--client-id`, `--source dummy_seed`) |
+| Phase 4 API tests | `pytest tests/test_f4_sales_ai.py tests/test_f4_graph_neighborhood.py tests/test_f4_twin.py tests/test_f4_hubspot_flag.py -v` |
 | Ops / maintenance runbook | `docs/MAINTENANCE.md` |
 | Timeouts & timings map | `docs/TIMEOUTS_AND_TIMINGS.md` (all race/TTL/scheduler values + line anchors) |
 | Provision production client | `python add_client.py` (interactive, generates secure keys) |
@@ -196,11 +198,18 @@ IS_PRODUCTION=false
 - `COMPETITOR_KEYWORDS` — comma-separated watch-list for the competitor monitor (empty = job no-ops).
 - `GOOGLE_CALENDAR_ID` / `GOOGLE_CALENDAR_CREDENTIALS_JSON` / `GOOGLE_CALENDAR_TIMEZONE` — real Google Calendar for `CalendarExecutor`. Empty = synthetic `visit_id` stub fallback (AE contract unchanged).
 - `BROCHURE_MEDIA_URL` / `FLOORPLAN_MEDIA_URL` — public **HTTPS** media for WhatsApp Approach B. Empty = plain-text brochure/floorplan. Non-HTTPS rejected.
-- HubSpot: `CRM_API_URL` / `CRM_API_KEY` via `crm_sync` `os.getenv` (not Settings). Default demo key = fake UUID in non-prod; skippable until a portal exists.
+- HubSpot: `CRM_API_URL` / `CRM_API_KEY` via `crm_sync` `os.getenv` (not Settings). **`CRM_API_KEY` = Private App Token** sent as `Authorization: Bearer …`. Contacts r/w scopes enough (no custom objects). Default demo key = fake UUID in non-prod. Live path also requires `FEATURE_HUBSPOT_LIVE=true`.
+
+## IREIOS 4.0 APIs (Backend Wave 1 shipped)
+
+- `POST /api/v1/leads/{id}/sales-ai` body `{ "mode": "preview"|"execute" }` — default **preview** (no DB/CRM writes). Execute = score+assign+stage+CRM AE. Bus SalesAgent path still auto-executes.
+- `GET /api/v1/graph/neighborhood?lead_id=&limit=25` — ego `{nodes,edges}`; soft-empty if Neo4j down or `FEATURE_GRAPH_VIZ=false`. Keep `/graph/leads/{id}/context` for LLM.
+- `GET /api/v1/inventory/twin` — project/towers/floors/units from PG `InventoryUnit` (`meta_json.floor`). Empty if `FEATURE_TWIN_LIVE=false`. Seed: `python seed_twin_demo.py --client-id 1`.
+- Flags (Settings): `FEATURE_GRAPH_VIZ` (default true), `FEATURE_TWIN_LIVE` (default true), `FEATURE_HUBSPOT_LIVE` (default **false**).
 
 ## Production Go-Live Checklist (config-later flags)
 
-Flip these in `.env` at deploy (see `.env.example` footer): `IS_PRODUCTION=true`, `TEST_MODE=false`, `FOLLOW_UP_TEST_MODE=false`, `FOLLOW_UP_DLQ_TEST=false`, real `TWILIO_*`. Optional: `NEO4J_*`, `N8N_*`, `GOOGLE_CALENDAR_*`, `BROCHURE_*`/`FLOORPLAN_*`, `COMPETITOR_KEYWORDS`, real `CRM_API_*` (HubSpot skippable). Everything degrades gracefully when an integration is left unconfigured.
+Flip these in `.env` at deploy (see `.env.example` footer): `IS_PRODUCTION=true`, `TEST_MODE=false`, `FOLLOW_UP_TEST_MODE=false`, `FOLLOW_UP_DLQ_TEST=false`, real `TWILIO_*`. Optional: `NEO4J_*`, `N8N_*`, `GOOGLE_CALENDAR_*`, `BROCHURE_*`/`FLOORPLAN_*`, `COMPETITOR_KEYWORDS`, real `CRM_API_*` + `FEATURE_HUBSPOT_LIVE=true` (HubSpot skippable). Everything degrades gracefully when an integration is left unconfigured.
 
 **Dual-path note:** Expansion 10.2/10.3 module delete is **deferred**. Root `agent.py`, `crm_sync.py`, `follow_up.py` remain shared libraries for v3 wrappers (not a second product path).
 
@@ -251,7 +260,7 @@ Sales hot escalate: notify_agent + create_task → agent_tasks
 
 ## Docs pointers
 
-- **Active program queue (Product Phase 4 / IREIOS 4.0):** `plans/phase4/UNIFIED_EXECUTION_ORDER.md` · lead decisions `plans/phase4/TEAM_LEAD_QUESTIONNAIRE.md` · index `plans/README.md`
+- **Active program queue (Product Phase 4 / IREIOS 4.0):** `plans/phase4/UNIFIED_EXECUTION_ORDER.md` · locked answers `plans/phase4/TEAM_LEAD_QUESTIONNAIRE_ANSWERED.md` · contracts `plans/phase4/IREIOS_4.0_API_CONTRACTS.md` · index `plans/README.md` · freeze **2026-08-20** · release **2026-09-03**
 - **Archived IREIOS 3.0 plans:** `plans/phase3/` (do not add new Phase 4 tasks there)
 - **Timeouts & timings (all race/TTL/scheduler values):** `docs/TIMEOUTS_AND_TIMINGS.md`
 - n8n: Compose + AE path + **bridge** shipped; **6/6 workflows** (Gmail + Sheets). Full Cloud Console + import runbook: `docs/N8N_GOOGLE_CREDENTIALS_SETUP.md`. Arch: `docs/N8N_INTEGRATION.md`. Brochure HTTPS URLs optional until set.

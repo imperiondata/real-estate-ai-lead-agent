@@ -1,164 +1,194 @@
-# IREIOS 4.0 — API contracts (FE / integration)
+# IREIOS 4.0 — API contracts (FROZEN for MVP)
 
 | This doc owns | Does not own |
 |---|---|
-| Human-readable contracts for Phase 4 surfaces | Full 3.0 SSE history → `../phase3/IREIOS_3.0_API_SSE_CONTRACTS.md` |
-| Freeze rules for Mayank/Aritro | Runtime OpenAPI dump → regen `openapi_ireios4.json` after code lands |
+| Human-readable contracts for Phase 4 surfaces | 3.0 SSE history → `../phase3/IREIOS_3.0_API_SSE_CONTRACTS.md` |
+| Freeze rules | Runtime dump → regen `openapi_ireios4.json` after code |
 
-**Status:** Draft from **code + FE mocks** · mark `FROZEN` per section after lead/P4-1  
-**Compat:** Do not rename fields after `FROZEN` without versioning (`/api/v2` or additive-only).
+**Status:** **FROZEN** for MVP per lead answers 2026-08-07 (implement against this doc)  
+**Compat:** Additive fields OK after freeze. Renames require coordinated FE+BE PR.
 
-Auth legend: **JWT** = Bearer or HttpOnly `jwt` cookie · **API key** = `X-API-Key` / `?api_key=` (prefer **not** in browser bundles) · **Admin** = `X-Admin-Key` / token
+Auth: **JWT** (Bearer or HttpOnly `jwt` cookie). Prefer cookie for browser. No hard-coded api_key in FE bundles.
 
 ---
 
-## 0. Already shipped (bind FE now — shapes from live code)
+## 0. Sales AI — FROZEN
 
-### 0.1 Sales AI — `FROZEN-CANDIDATE` (exists)
+### `POST /api/v1/leads/{lead_id}/sales-ai`
 
 | | |
 |---|---|
-| Route | `POST /api/v1/leads/{lead_id}/sales-ai` |
 | Auth | JWT · tenant-scoped lead |
-| Errors | `404` wrong tenant/missing · `401` · `422` |
+| Body | `{ "mode": "preview" \| "execute" }` — default **`preview`** if omitted |
+| Errors | `404` · `401` · `422` invalid mode |
 
-**Response (approximate — confirm via OpenAPI/`main.py` during P4-1):**
+### Response (both modes)
 
 ```json
 {
   "status": "success",
   "lead_id": 1,
+  "mode": "preview",
   "scores": {
     "conversion_probability": 72.0,
     "lead_temperature": "hot",
     "engagement_score": 60.0,
-    "urgency_level": "high"
+    "urgency_level": "high",
+    "confidence_score": 80.0
   },
-  "assigned_agent": "Agent Name",
+  "assigned_agent": "Agent Name or null",
   "recommendation": {
     "action": "schedule_site_visit",
-    "rationale": "string"
+    "rationale": "string",
+    "missing_fields": []
   },
-  "funnel_stage": "string",
-  "crm_sync": {}
+  "funnel_stage": "Contacted",
+  "crm_sync": null,
+  "applied": false
 }
 ```
 
-**NBA `action` enum (current code):**  
+| Field | preview | execute |
+|---|---|---|
+| `mode` | `"preview"` | `"execute"` |
+| `applied` | `false` | `true` |
+| `scores` | computed, **not persisted** | computed **and persisted** |
+| `assigned_agent` | current or would-be (no write) | after `ensure_lead_assignment` |
+| `funnel_stage` | current (no advance) | after `progress_deal_stage` |
+| `crm_sync` | `null` | AE result object or error |
+| side effects (WhatsApp/notify/task) | **none** | yes via existing NBA→AE path |
+
+**`recommendation.action` enum (frozen):**  
 `request_info` | `schedule_site_visit` | `escalate_hot` | `send_brochure` | `assign_agent` | `nurture_followup`
 
-⚠ Confirm exact nested keys in P4-1 against running `/openapi.json`.
+**FE flow:**  
+1. User clicks Sales AI → `mode=preview` → render action/rationale/scores/stage.  
+2. User clicks Confirm → `mode=execute` → refresh lead row/timeline.  
+3. Placement: **sales-copilot first**, then Leads table.  
+4. Rate limit: reuse Redis `sales_ai_lock:{client}:{lead}` TTL 600s on **execute** (and bus path); preview may be unbound or soft-limited (e.g. 30/min) — implement soft limit optional.
 
-### 0.2 Predictions portfolio — `FROZEN-CANDIDATE`
-
-| Route | Auth | Notes |
-|---|---|---|
-| `GET /api/v1/predictions/revenue` | JWT | Heuristic Σ budget×prob |
-| `GET /api/v1/predictions/cashflow` | JWT | Heuristic slice |
-| `GET /api/v1/predictions/inventory` | JWT | Status counts |
-| `GET /api/v1/predictions/cancellation-risk` | JWT | At-risk proxy |
-| `GET /api/v1/leads/{id}/prediction` | JWT | Per-lead conversion + closure days |
-
-All documented in code as **MVP heuristics — not ML accuracy**. FE must not label “AI trained model” unless lead overrides Q1.
-
-### 0.3 Graph context (LLM/ego lite) — exists, **not** full force-graph
-
-| Route | Auth | Returns |
-|---|---|---|
-| `GET /api/v1/graph/health` | per router | Neo4j up/down |
-| `GET /api/v1/graph/leads/{id}/context` | JWT/API key | `similar_leads`, `assigned_agent` |
-| `POST /api/v1/graph/upsert` | Admin | Manual upsert |
-
-### 0.4 SSE / timeline — exists
-
-| Route | Auth | Notes |
-|---|---|---|
-| `GET /api/v1/events/stream` | API key **or** jwt cookie | Tenant filter; `: ping` 15s |
-| `GET /api/v1/events/leads/{id}/timeline` | JWT/API key | 404 cross-tenant |
-
-Phase 4 FE **must** prefer jwt cookie (P4-9).
+**Bus path:** unchanged auto-execute (not preview).
 
 ---
 
-## 1. Graph neighborhood — **PROPOSED** (P4-2) ⚠ BLOCKED ON LEAD Q5
+## 1. Predictions — FROZEN (existing + display rules)
+
+All JWT · client-scoped · **heuristic** (not ML).
+
+| Route | Key response fields | FE display |
+|---|---|---|
+| `GET /api/v1/predictions/revenue` | `total_expected_revenue` (INR absolute), `open_lead_count` | ₹ `(value/1e7).toFixed(2) Cr` |
+| `GET /api/v1/predictions/cashflow` | `expected_30pct_cashflow`, `open_lead_count` | ₹ Cr |
+| `GET /api/v1/predictions/inventory` | map `status → count` | chips/bars |
+| `GET /api/v1/predictions/cancellation-risk` | `[{lead_id, temperature, stale}, …]` | count + optional table |
+| `GET /api/v1/leads/{id}/prediction` | `conversion_probability`, `temperature`, `expected_closure_days`, `confidence` | copilot panel |
+
+**Additive (optional BE):** `"disclaimer": "Heuristic estimate (not a trained model)"`, `"currency": "INR"`.  
+**FE must show disclaimer even if BE omits field.**  
+**No cross-tenant admin forecast.**  
+**Latency:** soft aspirational &lt;200ms — not a release blocker.
+
+---
+
+## 2. Graph neighborhood — FROZEN (new)
+
+### `GET /api/v1/graph/neighborhood?lead_id={id}&limit=25`
 
 | | |
 |---|---|
-| Route | `GET /api/v1/graph/neighborhood` |
 | Auth | JWT |
-| Query | `lead_id` (optional) · `limit` (default 50, max 200) |
-| Errors | `404` lead · `503` graph unavailable (body still JSON) |
-
-**Proposed body (matches FE `mockGraphService` consumer):**
+| Query | `lead_id` **required** · `limit` default 25 max 50 (similar leads) |
+| Errors | `404` lead not owned · `401` |
+| Down | HTTP 200 + `available: false` + empty arrays |
 
 ```json
 {
   "status": "success",
   "available": true,
+  "lead_id": 123,
   "data": {
     "nodes": [
       {
-        "id": "L-123",
+        "id": "lead:123",
         "label": "Lead",
-        "properties": { "name": "…", "score": 82, "temperature": "Hot" },
-        "val": 20,
+        "properties": {
+          "name": "…",
+          "score": 82,
+          "temperature": "Hot",
+          "lead_id": 123
+        },
+        "val": 24,
         "color": "#ef4444"
+      },
+      {
+        "id": "agent:Jane",
+        "label": "Agent",
+        "properties": { "name": "Jane" },
+        "val": 18,
+        "color": "#8b5cf6"
+      },
+      {
+        "id": "lead:456",
+        "label": "Lead",
+        "properties": { "name": "…", "score": 60, "temperature": "Warm", "lead_id": 456 },
+        "val": 16,
+        "color": "#f59e0b"
       }
     ],
     "edges": [
-      { "source": "L-123", "target": "A-1", "type": "ASSIGNED_TO", "properties": {} }
+      { "source": "lead:123", "target": "agent:Jane", "type": "ASSIGNED_TO", "properties": {} },
+      { "source": "lead:123", "target": "lead:456", "type": "SIMILAR_TO", "properties": { "strength": 0.72 } }
     ]
   },
-  "ai_summary": "optional short string"
+  "ai_summary": "Ego network: center lead, assigned agent, and similar leads."
 }
 ```
 
-**MVP node `label` values:** `Lead`, `Agent`  
-**Stretch:** `Unit`, `Tower`, `Project`, `Communication`  
-**Colors:** FE may override; backend should send stable defaults.
+**MVP labels:** `Lead`, `Agent` only (required).  
+**Stretch (if time):** `Unit` + `INTERESTED_IN` from PG inventory match — not required for G5.  
+**Colors (defaults):** Hot `#ef4444` · Warm `#f59e0b` · Cold `#3b82f6` · Agent `#8b5cf6`.  
+**ai_summary:** static string OK (Q5.7).  
+**Realtime:** FE refetches on SSE `lead.scored` | `lead.assigned` | `lead.hot` for that lead.  
+**Embed:** Sales Copilot lead detail (primary). Full `/knowledge-graph` page optional consumer of same API (may require lead selector).
 
-**Empty / down:**
-
-```json
-{ "status": "success", "available": false, "data": { "nodes": [], "edges": [] }, "ai_summary": "graph_unavailable" }
-```
-
-**Latency target (sprint):** p95 &lt; 200ms on staging warm cache — **confirm Q5.5**.
-
-**Real-time:** FE refetches on SSE `lead.scored` | `lead.assigned` | `lead.hot` (no graph-push protocol in MVP).
+**Keep:** existing `GET /graph/leads/{id}/context` for LLM path — do not break.
 
 ---
 
-## 2. Digital twin layout — **PROPOSED** (P4-3) ⚠ BLOCKED ON LEAD Q6
+## 3. Digital twin layout — FROZEN (new)
+
+### `GET /api/v1/inventory/twin`
 
 | | |
 |---|---|
-| Route | `GET /api/v1/inventory/twin` |
 | Auth | JWT |
-| Query | `project_id` optional |
-| Errors | `401` · empty data `200` |
-
-**Proposed body (align to R3F page needs — refine in P4-1):**
+| Query | none for single-project MVP (ignore unknown `project_id` or accept if matches sole project) |
+| Errors | `401` · empty inventory → 200 empty towers |
 
 ```json
 {
   "status": "success",
-  "project": { "id": "PRJ-1", "name": "The Summit", "location": "…" },
+  "disclaimer": "Demo inventory layout",
+  "project": {
+    "id": "prj:the-summit",
+    "name": "The Summit",
+    "location": "Downtown"
+  },
   "towers": [
     {
-      "id": "T-1",
+      "id": "tw:tower-a",
       "name": "Tower A",
       "floors": [
         {
           "level": 1,
           "units": [
             {
-              "id": "U-101",
+              "id": "unit:12",
               "unit_number": "A-101",
               "status": "available",
-              "price": 1500000,
+              "price": 15000000,
               "currency": "INR",
-              "bhk": 3,
+              "bhk": "3",
               "lead_id": null
             }
           ]
@@ -166,56 +196,70 @@ Phase 4 FE **must** prefer jwt cookie (P4-9).
       ]
     }
   ],
-  "counts": { "available": 10, "hold": 2, "sold": 5 }
+  "counts": { "available": 20, "hold": 8, "sold": 12 }
 }
 ```
 
-**Status enum (proposed):** `available` | `hold` | `sold` (FE today title-cases — normalize in client).
+**Status enum:** `available` | `hold` | `sold` (lowercase in API; FE may title-case).  
+**Seed target:** 1 project, 2 towers, 10 floors, 40 units.  
+**FE:** read-only; poll **30s**; hide/filter sold per existing UX; max render 500 units.  
+**Price display:** ₹ / Cr consistent with forecasts.
 
-**Counts-only fallback:** existing `GET /api/v1/predictions/inventory` remains.
+**Keep:** `GET /predictions/inventory` counts for dashboard chips.
 
 ---
 
-## 3. HubSpot — **CONDITIONAL** ⚠ Q2
+## 4. SSE / timeline — FROZEN (existing; auth policy)
+
+| Route | Auth for FE |
+|---|---|
+| `GET /api/v1/events/stream` | **JWT cookie only** in shipped FE (api_key allowed server-side/dev tools) |
+| `GET /api/v1/events/leads/{id}/timeline` | JWT · selected lead id (never hard-code `1`) |
+
+Heartbeat `: ping` — ignore in client. Reconnect with backoff.
+
+---
+
+## 5. HubSpot — CONDITIONAL (outbound only)
 
 | Mode | Contract |
 |---|---|
-| Outbound only | No new public API; EE `update_crm` + `crm_sync` |
-| Bi-di | `POST /api/v1/webhook/hubspot` + signature header TBD by HubSpot app settings |
-| Defer | No contract work |
+| Outbound live | No new public REST; EE `update_crm` + `crm_sync` when `FEATURE_HUBSPOT_LIVE` + real `CRM_API_*` |
+| Bi-di | **Out of 4.0** — no `/webhook/hubspot` |
+| Identity | Match/update by email + phone (Q2.6) |
+| DLQ | `hubspot_crm` + `dlq_replay.py` |
 
-Field map (current outbound): see `crm_sync.build_crm_properties` / AGENTS.md P5.2.
+Field map (unchanged ACK): firstname, phone, budget, location, intent, property_type, visit_date, assignee, budget_alignment_status, urgency_level, engagement_score, lead_temperature.
 
 ---
 
-## 4. Compatibility rules
+## 6. Feature flags
 
-1. Additive JSON fields are OK after freeze.  
-2. Renames/removals require FE coordinated PR + changelog.  
-3. Heuristic prediction responses must keep a stable top-level key set once FROZEN (document `disclaimer` field if added).  
-4. Regenerate `openapi_ireios4.json` from running app after P4-2/P4-3 merge:
+| Env | Default | Effect |
+|---|---|---|
+| `FEATURE_GRAPH_VIZ` | `true` in staging | If false, neighborhood returns `available:false` or FE hides panel |
+| `FEATURE_TWIN_LIVE` | `true` in staging | If false, twin page uses empty/mock banner |
+| `FEATURE_HUBSPOT_LIVE` | `false` until key | If false, keep demo stub behavior |
+
+---
+
+## 7. Smoke
+
+```powershell
+# Preview NBA
+curl -X POST "http://localhost:8000/api/v1/leads/1/sales-ai" -H "Authorization: Bearer <jwt>" -H "Content-Type: application/json" -d "{\"mode\":\"preview\"}"
+
+# Execute NBA
+curl -X POST "http://localhost:8000/api/v1/leads/1/sales-ai" -H "Authorization: Bearer <jwt>" -H "Content-Type: application/json" -d "{\"mode\":\"execute\"}"
+
+curl "http://localhost:8000/api/v1/predictions/revenue" -H "Authorization: Bearer <jwt>"
+curl "http://localhost:8000/api/v1/graph/neighborhood?lead_id=1" -H "Authorization: Bearer <jwt>"
+curl "http://localhost:8000/api/v1/inventory/twin" -H "Authorization: Bearer <jwt>"
+curl -N "http://localhost:8000/api/v1/events/stream" -H "Cookie: jwt=<token>"
+```
+
+After routes land:
 
 ```powershell
 curl -o plans/phase4/openapi_ireios4.json http://localhost:8000/openapi.json
-```
-
----
-
-## 5. Smoke (after implement)
-
-```powershell
-# Sales AI
-curl -X POST "http://localhost:8000/api/v1/leads/1/sales-ai" -H "Authorization: Bearer <jwt>"
-
-# Predictions
-curl "http://localhost:8000/api/v1/predictions/revenue" -H "Authorization: Bearer <jwt>"
-
-# Neighborhood (post P4-2)
-curl "http://localhost:8000/api/v1/graph/neighborhood?lead_id=1" -H "Authorization: Bearer <jwt>"
-
-# Twin (post P4-3)
-curl "http://localhost:8000/api/v1/inventory/twin" -H "Authorization: Bearer <jwt>"
-
-# SSE
-curl -N "http://localhost:8000/api/v1/events/stream" -H "Cookie: jwt=<token>"
 ```

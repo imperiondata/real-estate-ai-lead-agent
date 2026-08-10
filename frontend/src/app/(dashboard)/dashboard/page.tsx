@@ -1,4 +1,11 @@
-import { fetchLeads, fetchPredictionsRevenue } from '@/lib/api'
+import {
+  fetchLeads,
+  fetchPredictionsRevenue,
+  fetchPredictionsCashflow,
+  fetchPredictionsInventory,
+  fetchPredictionsCancellationRisk,
+} from '@/lib/api'
+import { HEURISTIC_DISCLAIMER, formatInrCr } from '@/lib/format'
 import { 
   SourcePieChart, FunnelChart, FollowUpGauge 
 } from './Charts'
@@ -19,7 +26,12 @@ type Props = {
 export default async function DashboardPage(props: Props) {
   const searchParams = await props.searchParams;
   const leadsData = await fetchLeads()
-  const revenueData = await fetchPredictionsRevenue()
+  const [revenueData, cashflowData, inventoryData, cancelRisk] = await Promise.all([
+    fetchPredictionsRevenue(),
+    fetchPredictionsCashflow(),
+    fetchPredictionsInventory(),
+    fetchPredictionsCancellationRisk(),
+  ])
   
   const rawLeads = leadsData?.leads || []
   let leads = [...rawLeads]
@@ -194,12 +206,54 @@ export default async function DashboardPage(props: Props) {
         </div>
       ) : (
         <>
+          {/* Heuristic forecast strip */}
+          <div className="rounded-2xl border border-indigo-200/60 dark:border-indigo-500/20 bg-indigo-50/50 dark:bg-indigo-950/20 p-4 flex flex-wrap gap-4 items-center justify-between">
+            <div>
+              <p className="text-[10px] font-bold uppercase tracking-wider text-indigo-600 dark:text-indigo-400">
+                {HEURISTIC_DISCLAIMER}
+              </p>
+              <div className="mt-2 flex flex-wrap gap-6 text-sm">
+                <div>
+                  <span className="text-slate-500 dark:text-zinc-400 block text-xs">Expected revenue</span>
+                  <span className="font-bold text-slate-900 dark:text-white">
+                    {isAgencyPartner ? 'RESTRICTED' : formatInrCr(activePipelineValue)}
+                  </span>
+                </div>
+                <div>
+                  <span className="text-slate-500 dark:text-zinc-400 block text-xs">30% cashflow</span>
+                  <span className="font-bold text-slate-900 dark:text-white">
+                    {isAgencyPartner
+                      ? 'RESTRICTED'
+                      : formatInrCr(cashflowData?.expected_30pct_cashflow)}
+                  </span>
+                </div>
+                <div>
+                  <span className="text-slate-500 dark:text-zinc-400 block text-xs">At-risk leads</span>
+                  <span className="font-bold text-slate-900 dark:text-white">
+                    {Array.isArray(cancelRisk) ? cancelRisk.length : 0}
+                  </span>
+                </div>
+                <div>
+                  <span className="text-slate-500 dark:text-zinc-400 block text-xs">Inventory units</span>
+                  <span className="font-bold text-slate-900 dark:text-white">
+                    {inventoryData
+                      ? Object.values(inventoryData as Record<string, number>).reduce(
+                          (a, b) => a + Number(b || 0),
+                          0
+                        )
+                      : 0}
+                  </span>
+                </div>
+              </div>
+            </div>
+          </div>
+
           {/* Top KPIs Grid */}
           <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4">
             <KPICard badge="live" title="Total Leads" value={totalLeads} icon={Users} color="text-slate-500" bg="bg-slate-500/10" border="border-slate-500/20" tooltip="Total number of people who interacted with your AI assistant. (Calculated by counting all unique lead profiles)" />
             <KPICard badge="live" title="Hot Leads" value={leads.filter(l => l.lead_temperature?.toLowerCase() === 'hot').length} icon={Flame} color="text-emerald-500" bg="bg-emerald-500/10" border="border-emerald-500/20" tooltip="Ready to buy! Call these people immediately. (Calculated by AI based on high purchase intent & budget match)" />
             <KPICard badge="live" title="Warm Leads" value={warmCount} icon={Target} color="text-amber-500" bg="bg-amber-500/10" border="border-amber-500/20" tooltip="Interested but still thinking. (Calculated by AI based on medium intent and positive engagement)" />
-            <KPICard badge="heuristic" title="Est. Pipeline Value" value={formatCurrency(activePipelineValue)} icon={Briefcase} color="text-indigo-500" bg="bg-indigo-500/10" border="border-indigo-500/20" tooltip="Heuristic estimate (not a trained model). Calculated via API prediction engine based on lead budgets and conversion probabilities." />
+            <KPICard badge="heuristic" title="Est. Pipeline Value" value={isAgencyPartner ? 'RESTRICTED' : formatInrCr(activePipelineValue)} icon={Briefcase} color="text-indigo-500" bg="bg-indigo-500/10" border="border-indigo-500/20" tooltip={HEURISTIC_DISCLAIMER + '. From GET /predictions/revenue.'} />
             <KPICard badge="live" title="Closed Revenue" value={formatCurrency(closedRevenue)} icon={Banknote} color="text-emerald-600" bg="bg-emerald-600/10" border="border-emerald-600/20" tooltip="Total money made. (Calculated by summing budgets of leads strictly in the 'Closed Won' stage)" />
             
             <KPICard badge="live" title="Conversion Rate" value={`${conversionRate}%`} icon={ArrowUpRight} color="text-blue-500" bg="bg-blue-500/10" border="border-blue-500/20" tooltip="Percentage of people who actually bought. (Calculated as Closed Won divided by Total Leads)" />

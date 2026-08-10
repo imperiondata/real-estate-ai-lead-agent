@@ -123,10 +123,20 @@ async def _push_to_hubspot(payload: dict) -> dict:
         raise RuntimeError("CRITICAL: Production HubSpot credentials not configured. Set CRM_API_URL and CRM_API_KEY.")
     # --------------------------------------
 
-    # --- DEMO SIMULATION BLOCK (local dev only) ---
-    if not settings.IS_PRODUCTION and CRM_API_URL == "https://api.hubapi.com/crm/v3/objects/contacts" and CRM_API_KEY == "demo-hubspot-key":
-        import uuid
-        return {"id": str(uuid.uuid4())}
+    # --- DEMO / FLAG-OFF STUB ---
+    # FEATURE_HUBSPOT_LIVE=false keeps demo stub even if a key is present (safe default).
+    # Live path requires flag + non-demo key. Identity match: email + phone (ops/Piyush).
+    hubspot_live = bool(getattr(settings, "FEATURE_HUBSPOT_LIVE", False))
+    is_demo_key = CRM_API_KEY == "demo-hubspot-key"
+    if not hubspot_live or is_demo_key:
+        if not settings.IS_PRODUCTION:
+            import uuid
+            return {"id": str(uuid.uuid4()), "stub": True, "hubspot_live": hubspot_live}
+        if is_demo_key:
+            raise RuntimeError(
+                "CRITICAL: Production HubSpot credentials not configured. "
+                "Set CRM_API_URL, CRM_API_KEY, and FEATURE_HUBSPOT_LIVE=true."
+            )
     # --------------------------------------
 
     async with httpx.AsyncClient() as client:

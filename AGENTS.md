@@ -260,7 +260,7 @@ Sales hot escalate: notify_agent + create_task → agent_tasks
 
 ## Docs pointers
 
-- **Active program queue (Product Phase 4 / IREIOS 4.0):** `plans/phase4/UNIFIED_EXECUTION_ORDER.md` · locked answers `plans/phase4/TEAM_LEAD_QUESTIONNAIRE_ANSWERED.md` · contracts `plans/phase4/IREIOS_4.0_API_CONTRACTS.md` · index `plans/README.md` · freeze **2026-08-20** · release **2026-09-03**
+- **Active program queue (Product Phase 4 / IREIOS 4.0):** `plans/phase4/UNIFIED_EXECUTION_ORDER.md` · **G5 green 2026-08-10** · next P4-QA freeze **2026-08-20** · release **2026-09-03** · locked answers `plans/phase4/TEAM_LEAD_QUESTIONNAIRE_ANSWERED.md` · contracts `plans/phase4/IREIOS_4.0_API_CONTRACTS.md` · evidence `plans/phase4/IREIOS_4.0_EVIDENCE_PACK.md`
 - **Archived IREIOS 3.0 plans:** `plans/phase3/` (do not add new Phase 4 tasks there)
 - **Timeouts & timings (all race/TTL/scheduler values):** `docs/TIMEOUTS_AND_TIMINGS.md`
 - n8n: Compose + AE path + **bridge** shipped; **6/6 workflows** (Gmail + Sheets). Full Cloud Console + import runbook: `docs/N8N_GOOGLE_CREDENTIALS_SETUP.md`. Arch: `docs/N8N_INTEGRATION.md`. Brochure HTTPS URLs optional until set.

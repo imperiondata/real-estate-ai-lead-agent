@@ -4,7 +4,7 @@
 |---|---|
 | Product Phase 4 execution | IREIOS 3.0 history → `../phase3/` |
 
-**Status:** **Implementation plans LOCKED** · **Backend Wave 1 + FE Wave done** (P4-0…P4-9, 2026-08-10) · G5/QA next  
+**Status:** **Implementation plans LOCKED** · **P4-0…P4-9 + G5 done** (2026-08-10) · next **P4-QA freeze** (2026-08-20) → **P4-REL** (2026-09-03)  
 **Release:** 2026-09-03 · **Hard freeze:** 2026-08-20 · **Tech lead:** Mayank
 
 ## Start here

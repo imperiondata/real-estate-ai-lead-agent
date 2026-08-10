@@ -5,7 +5,7 @@
 | Frozen decisions, phase overview, target surfaces, risks | Atomic steps → `IREIOS_4.0_STEP_BY_STEP.md` |
 | Corrected program baseline | 3.0 history → `../phase3/` |
 
-**Status:** **LOCKED** from `TEAM_LEAD_QUESTIONNAIRE_ANSWERED.md` (2026-08-07)  
+**Status:** **LOCKED** (2026-08-07) · **P4-0…P4-9 + G5 implemented** (2026-08-10) · next freeze/RC1/prod  
 **Spine unchanged:** `Event → CEO → Agent/Workflow → AE → EE → Event`  
 **Release:** 2026-09-03 · **Freeze:** 2026-08-20 · **Name:** IREIOS 4.0
 

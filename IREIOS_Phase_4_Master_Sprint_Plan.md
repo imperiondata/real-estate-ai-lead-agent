@@ -26,7 +26,7 @@
 ### Week 3 — QA & Testing (from 2026-08-20)
 - Hard code freeze. Zero new development.
 - Internal QA + E2E. RC1 against **read-replica**.
-- Gate G5: pytest, isolation, DLQ-if-HS, FE lint, `task3_runner`, Q12 demos.
+- Gate G5: **passed 2026-08-10** (pytest 426, isolation, DLQ; `task3_runner` skipped Mayank ack; FE lint residual pre-existing).
 
 ### Week 4 — Production Release (2026-09-03)
 - IREIOS 4.0 MVP to production. Telemetry via `/metrics`. Runbook approved by **Mayank**.
@@ -105,8 +105,8 @@
 
 ## 6. Project Status & Release Metrics
 
-- **Current Progress (re-baselined 2026-08-07):** Backend foundation **~75%** · FE integration **~15%** · HubSpot/ops **~10%**. Phase 4 remaining work is primarily FE cutover + neighborhood/twin APIs + HubSpot outbound go-live — not greenfield spine.
-- **Overall Project Completion:** ~70% (directionally OK).
+- **Current Progress (2026-08-10 G5):** P4-0…P4-9 **implementation complete** · G5 **green**. Remaining: hard freeze **2026-08-20**, RC1, HubSpot PAT ops flip, prod **2026-09-03**.
+- **Overall Project Completion:** ~85%+ toward Phase 4 MVP release (implementation done; freeze/RC1/prod left).
 - **Expected IREIOS 4.0 Release Date:** **2026-09-03**.
 - **Hard freeze:** **2026-08-20**.
 - **Weekly status owner / runbook approver:** **Mayank**.

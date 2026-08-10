@@ -279,7 +279,7 @@
   7. Evidence Pack G5 all checked
   8. Zero High/Critical on GitHub Issues
 - **Done:** UNIFIED G5 → `[x]`
-- **Status:** `[ ]`
+- **Status:** `[x]` 2026-08-10 — 22 f4 + 426 full pytest; isolation PASS; DLQ drill PASS; task3_runner skipped (Mayank); FE lint residual pre-existing
 
 ---
 

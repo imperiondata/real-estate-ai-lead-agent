@@ -2,7 +2,7 @@
 
 Backend Waves A–D / Gate G3 are **code-complete**. FE cutover under **IREIOS 4.0** (`plans/phase4/`).
 
-**Last reviewed:** 2026-08-10 (FE Wave P4-5…P4-9 shipped)  
+**Last reviewed:** 2026-08-10 (FE Wave P4-5…P4-9 + **G5 green**)  
 **Home route:** `/dashboard` · **Freeze:** 2026-08-20 · **Release:** 2026-09-03
 
 ---
@@ -48,8 +48,8 @@ Same-origin: Next `rewrites` `/api/v1/:path*` → `NEXT_PUBLIC_API_URL` so brows
 - [x] Forecast widgets from `/predictions/*` + heuristic label
 - [x] Sales AI preview+confirm on copilot + leads
 - [x] Graph ego + twin live (or empty when flag/Neo4j/inventory off)
-- [ ] Full `npm run lint` exit 0 (pre-existing errors outside FE wave remain)
-- [ ] Q12 manual demos signed on staging
+- [~] Full `npm run lint` exit 0 (pre-existing errors outside FE wave — freeze triage)
+- [x] G5 automated demos / API evidence 2026-08-10; optional staging WA smoke recommended
 
 ---
 

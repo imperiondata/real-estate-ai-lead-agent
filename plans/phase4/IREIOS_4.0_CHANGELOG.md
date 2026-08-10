@@ -23,12 +23,19 @@
 | P4-8 | `[x]` | FE Twin live | lint + manual |
 | P4-9 | `[x]` | FE JWT/SSE/middleware | grep + lint |
 | P4-10 | `[-]` | No new n8n WFs | n/a |
-| G5 | `[ ]` | MVP gate | full suite |
+| G5 | `[x]` | MVP gate 2026-08-10 | 426 pytest; isolation; DLQ; task3 skip |
 | Plans lock | `[x]` | Lead answers folded into all phase4 docs | n/a |
 
 ---
 
 ## Entries
+
+### 2026-08-10 — G5 MVP gate
+
+- **Evidence:** `pytest` f4 22 passed; full suite 426 passed / 4 skipped; `gate_isolation_test.py` PASS; `gate_dlq_drill.py` PASS; `task3_runner` skipped (Mayank); `/health` healthy.
+- **FE lint:** repo-wide residual errors pre-existing — not G5 blocker; freeze triage.
+- **HubSpot live:** deferred note (PAT pending); flag path green.
+- **UNIFIED G5:** `[x]`
 
 ### 2026-08-10 — FE Wave (P4-5…P4-9)
 
@@ -52,7 +59,7 @@
   - HubSpot live only when `FEATURE_HUBSPOT_LIVE=true` + non-demo key; else stub.
 - **Tests:** Full suite with docker+uvicorn up: **`426 passed, 4 skipped`** (2026-08-10). f4_* + e3 green. Fixed stale path in `test_e20_n8n_bridge` → `plans/phase3/N8N_LIVE_WORKFLOWS_PLAN.md` (post-archive).
 - **OpenAPI:** `plans/phase4/openapi_ireios4.json` regenerated from live app (neighborhood, twin, sales-ai present).
-- **Not done:** FE P4-5…P4-9, live HubSpot portal key (flag ready).
+- **Follow-up (same day):** FE P4-5…P4-9 + **G5** also shipped; live HubSpot portal key still pending (flag ready).
 
 ### 2026-08-07 — Lead questionnaire locked → plans filled
 

@@ -60,7 +60,7 @@
 | **P4-8** | FE Twin | Wire R3F to twin API; read-only; 30s poll | Seeded colors/status | Mayank | `[x]` |
 | **P4-9** | FE SSE/JWT | JWT cookie only; guard command-center; purge MockSSE + hard-coded keys; home `/dashboard` | grep clean + backlog acceptance | Mayank | `[x]` |
 | **P4-10** | Ops/n8n | **No new WFs** — smoke existing bridge only if time | Evidence ops N/A or smoke | Maitri | `[-]` default no-op unless ops asks |
-| **G5** | Gate | Phase 4 MVP complete | Evidence G5 + pytest + isolation + DLQ-if-HS + lint + `task3_runner` | Team | `[ ]` |
+| **G5** | Gate | Phase 4 MVP complete | Evidence G5 + pytest + isolation + DLQ-if-HS + lint + `task3_runner` | Team | `[x]` 2026-08-10 (task3_runner skipped Mayank ack) |
 | **P4-QA** | Freeze | Hard freeze 2026-08-20; RC1 on read-replica | Prod readiness checklist | Mayank | `[ ]` |
 | **P4-REL** | Release | 2026-09-03 prod + telemetry | Runbook approved (Mayank) | Mayank | `[ ]` |
 

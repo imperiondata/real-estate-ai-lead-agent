@@ -60,6 +60,11 @@ export default function DigitalTwinPage() {
 
   return (
     <div className="relative w-full h-[calc(100vh-4rem)] -m-6 md:-m-8 bg-[#050505] overflow-hidden">
+      {/* Alert Banner */}
+      <div className="absolute top-4 left-1/2 -translate-x-1/2 z-50 bg-indigo-900/90 border border-indigo-500/50 text-indigo-100 px-6 py-2 rounded-full shadow-lg backdrop-blur-sm text-sm font-medium whitespace-nowrap flex items-center gap-2 pointer-events-none">
+        <Activity className="w-4 h-4 text-indigo-400" />
+        Phase 4 Development: Integrating Neo4j Live Data. Expected Completion: September 3, 2026
+      </div>
       
       {/* 1. The 3D Canvas */}
       <Canvas camera={{ position: [20, 15, 20], fov: 45 }}>

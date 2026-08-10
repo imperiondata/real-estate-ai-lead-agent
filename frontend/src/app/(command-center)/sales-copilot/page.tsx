@@ -19,6 +19,32 @@ function SalesCopilotContent() {
   const leadId = searchParams.get('lead_id') || '1'; // Fallback to 1 if not provided
   const [events, setEvents] = useState<TimelineEvent[]>([]);
   const [filter, setFilter] = useState<string>('all');
+  
+  // Sales AI States
+  const [salesAIResult, setSalesAIResult] = useState<any>(null);
+  const [isSalesAILoading, setIsSalesAILoading] = useState(false);
+  const [isPreviewOpen, setIsPreviewOpen] = useState(false);
+
+  const handleNextBestAction = async () => {
+    setIsSalesAILoading(true);
+    try {
+      const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
+      const res = await fetch(`${apiUrl}/api/v1/leads/${leadId}/sales-ai?api_key=secret-client-key-123`, {
+        method: 'POST',
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setSalesAIResult(data);
+        setIsPreviewOpen(true);
+      } else {
+        console.error("Failed to fetch Sales AI", res.status);
+      }
+    } catch (err) {
+      console.error("Error fetching Sales AI:", err);
+    } finally {
+      setIsSalesAILoading(false);
+    }
+  };
 
   useEffect(() => {
     const fetchTimeline = async () => {
@@ -118,8 +144,11 @@ function SalesCopilotContent() {
             </div>
           </div>
           
-          <button className="w-full py-3 bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-medium rounded-xl transition-colors shadow-lg shadow-indigo-900/20">
-            Generate Email Draft
+          <button 
+            onClick={handleNextBestAction}
+            disabled={isSalesAILoading}
+            className="w-full py-3 bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-medium rounded-xl transition-colors shadow-lg shadow-indigo-900/20 disabled:opacity-50">
+            {isSalesAILoading ? 'Analyzing...' : 'Next Best Action'}
           </button>
         </div>
       </div>
@@ -191,6 +220,58 @@ function SalesCopilotContent() {
         </div>
 
       </div>
+
+      {/* Preview Modal */}
+      {isPreviewOpen && salesAIResult && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-[#13131a] border border-gray-800 rounded-2xl p-6 max-w-lg w-full shadow-2xl">
+            <h3 className="text-xl font-bold text-white mb-4 flex items-center gap-2">
+              <Cpu className="w-5 h-5 text-indigo-400" />
+              Preview Next Best Action
+            </h3>
+            
+            <div className="space-y-4 mb-6">
+              <div className="bg-[#0f0f13] p-4 rounded-xl border border-gray-800">
+                <span className="text-xs text-gray-500 uppercase font-bold tracking-wider block mb-1">Recommended Action</span>
+                <span className="text-indigo-400 font-semibold">{salesAIResult.action}</span>
+              </div>
+              
+              <div className="bg-[#0f0f13] p-4 rounded-xl border border-gray-800">
+                <span className="text-xs text-gray-500 uppercase font-bold tracking-wider block mb-1">Rationale</span>
+                <p className="text-sm text-gray-300">{salesAIResult.rationale}</p>
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div className="bg-[#0f0f13] p-4 rounded-xl border border-gray-800">
+                  <span className="text-xs text-gray-500 uppercase font-bold tracking-wider block mb-1">Confidence</span>
+                  <span className="text-white font-bold">{salesAIResult.confidence_score}%</span>
+                </div>
+                <div className="bg-[#0f0f13] p-4 rounded-xl border border-gray-800">
+                  <span className="text-xs text-gray-500 uppercase font-bold tracking-wider block mb-1">Assigned To</span>
+                  <span className="text-white font-bold">{salesAIResult.assigned_agent || 'Unassigned'}</span>
+                </div>
+              </div>
+            </div>
+
+            <div className="flex justify-end gap-3">
+              <button 
+                onClick={() => setIsPreviewOpen(false)}
+                className="px-4 py-2 rounded-lg text-sm font-medium text-gray-400 hover:text-white hover:bg-gray-800 transition-colors">
+                Cancel
+              </button>
+              <button 
+                onClick={() => {
+                  // Execute side effects here
+                  setIsPreviewOpen(false);
+                  alert('Action Confirmed & Executed');
+                }}
+                className="px-4 py-2 rounded-lg text-sm font-medium bg-indigo-600 text-white hover:bg-indigo-700 transition-colors">
+                Confirm & Execute
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

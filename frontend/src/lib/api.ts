@@ -111,3 +111,27 @@ export async function fetchAnalytics(): Promise<AnalyticsResponse | null> {
     return null
   }
 }
+
+export async function fetchPredictionsRevenue() {
+  const cookieStore = await cookies()
+  const token = cookieStore.get('jwt')?.value
+
+  if (!token) return null
+
+  try {
+    const res = await authFetch(`${BACKEND_URL}/api/v1/predictions/revenue`, {
+      method: 'GET',
+      headers: {
+        'Authorization': `Bearer ${token}`,
+        'Content-Type': 'application/json',
+      },
+      cache: 'no-store'
+    })
+
+    if (!res.ok) return null
+    return await res.json()
+  } catch (err) {
+    console.error('Error fetching revenue prediction:', err)
+    return null
+  }
+}

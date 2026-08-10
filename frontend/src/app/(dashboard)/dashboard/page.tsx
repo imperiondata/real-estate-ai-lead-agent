@@ -1,4 +1,4 @@
-import { fetchLeads } from '@/lib/api'
+import { fetchLeads, fetchPredictionsRevenue } from '@/lib/api'
 import { 
   SourcePieChart, FunnelChart, FollowUpGauge 
 } from './Charts'
@@ -19,6 +19,7 @@ type Props = {
 export default async function DashboardPage(props: Props) {
   const searchParams = await props.searchParams;
   const leadsData = await fetchLeads()
+  const revenueData = await fetchPredictionsRevenue()
   
   const rawLeads = leadsData?.leads || []
   let leads = [...rawLeads]
@@ -90,7 +91,8 @@ export default async function DashboardPage(props: Props) {
   const closedDeals = leads.filter(l => l.funnel_stage === 'Closed Won').length
   const conversionRate = totalLeads > 0 ? Math.round((closedDeals / totalLeads) * 100) : 0
   
-  const activePipelineValue = leads.filter(l => l.funnel_stage !== 'Lost').reduce((acc, l) => acc + parseBudget(l.budget), 0);
+  // Use real heuristic predictions API (Phase 4 MVP)
+  const activePipelineValue = revenueData?.total_expected_revenue || 0;
   const closedRevenue = leads.filter(l => l.funnel_stage === 'Closed Won').reduce((acc, l) => acc + parseBudget(l.budget), 0);
   
   // Follow-Up Metrics
@@ -197,7 +199,7 @@ export default async function DashboardPage(props: Props) {
             <KPICard badge="live" title="Total Leads" value={totalLeads} icon={Users} color="text-slate-500" bg="bg-slate-500/10" border="border-slate-500/20" tooltip="Total number of people who interacted with your AI assistant. (Calculated by counting all unique lead profiles)" />
             <KPICard badge="live" title="Hot Leads" value={leads.filter(l => l.lead_temperature?.toLowerCase() === 'hot').length} icon={Flame} color="text-emerald-500" bg="bg-emerald-500/10" border="border-emerald-500/20" tooltip="Ready to buy! Call these people immediately. (Calculated by AI based on high purchase intent & budget match)" />
             <KPICard badge="live" title="Warm Leads" value={warmCount} icon={Target} color="text-amber-500" bg="bg-amber-500/10" border="border-amber-500/20" tooltip="Interested but still thinking. (Calculated by AI based on medium intent and positive engagement)" />
-            <KPICard badge="live" title="Est. Pipeline Value" value={formatCurrency(activePipelineValue)} icon={Briefcase} color="text-indigo-500" bg="bg-indigo-500/10" border="border-indigo-500/20" tooltip="The total combined budget of everyone looking to buy. (Calculated by summing budgets of all non-Lost leads)" />
+            <KPICard badge="heuristic" title="Est. Pipeline Value" value={formatCurrency(activePipelineValue)} icon={Briefcase} color="text-indigo-500" bg="bg-indigo-500/10" border="border-indigo-500/20" tooltip="Heuristic estimate (not a trained model). Calculated via API prediction engine based on lead budgets and conversion probabilities." />
             <KPICard badge="live" title="Closed Revenue" value={formatCurrency(closedRevenue)} icon={Banknote} color="text-emerald-600" bg="bg-emerald-600/10" border="border-emerald-600/20" tooltip="Total money made. (Calculated by summing budgets of leads strictly in the 'Closed Won' stage)" />
             
             <KPICard badge="live" title="Conversion Rate" value={`${conversionRate}%`} icon={ArrowUpRight} color="text-blue-500" bg="bg-blue-500/10" border="border-blue-500/20" tooltip="Percentage of people who actually bought. (Calculated as Closed Won divided by Total Leads)" />
@@ -365,7 +367,7 @@ type KPICardProps = {
   border: string;
   trend?: string;
   tooltip?: string;
-  badge?: 'live' | 'sample';
+  badge?: 'live' | 'sample' | 'heuristic';
 };
 
 function KPICard({ title, value, icon: Icon, color, bg, border, trend, tooltip, badge }: KPICardProps) {
@@ -390,6 +392,7 @@ function KPICard({ title, value, icon: Icon, color, bg, border, trend, tooltip, 
           <h3 className="text-xs font-medium text-slate-500 dark:text-zinc-400 uppercase tracking-wider line-clamp-1">{title}</h3>
           {badge === 'live' && <span className="px-1.5 py-0.5 rounded text-[9px] font-bold bg-emerald-100 text-emerald-700 dark:bg-emerald-500/20 dark:text-emerald-400 uppercase">Live</span>}
           {badge === 'sample' && <span className="px-1.5 py-0.5 rounded text-[9px] font-bold bg-amber-100 text-amber-700 dark:bg-amber-500/20 dark:text-amber-400 uppercase">Sample</span>}
+          {badge === 'heuristic' && <span className="px-1.5 py-0.5 rounded text-[9px] font-bold bg-indigo-100 text-indigo-700 dark:bg-indigo-500/20 dark:text-indigo-400 uppercase">Heuristic MVP</span>}
         </div>
         <p className="text-2xl lg:text-3xl font-bold text-slate-900 dark:text-white tracking-tight truncate">{value}</p>
       </div>

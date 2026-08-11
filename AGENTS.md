@@ -209,6 +209,8 @@ IS_PRODUCTION=false
 
 ## Production Go-Live Checklist (config-later flags)
 
+**Single source + full matrix (flag matrix, secrets track, infra adoption, integration runbooks): `docs/PROD_READINESS_CHECKLIST.md`.** QA gate (P4-QA) = checklist executed; release gate (P4-REL) = runbook approved (Mayank).
+
 Flip these in `.env` at deploy (see `.env.example` footer): `IS_PRODUCTION=true`, `TEST_MODE=false`, `FOLLOW_UP_TEST_MODE=false`, `FOLLOW_UP_DLQ_TEST=false`, real `TWILIO_*`. Optional: `NEO4J_*`, `N8N_*`, `GOOGLE_CALENDAR_*`, `BROCHURE_*`/`FLOORPLAN_*`, `COMPETITOR_KEYWORDS`, real `CRM_API_*` + `FEATURE_HUBSPOT_LIVE=true` (HubSpot skippable). Everything degrades gracefully when an integration is left unconfigured.
 
 **Dual-path note:** Expansion 10.2/10.3 module delete is **deferred**. Root `agent.py`, `crm_sync.py`, `follow_up.py` remain shared libraries for v3 wrappers (not a second product path).
@@ -266,7 +268,7 @@ Sales hot escalate: notify_agent + create_task → agent_tasks
 - n8n: Compose + AE path + **bridge** shipped; **6/6 workflows** (Gmail + Sheets). Full Cloud Console + import runbook: `docs/N8N_GOOGLE_CREDENTIALS_SETUP.md`. Arch: `docs/N8N_INTEGRATION.md`. Brochure HTTPS URLs optional until set.
 - **Post-G3 automations closeout (Step 24):** `plans/phase3/PHASE3_AUTOMATIONS_CLOSEOUT.md`. Canonical bus (`lead.hot` + `trigger`). HubSpot Python stays skipped.
 - **BA-1…BA-7 + bridge:** `lead_hot.py`; `chat_context`; EE visit merge; HITL paths; calendar REST; **`n8n_bridge`** (not stock Redis→n8n). Tests: `tests/test_e18_*.py`, `tests/test_e20_n8n_bridge.py`.
-- Frontend remaining work: `docs/FRONTEND_BACKLOG.md` (Mayank: partial SSE in `a10aa68`; MockSSE file + mocks + JWT SSE still open)
+- Frontend remaining work: `docs/FRONTEND_BACKLOG.md` (SSE live + JWT cookie + MockSSE purged + lint/tsc/build exit 0 as of 2026-08-11)
 - Evidence (3.0): `plans/phase3/IREIOS_3.0_EVIDENCE_PACK.md` (G2 + G3) · Evidence (4.0): `plans/phase4/IREIOS_4.0_EVIDENCE_PACK.md`
 - **Post-G2 Waves A–D (depth fill, G3 green):** living log `plans/phase3/IREIOS_3.0_WAVE_A_D_CHANGELOG.md`; how-to `plans/phase3/IREIOS_3.0_WAVE_A_D_EXPANSION.md`; tests `tests/test_e14_wave_a.py`…`test_e17_wave_d.py`. UNIFIED Steps **20–23** + Gate **G3** = `[x]`.
 

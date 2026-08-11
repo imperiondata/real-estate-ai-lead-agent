@@ -2,7 +2,7 @@
 
 Backend Waves A–D / Gate G3 are **code-complete**. FE cutover under **IREIOS 4.0** (`plans/phase4/`).
 
-**Last reviewed:** 2026-08-10 (FE Wave P4-5…P4-9 + **G5 green**)  
+**Last reviewed:** 2026-08-11 (FE Wave P4-5…P4-9 + **G5 green** + lint/tsc/build resolved)  
 **Home route:** `/dashboard` · **Freeze:** 2026-08-20 · **Release:** 2026-09-03
 
 ---
@@ -48,7 +48,7 @@ Same-origin: Next `rewrites` `/api/v1/:path*` → `NEXT_PUBLIC_API_URL` so brows
 - [x] Forecast widgets from `/predictions/*` + heuristic label
 - [x] Sales AI preview+confirm on copilot + leads
 - [x] Graph ego + twin live (or empty when flag/Neo4j/inventory off)
-- [x] Full `npm run lint` exit 0 (resolved 2026-08-11 — 23 errors + 17 warnings cleared per `docs/MAINTENANCE.md` §11.1; remaining `tsc` debt: 3 pre-existing errors in `(command-center)/*`, unrelated to the FE wave)
+- [x] Full `npm run lint` exit 0 + `tsc --noEmit` clean + `npm run build` exit 0 (resolved 2026-08-11 — 23 errors + 17 warnings cleared per `docs/MAINTENANCE.md` §11.1; command-center tsc errors + Suspense prerender fixed in `4494307`)
 - [x] G5 automated demos / API evidence 2026-08-10; WA → SSE live smoke PASS 2026-08-11 (`wa_sse_smoke.py`, both modes)
 
 ---

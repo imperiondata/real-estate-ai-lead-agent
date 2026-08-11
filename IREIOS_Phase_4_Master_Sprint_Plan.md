@@ -25,8 +25,8 @@
 
 ### Week 3 — QA & Testing (from 2026-08-20)
 - Hard code freeze. Zero new development.
-- Internal QA + E2E. RC1 against **read-replica**.
-- Gate G5: **passed 2026-08-10** (pytest 426, isolation, DLQ; `task3_runner` skipped Mayank ack; FE lint residual pre-existing).
+- Internal QA + E2E. RC1 `ireios4-rc1` — local full-stack docker + `pg-staging` seeded from prod snapshot (`docs/PROD_READINESS_CHECKLIST.md` §5.1); hosted read-replica adopted when ops delivers (§5.2).
+- Gate G5: **passed 2026-08-10** (pytest 426, isolation, DLQ; `task3_runner` skipped Mayank ack). FE lint/tsc/build **exit 0 resolved 2026-08-11** (`4494307`).
 
 ### Week 4 — Production Release (2026-09-03)
 - IREIOS 4.0 MVP to production. Telemetry via `/metrics`. Runbook approved by **Mayank**.
@@ -91,21 +91,23 @@
 
 ## 5. Production Readiness Checklist (Week 3 QA)
 
+**Single source:** `docs/PROD_READINESS_CHECKLIST.md` (flag matrix, secrets track, infra adoption, integration runbooks). Executive summary:
+
 - [ ] All required Phase 4 tickets closed or feature-flagged off
 - [ ] Zero High/Critical bugs on **GitHub Issues**
-- [ ] E2E demos (Q12) pass
+- [ ] E2E demos (Q12) pass on staging
 - [ ] Redis bus healthy under smoke load
 - [ ] Graph neighborhood soft-latency acceptable (200ms aspirational)
-- [ ] Frontend lint Exit 0
-- [ ] RC1 on **read-replica**
+- [ ] Frontend lint + build Exit 0 (resolved 2026-08-11)
+- [ ] RC1 `ireios4-rc1` on staging (local `pg-staging` snapshot; hosted read-replica adopted when delivered)
 - [ ] Runbook approved by **Mayank**
-- [ ] `task3_runner` green or explicitly waived
+- [ ] `task3_runner` **waived** at QA — Gemini quota (Mayank ack, consistent with G5)
 
 ---
 
 ## 6. Project Status & Release Metrics
 
-- **Current Progress (2026-08-10 G5):** P4-0…P4-9 **implementation complete** · G5 **green**. Remaining: hard freeze **2026-08-20**, RC1, HubSpot PAT ops flip, prod **2026-09-03**.
+- **Current Progress (2026-08-11):** P4-0…P4-9 **implementation complete** · G5 **green** · FE lint/tsc/build **exit 0 resolved** (`4494307`). Remaining: hard freeze **2026-08-20** (RC1 + readiness checklist per `docs/PROD_READINESS_CHECKLIST.md`), HubSpot PAT ops flip, prod **2026-09-03**.
 - **Overall Project Completion:** ~85%+ toward Phase 4 MVP release (implementation done; freeze/RC1/prod left).
 - **Expected IREIOS 4.0 Release Date:** **2026-09-03**.
 - **Hard freeze:** **2026-08-20**.

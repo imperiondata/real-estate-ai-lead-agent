@@ -452,9 +452,8 @@ G5 FE lint item).
 
 **Status (2026-08-11): RESOLVED** — `npm run lint` (ESLint) exits 0 (0 problems, 0 warnings).
 All 23 errors + 17 warnings cleared in this batch; fix patterns below kept for reference.
-Note: `tsc --noEmit` still reports 3 pre-existing errors in `src/app/(command-center)/*`
-(`dashboard-mvp/page.tsx:253` TooltipFormatter, `knowledge-graph/GraphWrapper.tsx:46` ref type,
-`knowledge-graph/page.tsx:94` unknown→ReactNode) — outside this runbook's scope.
+`tsc --noEmit` also clean (3 command-center errors fixed in `4494307`) and
+`npm run build` exits 0 (incl. knowledge-graph Suspense prerender fix).
 
 #### Run it
 
@@ -637,7 +636,8 @@ Structured logs use `request_id` / `tenant_id` contextvars when set.
 | `docs/TIMEOUTS_AND_TIMINGS.md` | All race/TTL/scheduler/backoff values + code anchors |
 | `docs/FRONTEND_BACKLOG.md` | FE SSE/API cutover |
 | `docs/N8N_INTEGRATION.md` | n8n config-later |
-| FE lint runbook | `docs/MAINTENANCE.md` §11.1 (23e/17w baseline 2026-08-11, pre-freeze triage) |
+| `docs/PROD_READINESS_CHECKLIST.md` | Prod readiness: flag matrix, secrets track, infra adoption, integration runbooks |
+| FE lint runbook | `docs/MAINTENANCE.md` §11.1 (23e/17w baseline → **resolved 2026-08-11**, exit 0) |
 | `plans/phase4/UNIFIED_EXECUTION_ORDER.md` | **Active** Product Phase 4 order / gates (**G5 green 2026-08-10**) |  
 | `plans/phase4/IREIOS_4.0_EVIDENCE_PACK.md` | Phase 4 gate evidence (G5 filled) |  
 | `plans/phase4/TEAM_LEAD_QUESTIONNAIRE_ANSWERED.md` | Locked lead decisions |  

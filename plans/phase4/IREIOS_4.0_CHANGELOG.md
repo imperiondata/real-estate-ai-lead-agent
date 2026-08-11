@@ -30,6 +30,16 @@
 
 ## Entries
 
+### 2026-08-11 — Docs verification + P4-QA / P4-REL planning
+
+- **FE quality gate green end-to-end:** `npm run lint` exit 0 (23e/17w baseline cleared), `tsc --noEmit` clean (command-center fixes), `npm run build` exit 0 (incl. knowledge-graph Suspense prerender) — committed `4494307`. Root cause of prior build failure: corrupt `node_modules` (missing `.cmd` shims + `lightningcss-win32-x64-msvc` optional binary) → clean `npm ci` reinstall; `frontend/.env.local` (gitignored) supplies `NEXT_PUBLIC_API_URL` build guard.
+- **Regression:** full pytest re-run **426 passed / 4 skipped** (2026-08-11, services up).
+- **Docs verification pass:** stale lint/tsc references updated across `FRONTEND_BACKLOG.md`, `MAINTENANCE.md` §11.1, `IREIOS_4.0_EVIDENCE_PACK.md`, `IREIOS_4.0_STEP_BY_STEP.md` (G5 status), `AGENTS.md` (backlog line + go-live pointer), `IREIOS_Phase_4_Master_Sprint_Plan.md`.
+- **NEW `docs/PROD_READINESS_CHECKLIST.md`:** single source for prod readiness — env surface map (var → consumer → fallback), go-live flag matrix, secrets track (owners), infra + implementation process (RC1 staging fallback §5.1, hosted read-replica adoption §5.2, prod topology §5.3), integration adoption runbooks (§6), monitoring (§7), release/rollback (§8), additive-only change process (§9).
+- **P4-QA plan (freeze 2026-08-20):** STEP_BY_STEP QA.1.1–QA.1.6 — freeze mechanics + RC1 `ireios4-rc1`; full regression re-run; **`task3_runner` waived at QA (Gemini quota, Mayank ack — consistent with G5)**; FE gate; RC1 on local `pg-staging` snapshot (hosted read-replica adopted when ops delivers, tracked 4.1 otherwise); readiness checklist execution; sign-off.
+- **P4-REL plan (2026-09-03):** STEP_BY_STEP REL.1.1–REL.1.5 — flags flip, runbook approval + deploy, post-release verification, telemetry/incident/rollback, evidence.
+- **Note (read-replica reality):** `database.py` has a single engine with no read/write routing — a literal read-only replica would break app writes. "RC1 on read-replica" is implemented as staging primary seeded from a prod snapshot; true write-routing is deferred to IREIOS 4.1.
+
 ### 2026-08-11 — G5 follow-ups (pre-QA)
 
 - **WA → SSE live smoke:** `wa_sse_smoke.py` added (stdlib, repo root). Live local run PASS in

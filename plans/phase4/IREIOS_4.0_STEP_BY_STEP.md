@@ -279,23 +279,78 @@
   7. Evidence Pack G5 all checked
   8. Zero High/Critical on GitHub Issues
 - **Done:** UNIFIED G5 → `[x]`
-- **Status:** `[x]` 2026-08-10 — 22 f4 + 426 full pytest; isolation PASS; DLQ drill PASS; task3_runner skipped (Mayank); FE lint residual pre-existing
+- **Status:** `[x]` 2026-08-10 — 22 f4 + 426 full pytest; isolation PASS; DLQ drill PASS; task3_runner skipped (Mayank); FE lint repo-wide exit 0 + `tsc` clean + `npm run build` exit 0 (2026-08-11, `4494307`)
 
 ---
 
 ## P4-QA — Hard freeze (2026-08-20)
 
-### Task QA.1
-- Zero new features after freeze; bugfix only; RC1 against **read-replica**
+**Exit gate:** `docs/PROD_READINESS_CHECKLIST.md` executed → UNIFIED P4-QA `[x]`. **Owner:** Mayank
+
+### Task QA.1.1 — Freeze mechanics
+- Zero new features after freeze; bugfix-only, serial, logged in changelog
+- Tag RC1: `ireios4-rc1` on `main` at freeze; freeze-period fixes noted in evidence
+- **Status:** `[ ]`
+
+### Task QA.1.2 — Full regression re-run (at freeze)
+- `pytest tests/ -q` — expect ≥ baseline **426 passed / 4 skipped** (2026-08-11 re-run)
+- `python gate_isolation_test.py` — tenant isolation PASS
+- `python gate_dlq_drill.py` + `python dlq_replay.py` — DLQ path PASS
+- `python wa_sse_smoke.py` both modes — WA → SSE live PASS
+- `python -m pytest tests/test_e20_n8n_bridge.py -q` — 14/14; live n8n delivery pending WF activation (Maitri ops)
+- **`task3_runner.py` waived** — Gemini quota (Mayank ack, consistent with G5); explicit evidence note, no re-run
+- **Status:** `[ ]`
+
+### Task QA.1.3 — FE gate
+- `cd frontend && npm run lint` → exit 0 (resolved 2026-08-11)
+- `cd frontend && npm run build` → exit 0 (resolved 2026-08-11)
+- Manual E2E of Q12 demos on staging env
+- **Status:** `[ ]`
+
+### Task QA.1.4 — RC1 against staging
+- Per `docs/PROD_READINESS_CHECKLIST.md` §5.1: RC1 = tagged build + full-stack docker + separate `pg-staging` seeded from prod snapshot (`db_backup.py` → `db_restore.py`)
+- Hosted `staging-api.ireios` read-replica adopted if ops delivers pre-freeze (§5.2); else tracked as 4.1 ops item; evidence records env + snapshot date
+- **Status:** `[ ]`
+
+### Task QA.1.5 — Prod readiness checklist
+- Execute `docs/PROD_READINESS_CHECKLIST.md` (§3 flags, §4 secrets track, §5 infra, §6 integrations)
+- Zero High/Critical GitHub Issues
+- Runbook draft (deploy sequence, backup/restore drill, webhook switch, rollback — checklist §5.3/§8)
+- **Status:** `[ ]`
+
+### Task QA.1.6 — Sign-off
+- Evidence Pack § QA freeze/RC1 all `[x]`; UNIFIED P4-QA → `[x]`
 - **Status:** `[ ]`
 
 ---
 
 ## P4-REL — Production (2026-09-03)
 
-### Task REL.1
-- Flip go-live flags per AGENTS checklist; Mayank approves runbook; `/metrics` watch
-- Secrets from Piyush track must be filled before flip
+**Exit gate:** runbook approved (Mayank) → UNIFIED P4-REL `[x]`. **Owner:** Mayank
+
+### Task REL.1.1 — Go-live flags
+- Flip per `docs/PROD_READINESS_CHECKLIST.md` §3: `IS_PRODUCTION=true`, `TEST_MODE=false`, `FOLLOW_UP_TEST_MODE=false`, `FOLLOW_UP_DLQ_TEST=false`, real `TWILIO_*`
+- Secrets from §4 track must be filled before flip (Piyush: Twilio required; HubSpot optional)
+- **Status:** `[ ]`
+
+### Task REL.1.2 — Runbook approval + deploy
+- Mayank approves QA runbook (from QA.1.5)
+- Pre-release `python db_backup.py` snapshot; `python migrate_db.py`
+- Deploy on prod host; switch Twilio console webhook URL → prod; verify `X-Twilio-Signature` path (TEST_MODE off); remove ngrok
+- **Status:** `[ ]`
+
+### Task REL.1.3 — Post-release verification
+- `/health` + `/metrics` (firewall-restricted) healthy
+- Real-Twilio WA turn; SSE smoke (`wa_sse_smoke.py`); follow-up scheduler real timings; 10m/30m escalation; 2am backup + 3am cleanup jobs; event-bus consume loop healthy
+- **Status:** `[ ]`
+
+### Task REL.1.4 — Telemetry / incident / rollback
+- `/metrics` owner: Mayank; alert thresholds per `docs/TIMEOUTS_AND_TIMINGS.md`; incident owner named
+- Rollback documented (checklist §8): revert + flags off + webhook back + restore
+- **Status:** `[ ]`
+
+### Task REL.1.5 — Evidence
+- Evidence Pack § Production all `[x]`; UNIFIED P4-REL → `[x]`
 - **Status:** `[ ]`
 
 ---

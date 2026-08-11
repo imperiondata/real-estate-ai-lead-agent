@@ -93,7 +93,7 @@
 - [x] Login home `/dashboard`
 - [x] Timeline uses selected lead
 - [x] Approvals UI **not** required (deferred 4.1)
-- [~] `npm run lint` — touched FE files clean; repo-wide still has pre-existing errors
+- [x] `npm run lint` exit 0 repo-wide + `tsc --noEmit` clean + `npm run build` exit 0 (2026-08-11, `4494307`; runbook `docs/MAINTENANCE.md` §11.1)
 - [x] `docs/FRONTEND_BACKLOG.md` updated
 
 ---
@@ -113,7 +113,7 @@
 - [x] `gate_isolation_test.py` green — Client B cannot see Client A
 - [x] DLQ drill green — HubSpot crash → DLQ pending row (`gate_dlq_drill.py`)
 - [x] `task3_runner.py` **skipped** — Mayank ack 2026-08-10 (quota / not required for G5 today)
-- [x] FE lint — Phase-4 touched files clean; **repo-wide 23 errors / 17 warnings pre-existing** (not introduced by P4 FE wave). Full fix runbook: `docs/MAINTENANCE.md` §11.1 — pre-freeze triage batch. Track for freeze triage.
+- [x] FE lint — **resolved 2026-08-11**: repo-wide exit 0 (was 23 errors / 17 warnings); `tsc --noEmit` clean; `npm run build` exit 0 (`4494307`). Runbook: `docs/MAINTENANCE.md` §11.1
 - [x] Q12 demos signed (list below) — automated + API/seed evidence
 - [x] Zero High/Critical GitHub Issues (none opened for P4 MVP at gate)
 
@@ -136,20 +136,28 @@
 
 ## QA freeze / RC1 (from 2026-08-20)
 
-- [ ] Hard freeze honored
-- [ ] RC1 on **read-replica** — tag: ________
-- [ ] E2E UI + automations
-- [ ] Runbook draft
+Exit gate: `docs/PROD_READINESS_CHECKLIST.md` executed. Tasks: `IREIOS_4.0_STEP_BY_STEP.md` QA.1.1–QA.1.6.
+
+- [ ] QA.1.1 Freeze mechanics — bugfix-only; RC1 tag `ireios4-rc1` on `main`
+- [ ] QA.1.2 Full regression re-run — pytest **≥ 426 passed / 4 skipped** baseline (2026-08-11 re-run); isolation PASS; DLQ drill + replay PASS; `wa_sse_smoke.py` both modes PASS; `test_e20_n8n_bridge` 14/14; **`task3_runner` waived** (Gemini quota, Mayank ack)
+- [ ] QA.1.3 FE gate — lint exit 0; build exit 0; Q12 demos E2E on staging
+- [ ] QA.1.4 RC1 env — local full-stack docker + `pg-staging` seeded from prod snapshot (checklist §5.1); hosted read-replica adopted if ops delivers (§5.2), else tracked 4.1 ops item. Env used: ________ · Snapshot date: ________
+- [ ] QA.1.5 Prod readiness checklist executed — `docs/PROD_READINESS_CHECKLIST.md`; zero High/Critical GitHub Issues; runbook draft
+- [ ] QA.1.6 Sign-off — UNIFIED P4-QA `[x]`
 
 ---
 
 ## Production (2026-09-03)
 
-- [ ] Secrets filled (were N/A in Q11 — Piyush/Mayank track)
-- [ ] `IS_PRODUCTION=true`, test flags off
-- [ ] FEATURE_* production values set
-- [ ] Telemetry `/metrics` owner: Mayank
-- [ ] Incident owner: ________
+Exit gate: runbook approved (Mayank). Tasks: `IREIOS_4.0_STEP_BY_STEP.md` REL.1.1–REL.1.5.
+
+- [ ] REL.1.1 Secrets filled (§4 track — Twilio required from Piyush; HubSpot optional)
+- [ ] REL.1.1 `IS_PRODUCTION=true`, test flags off (`TEST_MODE`/`FOLLOW_UP_TEST_MODE`/`FOLLOW_UP_DLQ_TEST`)
+- [ ] REL.1.1 FEATURE_* production values set (checklist §3)
+- [ ] REL.1.2 Runbook approved (Mayank); deploy + `db_backup.py` snapshot + `migrate_db.py`; Twilio webhook switched; signature verified
+- [ ] REL.1.3 Post-release smokes — `/health`, `/metrics`, real-Twilio WA + SSE, scheduler timings, escalation, backup/cleanup jobs, bus
+- [ ] REL.1.4 Telemetry `/metrics` owner: Mayank; incident owner: ________; rollback documented
+- [ ] REL.1.5 UNIFIED P4-REL `[x]`
 
 ---
 

@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, Suspense } from 'react';
 import dynamic from 'next/dynamic';
 import { Filter, Zap, X, Network } from 'lucide-react';
 import { useSearchParams } from 'next/navigation';
@@ -19,6 +19,23 @@ const GraphWrapper = dynamic(() => import('./GraphWrapper'), {
 });
 
 export default function KnowledgeGraphPage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="w-full h-[calc(100vh-4rem)] flex items-center justify-center bg-[#0a0a0a]">
+          <div className="animate-pulse flex flex-col items-center">
+            <div className="w-12 h-12 rounded-full border-4 border-blue-500 border-t-transparent animate-spin mb-4" />
+            <p className="text-blue-400 font-medium">Loading graph…</p>
+          </div>
+        </div>
+      }
+    >
+      <KnowledgeGraphContent />
+    </Suspense>
+  );
+}
+
+function KnowledgeGraphContent() {
   const searchParams = useSearchParams();
   const [leadId, setLeadId] = useState(searchParams.get('lead_id') || '');
   const [options, setOptions] = useState<{ id: string; label: string }[]>([]);
@@ -91,7 +108,7 @@ export default function KnowledgeGraphPage() {
           <div className="flex justify-between items-start mb-2">
             <div className="flex items-center gap-2">
               <Zap className="w-4 h-4 text-amber-400" />
-              <span className="text-sm font-bold text-white">{selectedNode.label}</span>
+              <span className="text-sm font-bold text-white">{String(selectedNode.label ?? '')}</span>
             </div>
             <button type="button" onClick={() => setSelectedNode(null)} className="text-gray-500">
               <X className="w-4 h-4" />

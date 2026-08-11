@@ -101,7 +101,7 @@
 ## Ops (P4-10)
 
 - [x] No new n8n WFs (lead Q4.2 None) — default `[-]`
-- [ ] Optional existing bridge smoke if env ready
+- [ ] Optional existing bridge smoke if env ready — `test_e20_n8n_bridge.py` **14/14 green** (2026-08-11); live n8n delivery pending WF activation in n8n UI (`ireios-n8n` group shows retryable PEL — Maitri ops)
 
 ---
 
@@ -113,7 +113,7 @@
 - [x] `gate_isolation_test.py` green — Client B cannot see Client A
 - [x] DLQ drill green — HubSpot crash → DLQ pending row (`gate_dlq_drill.py`)
 - [x] `task3_runner.py` **skipped** — Mayank ack 2026-08-10 (quota / not required for G5 today)
-- [~] FE lint — Phase-4 touched files clean; **repo-wide 23 errors / 17 warnings pre-existing** (not introduced by P4 FE wave). Track for freeze triage.
+- [x] FE lint — Phase-4 touched files clean; **repo-wide 23 errors / 17 warnings pre-existing** (not introduced by P4 FE wave). Full fix runbook: `docs/MAINTENANCE.md` §11.1 — pre-freeze triage batch. Track for freeze triage.
 - [x] Q12 demos signed (list below) — automated + API/seed evidence
 - [x] Zero High/Critical GitHub Issues (none opened for P4 MVP at gate)
 
@@ -121,7 +121,7 @@
 
 | Demo | Pass? |
 |---|---|
-| WA → SSE &lt;2s | `[~]` stack healthy (`/health` pg+redis+scheduler); manual WA smoke recommended on staging |
+| WA → SSE &lt;2s | `[x]` **live local smoke 2026-08-11** — `wa_sse_smoke.py` PASS both modes: turn 4.9–11.3s (13s window), SSE publish→delivery 10–2183ms; events `whatsapp.received` → `conversation.updated` → `lead.crm_synced` → `lead.scored` (+ `lead.created` with `--new-lead`) |
 | Sales AI preview → confirm NBA | `[x]` BE `test_f4_sales_ai` + FE preview/confirm wired (`2765de7`) |
 | Forecast from `/predictions/*` | `[x]` endpoints live + FE wired ₹ Cr + disclaimer |
 | Graph neighborhood hot lead | `[x]` `GET /neighborhood` + `test_f4_graph*` + FE embed |

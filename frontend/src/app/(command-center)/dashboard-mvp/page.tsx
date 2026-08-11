@@ -250,7 +250,7 @@ export default function ExecutiveDashboardPage() {
                     borderRadius: '8px',
                     color: '#fff',
                   }}
-                  formatter={(value: number | undefined) => formatInrCr(Number(value ?? 0))}
+                  formatter={(value) => formatInrCr(Number(value ?? 0))}
                 />
                 <Area
                   type="monotone"

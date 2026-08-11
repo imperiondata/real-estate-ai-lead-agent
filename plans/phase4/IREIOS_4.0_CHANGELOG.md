@@ -30,6 +30,19 @@
 
 ## Entries
 
+### 2026-08-11 — G5 follow-ups (pre-QA)
+
+- **WA → SSE live smoke:** `wa_sse_smoke.py` added (stdlib, repo root). Live local run PASS in
+  both modes — turn 4.9–11.3s (13s window), SSE publish→delivery 10–2183ms; events
+  `whatsapp.received` → `conversation.updated` → `lead.crm_synced` → `lead.scored` (+
+  `lead.created` with `--new-lead`). Evidence Pack Q12 WA→SSE → `[x]`.
+- **Bus resilience note:** a Redis blip can kill the `EventBusClient._consume_loop`
+  (`_running=False`, SSE 503s) — restart uvicorn to recover; documented in MAINTENANCE §5.
+- **n8n bridge:** `tests/test_e20_n8n_bridge.py` **14/14 green** (2026-08-11); live delivery
+  still pending n8n UI WF activation (`ireios-n8n` group PEL growing — Maitri ops).
+- **FE lint runbook:** full fix recipe (23e/17w baseline, per-file steps, shim gotcha)
+  documented in `docs/MAINTENANCE.md` §11.1 — pre-freeze triage batch.
+
 ### 2026-08-10 — G5 MVP gate
 
 - **Evidence:** `pytest` f4 22 passed; full suite 426 passed / 4 skipped; `gate_isolation_test.py` PASS; `gate_dlq_drill.py` PASS; `task3_runner` skipped (Mayank); `/health` healthy.

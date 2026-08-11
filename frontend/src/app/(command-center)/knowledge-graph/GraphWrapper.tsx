@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useRef, useEffect } from 'react';
-import ForceGraph2D from 'react-force-graph-2d';
+import ForceGraph2D, { type ForceGraphMethods, type NodeObject, type LinkObject } from 'react-force-graph-2d';
 
 type GraphNode = {
   id?: string | number;
@@ -25,12 +25,8 @@ interface GraphWrapperProps {
 }
 
 export default function GraphWrapper({ data, onNodeClick }: GraphWrapperProps) {
-  // ForceGraph2D ref is untyped upstream
-  const fgRef = useRef<{
-    zoomToFit: (ms: number, pad: number) => void;
-    centerAt: (x?: number, y?: number, ms?: number) => void;
-    zoom: (k: number, ms: number) => void;
-  } | null>(null);
+  // ForceGraph2D ref, typed via the package's exported types
+  const fgRef = useRef<ForceGraphMethods<NodeObject<GraphNode>, LinkObject<GraphNode, GraphEdge>> | undefined>(undefined);
 
   useEffect(() => {
     if (fgRef.current) {

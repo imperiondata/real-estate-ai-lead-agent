@@ -293,19 +293,19 @@
 - **Status:** `[ ]`
 
 ### Task QA.1.2 — Full regression re-run (at freeze)
-- `pytest tests/ -q` — expect ≥ baseline **426 passed / 4 skipped** (2026-08-11 re-run)
-- `python gate_isolation_test.py` — tenant isolation PASS
-- `python gate_dlq_drill.py` + `python dlq_replay.py` — DLQ path PASS
-- `python wa_sse_smoke.py` both modes — WA → SSE live PASS
-- `python -m pytest tests/test_e20_n8n_bridge.py -q` — 14/14; live n8n delivery pending WF activation (Maitri ops)
-- **`task3_runner.py` waived** — Gemini quota (Mayank ack, consistent with G5); explicit evidence note, no re-run
-- **Status:** `[ ]`
+- **Pre-freeze baseline already green** (2026-08-10/11) — see Evidence Pack § QA pre-freeze. This task = **re-confirm on freeze day / RC1**, not first-time execution.
+- `pytest tests/ -q` — expect ≥ baseline **426 passed / 4 skipped**
+- `python gate_isolation_test.py`
+- `python gate_dlq_drill.py` + `python dlq_replay.py`
+- `python wa_sse_smoke.py` both modes (`TEST_MODE=true` for smoke)
+- `python -m pytest tests/test_e20_n8n_bridge.py -q` — 14/14 unit; live Gmail path optional (Mayank re-publishes docker n8n WFs after volume wipe)
+- **`task3_runner.py` waived** — Gemini quota (Mayank ack)
+- **Status:** `[ ]` ceremony open · baseline `[x]`
 
 ### Task QA.1.3 — FE gate
-- `cd frontend && npm run lint` → exit 0 (resolved 2026-08-11)
-- `cd frontend && npm run build` → exit 0 (resolved 2026-08-11)
-- Manual E2E of Q12 demos on staging env
-- **Status:** `[ ]`
+- lint/tsc/build **already exit 0** (`4494307`) — re-confirm at freeze
+- Manual browser E2E on staging: product `/dashboard` + `/leads` + `/crm`; command-center `/sales-copilot`, `/knowledge-graph`, **`/digital-twin`** (seed: `python seed_twin_demo.py --client-id 1 --clear`)
+- **Status:** `[ ]` ceremony open · lint/build baseline `[x]`
 
 ### Task QA.1.4 — RC1 against staging
 - Per `docs/PROD_READINESS_CHECKLIST.md` §5.1: RC1 = tagged build + full-stack docker + separate `pg-staging` seeded from prod snapshot (`db_backup.py` → `db_restore.py`)

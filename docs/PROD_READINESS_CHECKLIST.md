@@ -18,17 +18,18 @@
 - Every row below has a **fallback behavior** so a missing integration degrades gracefully, never breaks chat.
 - RC1 environment today = **local full-stack docker + separate staging Postgres** (Option B, `plans/phase4/TEAM_LEAD_QUESTIONNAIRE_ANSWERED.md` Q8.2/Q8.3). Hosted `staging-api.ireios` + read-replica adopted when ops delivers (see §5.2).
 
-**Status summary (2026-08-11):**
+**Status summary (2026-08-13 audit):**
 
 | Gate | Status |
 |---|---|
-| Backend implementation (P4-0…P4-9) | `[x]` G5 green 2026-08-10 |
-| FE lint (`npm run lint`) | `[x]` exit 0 — resolved 2026-08-11 (`MAINTENANCE.md` §11.1) |
-| FE build (`npm run build`) + `tsc --noEmit` | `[x]` exit 0 — resolved 2026-08-11 |
-| Full pytest regression | `[x]` 426 passed / 4 skipped (2026-08-11 re-run) |
-| Secrets (Twilio, HubSpot PAT) | `[ ]` ops track (Piyush) — required: Twilio; optional: HubSpot |
-| Hosted staging / read-replica | `[ ]` ops TBD — local `pg-staging` fallback defined §5.1 |
-| Runbook draft | `[ ]` QA.1.5 → drafted from §5–§8 |
+| Backend + FE implementation (P4-0…P4-9) | `[x]` G5 green 2026-08-10 · HEAD `8f5c38b` |
+| FE lint / tsc / build | `[x]` exit 0 — `4494307` (2026-08-11) |
+| Full pytest + isolation + DLQ + WA→SSE smoke | `[x]` pre-freeze baseline (see Evidence Pack) |
+| **Code debt for 4.0 MVP** | `[x]` none blocking — flags/timings at prod defaults in `config.py` |
+| Secrets (Twilio, HubSpot PAT) | `[ ]` **Piyush** — Twilio required for live WA; HubSpot optional |
+| Hosted staging / read-replica | `[ ]` ops TBD — local `pg-staging` fallback §5.1 |
+| Docker n8n WF Publish (after volume wipe) | `[ ]` **Mayank** — JSON shipped; live webhooks 404 until re-import+Publish |
+| Runbook draft + freeze tag + RC1 + REL | `[ ]` **Mayank** QA.1.1–1.6 / REL.1.1–1.5 |
 
 ---
 
@@ -95,7 +96,7 @@ Timeouts (prod defaults): `WHATSAPP_WEBHOOK_TIMEOUT=13`, `LLM_TIMEOUT_SECONDS=22
 | Admin API key | `ADMIN_API_KEY` | Generate | Yes | `[ ]` |
 | HubSpot Private App Token | `CRM_API_KEY` | Piyush track | Optional (skippable) | `[ ]` |
 | Neo4j creds | `NEO4J_*` | Mayank/ops | Optional | `[ ]` |
-| n8n webhook secret + management JWT | `N8N_API_KEY`, `N8N_MANAGEMENT_API_KEY` | Maitri | Optional | `[ ]` |
+| n8n webhook secret + management JWT | `N8N_API_KEY`, `N8N_MANAGEMENT_API_KEY` | **Mayank** (docker compose host; re-Publish after volume wipe) | Optional | `[ ]` |
 | Google Calendar SA JSON + calendar id | `GOOGLE_CALENDAR_*` | Mayank | Optional | `[ ]` |
 | Stripe webhook secret | `STRIPE_WEBHOOK_SECRET` | Mayank | Optional | `[ ]` |
 | SMTP creds | `SMTP_*` | Ops | Optional | `[ ]` |
@@ -145,8 +146,12 @@ Implementation process, in order:
 
 ### Neo4j (graph)
 - Enable: `NEO4J_URI/USER/PASSWORD` + `docker compose up -d neo4j` → **verify** `GET /api/v1/graph/health`, `python project_leads_to_neo4j.py` → **rollback:** empty URI (no-op graph).
-### n8n + bridge
-- Enable: `N8N_BASE_URL`/`N8N_API_KEY` + **activate WFs in n8n UI** (else AE gets `n8n_http_404`) → **verify** `tests/test_e20_n8n_bridge.py` (14/14) + live envelope delivery → **rollback:** `N8N_BRIDGE_ENABLED=false` or empty URL. Never point n8n Redis Trigger at `ireios:events` (bridge exists for a reason).
+### n8n + bridge (optional ops plane — docker-hosted)
+- **Owner on this stack:** **Mayank** (compose/deploy host). Not a separate cloud-n8n operator role.
+- **Shipped in repo:** `n8n_workflows/wf1…wf6.json`, Python bridge (`ireios-n8n` group), `import_n8n_workflows.py`, unit tests 14/14.
+- **Volume wipe resets Publish state** — after `docker compose down -v` / new `n8ndata`, n8n starts with **0 published workflows**; production `POST /webhook/*` returns 404 until re-import + **Publish**. Prior successful Gmail automation does not survive a wiped volume.
+- Enable: `N8N_BASE_URL`/`N8N_API_KEY` + Header Auth credential + **Publish all 6 WFs** in UI (or CLI `n8n publish:workflow`) → set Gmail **To** / sheet id → **verify** live `lead.hot` → Gmail + unit `tests/test_e20_n8n_bridge.py` → **rollback:** `N8N_BRIDGE_ENABLED=false` or empty URL. Never point n8n Redis Trigger at `ireios:events`.
+- Full steps: `docs/N8N_INTEGRATION.md`, `docs/N8N_GOOGLE_CREDENTIALS_SETUP.md`, `plans/phase4/HANDOFF_MAYANK_PIYUSH.md`.
 ### Google Calendar
 - Enable: service-account JSON (forward slashes on Windows) + calendar shared with SA → **verify** `site_visit.scheduled` shows real event id → **rollback:** empty vars (synthetic `visit_id` stub).
 ### Brochure / floorplan

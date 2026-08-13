@@ -101,7 +101,8 @@
 ## Ops (P4-10)
 
 - [x] No new n8n WFs (lead Q4.2 None) — default `[-]`
-- [ ] Optional existing bridge smoke if env ready — `test_e20_n8n_bridge.py` **14/14 green** (2026-08-11); live n8n delivery pending WF activation in n8n UI (`ireios-n8n` group shows retryable PEL — Maitri ops)
+- [x] Bridge unit tests — `test_e20_n8n_bridge.py` **14/14 green** (2026-08-11); workflow JSON in `n8n_workflows/` (WF-1…WF-6)
+- [ ] **Live n8n delivery (ops, not code)** — docker-hosted n8n volume is ephemeral: after `docker compose` wipe/reset, n8n reports **0 published workflows** and production webhooks 404 until re-import + **Publish**. Owner: **Mayank** (compose/deploy host lead — not cloud n8n). Prior local setup did deliver Gmail alerts successfully; re-activation required on every fresh volume. See `docs/N8N_INTEGRATION.md` + handoff.
 
 ---
 
@@ -138,9 +139,24 @@
 
 Exit gate: `docs/PROD_READINESS_CHECKLIST.md` executed. Tasks: `IREIOS_4.0_STEP_BY_STEP.md` QA.1.1–QA.1.6.
 
+### Pre-freeze engineering baseline (already green — not the freeze ceremony)
+
+These prove MVP quality **before** 2026-08-20. Freeze day still re-confirms (QA.1.2/1.3) on the RC1 env.
+
+- [x] pytest full suite **426 passed / 4 skipped** (2026-08-10 G5 + 2026-08-11 re-run)
+- [x] `gate_isolation_test.py` PASS (2026-08-10)
+- [x] `gate_dlq_drill.py` PASS stub path (2026-08-10)
+- [x] `wa_sse_smoke.py` both modes PASS (2026-08-11)
+- [x] `test_e20_n8n_bridge.py` 14/14 (2026-08-11)
+- [x] FE lint + tsc + build exit 0 (`4494307`, 2026-08-11)
+- [x] `task3_runner` **waived** (Gemini quota, Mayank ack)
+- [x] Twin API + FE page shipped; seed script `seed_twin_demo.py` (40 units). **UI path:** command-center **`/digital-twin`** (not product `/dashboard` sidebar). Empty canvas = missing seed or JWT client with 0 inventory — not missing code.
+
+### Freeze ceremony (still open — Mayank)
+
 - [ ] QA.1.1 Freeze mechanics — bugfix-only; RC1 tag `ireios4-rc1` on `main`
-- [ ] QA.1.2 Full regression re-run — pytest **≥ 426 passed / 4 skipped** baseline (2026-08-11 re-run); isolation PASS; DLQ drill + replay PASS; `wa_sse_smoke.py` both modes PASS; `test_e20_n8n_bridge` 14/14; **`task3_runner` waived** (Gemini quota, Mayank ack)
-- [ ] QA.1.3 FE gate — lint exit 0; build exit 0; Q12 demos E2E on staging
+- [ ] QA.1.2 Full regression **re-run on freeze day / RC1 env** (commands same as baseline above + `dlq_replay.py`)
+- [ ] QA.1.3 FE gate re-confirm on freeze day + **manual** Q12 browser E2E on staging (incl. `/digital-twin`, `/knowledge-graph`, sales-copilot)
 - [ ] QA.1.4 RC1 env — local full-stack docker + `pg-staging` seeded from prod snapshot (checklist §5.1); hosted read-replica adopted if ops delivers (§5.2), else tracked 4.1 ops item. Env used: ________ · Snapshot date: ________
 - [ ] QA.1.5 Prod readiness checklist executed — `docs/PROD_READINESS_CHECKLIST.md`; zero High/Critical GitHub Issues; runbook draft
 - [ ] QA.1.6 Sign-off — UNIFIED P4-QA `[x]`

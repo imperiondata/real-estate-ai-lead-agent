@@ -30,6 +30,15 @@
 
 ## Entries
 
+### 2026-08-13 — Final audit + Mayank/Piyush handoff
+
+- **Code audit:** no blocking 4.0 code debt. Flags/timings match prod defaults (`FEATURE_*`, `FOLLOWUP_ENGINE=v3`, WA 13s / LLM 22s). Twin/graph/Sales AI FE present.
+- **Twin UX note:** live page is command-center **`/digital-twin`** (not product dashboard nav). Empty = missing seed/tenant inventory — re-seed `seed_twin_demo.py --client-id 1 --clear`.
+- **n8n:** bridge code + WF JSON shipped; unit 14/14. Live Publish is **docker volume state** — wipe → 0 published WFs / webhook 404. Owner = **Mayank** (compose deploy host), not cloud-n8n. Prior Gmail success does not survive volume reset.
+- **Evidence Pack:** pre-freeze baseline checkboxes `[x]` (pytest/isolation/DLQ/WA smoke/FE quality); freeze ceremony QA.1.1–1.6 still `[ ]`.
+- **Handoff:** `plans/phase4/HANDOFF_MAYANK_PIYUSH.md` (Mayank freeze/RC1/REL + n8n Publish; Piyush Twilio required / HubSpot optional).
+- **No commit required for release engineering** beyond this docs batch when lead chooses.
+
 ### 2026-08-11 — Docs verification + P4-QA / P4-REL planning
 
 - **FE quality gate green end-to-end:** `npm run lint` exit 0 (23e/17w baseline cleared), `tsc --noEmit` clean (command-center fixes), `npm run build` exit 0 (incl. knowledge-graph Suspense prerender) — committed `4494307`. Root cause of prior build failure: corrupt `node_modules` (missing `.cmd` shims + `lightningcss-win32-x64-msvc` optional binary) → clean `npm ci` reinstall; `frontend/.env.local` (gitignored) supplies `NEXT_PUBLIC_API_URL` build guard.

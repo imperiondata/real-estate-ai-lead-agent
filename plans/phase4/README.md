@@ -4,7 +4,7 @@
 |---|---|
 | Product Phase 4 execution | IREIOS 3.0 history → `../phase3/` |
 
-**Status:** **Implementation plans LOCKED** · **P4-0…P4-9 + G5 done** (2026-08-10) · FE lint/tsc/build exit 0 (2026-08-11) · next **P4-QA freeze** (2026-08-20) → **P4-REL** (2026-09-03)  
+**Status:** **Implementation LOCKED / eng frozen** · **P4-0…P4-9 + G5 done** · FE quality + regression baseline green · **no blocking code debt** (audit 2026-08-13) · next **P4-QA ceremony** (2026-08-20) → **P4-REL** (2026-09-03) · handoff **`HANDOFF_MAYANK_PIYUSH.md`**  
 **Release:** 2026-09-03 · **Hard freeze:** 2026-08-20 · **Tech lead:** Mayank  
 **QA/REL tasks:** `IREIOS_4.0_STEP_BY_STEP.md` QA.1.1–QA.1.6 / REL.1.1–REL.1.5 · **Prod readiness single source:** `../../docs/PROD_READINESS_CHECKLIST.md`
 
@@ -15,7 +15,8 @@
 3. How: `IREIOS_4.0_STEP_BY_STEP.md`  
 4. Contracts: `IREIOS_4.0_API_CONTRACTS.md` (**FROZEN**)  
 5. Evidence: `IREIOS_4.0_EVIDENCE_PACK.md`  
-6. Prod readiness: `../../docs/PROD_READINESS_CHECKLIST.md` (flags, secrets, infra, integrations)
+6. Prod readiness: `../../docs/PROD_READINESS_CHECKLIST.md` (flags, secrets, infra, integrations)  
+7. **Eng → lead handoff:** `HANDOFF_MAYANK_PIYUSH.md`
 
 ## Doc roles
 

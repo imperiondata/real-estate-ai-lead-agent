@@ -107,8 +107,8 @@
 
 ## 6. Project Status & Release Metrics
 
-- **Current Progress (2026-08-11):** P4-0…P4-9 **implementation complete** · G5 **green** · FE lint/tsc/build **exit 0 resolved** (`4494307`). Remaining: hard freeze **2026-08-20** (RC1 + readiness checklist per `docs/PROD_READINESS_CHECKLIST.md`), HubSpot PAT ops flip, prod **2026-09-03**.
-- **Overall Project Completion:** ~85%+ toward Phase 4 MVP release (implementation done; freeze/RC1/prod left).
+- **Current Progress (2026-08-13):** P4-0…P4-9 **implementation complete** · G5 **green** · FE quality + full regression **baseline green** · **code audit: no blocking debt**. Twin UI at command-center `/digital-twin` (seed required). n8n JSON shipped; live Publish = deploy-host ops after docker wipe (**Mayank**). Handoff: `plans/phase4/HANDOFF_MAYANK_PIYUSH.md`. Remaining: freeze ceremony **2026-08-20**, Piyush Twilio (+ optional HS), prod **2026-09-03**.
+- **Overall Project Completion:** ~90% toward Phase 4 MVP (eng done; freeze/secrets/deploy left).
 - **Expected IREIOS 4.0 Release Date:** **2026-09-03**.
 - **Hard freeze:** **2026-08-20**.
 - **Weekly status owner / runbook approver:** **Mayank**.

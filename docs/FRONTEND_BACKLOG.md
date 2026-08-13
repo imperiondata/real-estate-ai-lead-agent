@@ -34,7 +34,7 @@ Same-origin: Next `rewrites` `/api/v1/:path*` → `NEXT_PUBLIC_API_URL` so brows
 | Approvals UI | **Deferred 4.1** | Lead Q7.4 |
 | Sales AI button | **Done** | Copilot preview/confirm + Leads table |
 | Graph panel | **Done** | Ego embed on copilot + knowledge-graph page |
-| Digital Twin live | **Done** | Twin API + 30s poll + seed |
+| Digital Twin live | **Done** | Route **`/digital-twin`** under **command-center** (sidebar “Digital Twin”) — **not** on product `/dashboard` nav. API `GET /api/v1/inventory/twin` + 30s poll. Seed: `python seed_twin_demo.py --client-id 1 --clear` (40 units). Empty page = no inventory for JWT tenant, not missing FE. |
 | Command-center JWT middleware | **Done** | `proxy.ts` guards CC routes |
 | Login home `/dashboard` | **Done** | `auth.ts` redirect |
 
@@ -47,7 +47,7 @@ Same-origin: Next `rewrites` `/api/v1/:path*` → `NEXT_PUBLIC_API_URL` so brows
 - [x] Timeline for selected owned lead
 - [x] Forecast widgets from `/predictions/*` + heuristic label
 - [x] Sales AI preview+confirm on copilot + leads
-- [x] Graph ego + twin live (or empty when flag/Neo4j/inventory off)
+- [x] Graph ego (`/knowledge-graph` + copilot embed) + twin live at **`/digital-twin`** (or empty when flag/Neo4j/inventory off)
 - [x] Full `npm run lint` exit 0 + `tsc --noEmit` clean + `npm run build` exit 0 (resolved 2026-08-11 — 23 errors + 17 warnings cleared per `docs/MAINTENANCE.md` §11.1; command-center tsc errors + Suspense prerender fixed in `4494307`)
 - [x] G5 automated demos / API evidence 2026-08-10; WA → SSE live smoke PASS 2026-08-11 (`wa_sse_smoke.py`, both modes)
 

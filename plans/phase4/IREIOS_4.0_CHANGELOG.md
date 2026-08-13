@@ -30,6 +30,54 @@
 
 ## Entries
 
+### 2026-08-13 — Terminal NBA gate + twin Html portal
+
+- `recommend_next_action`: Closed Won/Lost/Lost → `deal_closed` (no brochure/visit AE).
+- `_nba_to_ae_action` skips terminal/no-op NBA.
+- Twin Html: `transform={false}` + `portal=document.body` + larger px (readable far camera).
+- Timeline hot events: orange (not error-red); aria-label clarifies informational.
+- Tests: `test_recommend_terminal_closed_won_no_outbound`.
+
+### 2026-08-13 — Score floors + twin screen-stable labels
+
+- `score_lead`: chat-aligned floors (full qualify ≥88, visit ≥82); **monotonic**
+  vs stored conversion when lead stays complete (fixes 95→80 Confirm shock).
+- Twin Html: drop `distanceFactor` + fixed px typography (readable without zoom).
+- Modal copy: chat-aligned rescore / no drop note.
+- Tests: `test_score_lead_visit_floor_and_no_drop`.
+
+### 2026-08-13 — Sales AI UX clarity + brochure debounce + twin label size
+
+- Twin Html: larger card (later superseded by screen-stable Html).
+- Preview shows stored DB % vs recomputed; execute shows **Stored was X% → now Y%**.
+- `send_brochure` 10 min Redis debounce; TEST_MODE banner + action note (no real Twilio).
+- Docs: COMMAND_CENTER_VERIFY Sales AI section updated.
+
+### 2026-08-13 — CC polish v2: drei Html twin tip + force-graph camera freeze
+
+- Twin: **pmndrs/drei `Html`** child of unit mesh (`center`, `distanceFactor`) — standard projected HTML; removed broken DOM pointer math.
+- GraphWrapper: no `centerAt`/`zoom` on click (vasturiano click-to-focus is optional — breaks small panels); one `zoomToFit` per fingerprint; `minZoom`/`maxZoom`; ResizeObserver size; stable graphData copies.
+- Prior: sales stage policy + modal UX (see below).
+
+### 2026-08-13 — CC polish: twin tooltip, graph fit, sales stage policy
+
+- Twin: R3F `clientX/Y` + container-relative absolute tooltip (superseded by Html).
+- GraphWrapper: ResizeObserver width/height (superseded by camera freeze).
+- `progress_deal_stage(lead, recommendation)`: no blind funnel +1; only New→Contacted on assign or Site Visit Booked when visit/NBA warrants.
+- Sales modal: before/after stage, scores_unchanged note, clearer preview/execute copy.
+- Tests: e6 progress_deal_stage expectations updated.
+
+### 2026-08-13 — Command Center UI/UX batch (twin/graph/sales/timeline)
+
+- Twin hover tooltip follows cursor (not fixed under Live twin badge).
+- Graph: `_lead_node` adds phone/location/stage/type; FE rich tooltip + styled detail card.
+- Sales AI HTTP execute calls `_nba_to_ae_action`, returns `actions_executed`; modal shows results; lead dropdown + timeline/graph refresh after confirm.
+- EventLog: sales execute (scored/hot/assign/stage/nba); agent handoff, hot threshold, negotiation started.
+- Timeline filters/icons expanded; dropdown shows temp/stage for sync.
+- Seed via existing `seed_dummy_leads.py` (Neo4j) + `seed_twin_demo.py` only.
+- Tests: f4 jwt/twin/graph/sales + e19 green; full suite **439 passed / 4 skipped** (no regression). FE lint exit 0.
+- Docs: `COMMAND_CENTER_VERIFY.md` UI/sync section; `COMMAND_CENTER_UI_FIXES_PLAN.md` marked implemented.
+
 ### 2026-08-13 — Command Center JWT auth unify (twin/graph/predictions) + verify doc
 
 - **Bug (confirmed live):** `/digital-twin` 401 (browser fetch + cookie vs `get_current_client` Bearer-only) and `/knowledge-graph`/copilot ego auth-empty (server action Bearer vs `get_events_client` cookie/api-key-only). `dashboard-mvp` predictions shared the twin 401 risk.

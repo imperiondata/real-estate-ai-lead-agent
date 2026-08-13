@@ -100,12 +100,12 @@ function KnowledgeGraphContent() {
           <p className="text-xs max-w-sm text-center">{summary || 'Select a lead or start Neo4j'}</p>
         </div>
       ) : (
-        <GraphWrapper data={data} onNodeClick={setSelectedNode} />
+        <GraphWrapper key={leadId || 'none'} data={data} onNodeClick={setSelectedNode} />
       )}
 
       {selectedNode && (
         <div className="absolute bottom-6 right-6 w-72 bg-[#13131a] border border-gray-800 rounded-2xl p-4 shadow-2xl z-20">
-          <div className="flex justify-between items-start mb-2">
+          <div className="flex justify-between items-start mb-3">
             <div className="flex items-center gap-2">
               <Zap className="w-4 h-4 text-amber-400" />
               <span className="text-sm font-bold text-white">{String(selectedNode.label ?? '')}</span>
@@ -114,13 +114,28 @@ function KnowledgeGraphContent() {
               <X className="w-4 h-4" />
             </button>
           </div>
-          <pre className="text-xs text-gray-400 whitespace-pre-wrap">
-            {JSON.stringify(
-              (selectedNode.properties as Record<string, unknown>) || {},
-              null,
-              2
-            )}
-          </pre>
+          {(() => {
+            const p = (selectedNode.properties as Record<string, unknown>) || {};
+            const rows: [string, string][] = [
+              ['Name', String(p.name || '—')],
+              ['Phone', String(p.phone || '—')],
+              ['Location', String(p.location || '—')],
+              ['Temperature', String(p.temperature || '—')],
+              ['Score', p.score != null && p.score !== '' ? String(p.score) : '—'],
+              ['Stage', String(p.funnel_stage || '—')],
+              ['Type', String(p.property_type || '—')],
+            ];
+            return (
+              <dl className="space-y-2 text-xs">
+                {rows.map(([k, v]) => (
+                  <div key={k} className="flex justify-between gap-3">
+                    <dt className="text-gray-500 shrink-0">{k}</dt>
+                    <dd className="text-gray-200 text-right truncate">{v}</dd>
+                  </div>
+                ))}
+              </dl>
+            );
+          })()}
         </div>
       )}
     </div>

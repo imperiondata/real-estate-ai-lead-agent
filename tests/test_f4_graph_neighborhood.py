@@ -158,6 +158,11 @@ def test_neighborhood_builds_ego_when_graph_available(monkeypatch):
         assert "ASSIGNED_TO" in types
         assert "SIMILAR_TO" in types
         center_node = next(n for n in body["data"]["nodes"] if n["id"] == "lead:100")
+        props = center_node["properties"]
+        assert "phone" in props
+        assert "location" in props
+        assert props["name"] == "Center"
+        center_node = next(n for n in body["data"]["nodes"] if n["id"] == "lead:100")
         assert center_node["color"] == "#ef4444"
         assert center_node["properties"]["temperature"] == "Hot"
     finally:

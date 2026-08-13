@@ -31,7 +31,7 @@ type TimelineEvent = {
   amount?: number;
 };
 
-type LeadOpt = { id: string; label: string; temperature: string };
+type LeadOpt = { id: string; label: string; temperature: string; stage?: string };
 
 const GraphWrapper = dynamic(
   () => import('../knowledge-graph/GraphWrapper'),
@@ -68,18 +68,32 @@ function SalesCopilotContent() {
   const [graphAvailable, setGraphAvailable] = useState(true);
   const [graphSummary, setGraphSummary] = useState('');
 
+  const refreshLeadOptions = useCallback(async () => {
+    try {
+      const opts = await fetchLeadOptions();
+      setLeadOptions(opts);
+      return opts;
+    } catch {
+      setLeadOptions([]);
+      return [] as LeadOpt[];
+    }
+  }, []);
+
   useEffect(() => {
-    fetchLeadOptions()
-      .then((opts) => {
-        setLeadOptions(opts);
-        if (!paramLead && opts.length > 0) {
-          setLeadId(opts[0].id);
-        } else if (paramLead) {
-          setLeadId(paramLead);
-        }
-      })
-      .catch(() => setLeadOptions([]));
-  }, [paramLead]);
+    let cancelled = false;
+    void (async () => {
+      const opts = await refreshLeadOptions();
+      if (cancelled) return;
+      if (paramLead) {
+        setLeadId(paramLead);
+      } else if (opts.length > 0) {
+        setLeadId((prev) => prev || opts[0].id);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [paramLead, refreshLeadOptions]);
 
   const loadTimeline = useCallback(async (id: string) => {
     if (!id) return;
@@ -206,9 +220,12 @@ function SalesCopilotContent() {
     try {
       const data = await runSalesAi(leadId, 'execute');
       setSalesAIResult(data);
-      await loadTimeline(leadId);
-      await loadGraph(leadId);
-      setTimeout(() => setIsPreviewOpen(false), 800);
+      await Promise.all([
+        loadTimeline(leadId),
+        loadGraph(leadId),
+        refreshLeadOptions(),
+      ]);
+      // Keep modal open so actions_executed is visible; user closes manually
     } catch (err) {
       setSalesError(err instanceof Error ? err.message : 'Execute failed');
     } finally {
@@ -218,16 +235,36 @@ function SalesCopilotContent() {
 
   const filteredEvents = events.filter((e) => {
     if (filter === 'all') return true;
+    const t = e.type.toLowerCase();
     if (filter === 'communications')
-      return e.type.includes('whatsapp') || e.type.includes('email') || e.type.includes('call');
-    if (filter === 'payments') return e.type === 'payment.received';
+      return (
+        t.includes('whatsapp') ||
+        t.includes('email') ||
+        t.includes('call') ||
+        t.includes('followup') ||
+        t.includes('message')
+      );
+    if (filter === 'payments') return t === 'payment.received' || t.includes('payment');
     if (filter === 'system')
       return (
-        e.type === 'system.alert' ||
-        e.type === 'site_visit.scheduled' ||
-        e.type === 'lead.created'
+        t === 'system.alert' ||
+        t.includes('site_visit') ||
+        t.includes('lead.created') ||
+        t.includes('lead.hot') ||
+        t.includes('lead.assigned') ||
+        t.includes('lead.handoff') ||
+        t.includes('lead.escalated') ||
+        t.includes('audit') ||
+        t.includes('negotiation')
       );
-    if (filter === 'ai') return e.type === 'ai.insight' || e.type.includes('scored');
+    if (filter === 'ai')
+      return (
+        t === 'ai.insight' ||
+        t.includes('scored') ||
+        t.includes('qualified') ||
+        t.includes('sales_ai') ||
+        t.includes('tracking')
+      );
     return true;
   });
 
@@ -235,21 +272,44 @@ function SalesCopilotContent() {
     leadOptions.find((o) => o.id === leadId)?.label || (leadId ? `Lead ${leadId}` : 'Select lead');
 
   const getEventIcon = (type: string) => {
-    if (type.includes('whatsapp')) return <MessageCircle className="w-5 h-5 text-green-400" />;
-    if (type.includes('payment')) return <DollarSign className="w-5 h-5 text-emerald-400" />;
-    if (type.includes('site_visit')) return <Calendar className="w-5 h-5 text-blue-400" />;
-    if (type.includes('lead')) return <UserPlus className="w-5 h-5 text-purple-400" />;
-    if (type.includes('ai') || type.includes('scored'))
+    const t = type.toLowerCase();
+    // Hot = alert styling (not a failure) — orange flame-style, not error grey
+    if (t.includes('hot') || t.includes('escalat'))
+      return (
+        <AlertCircle
+          className="w-5 h-5 text-orange-400"
+          aria-label="Hot lead event (informational, not an error)"
+        />
+      );
+    if (t.includes('negotiation')) return <DollarSign className="w-5 h-5 text-amber-400" />;
+    if (t.includes('handoff') || t.includes('assigned'))
+      return <UserPlus className="w-5 h-5 text-purple-400" />;
+    if (t.includes('sales_ai') || t.includes('scored'))
       return <Cpu className="w-5 h-5 text-indigo-400" />;
+    if (t.includes('whatsapp') || t.includes('message') || t.includes('followup'))
+      return <MessageCircle className="w-5 h-5 text-green-400" />;
+    if (t.includes('payment')) return <DollarSign className="w-5 h-5 text-emerald-400" />;
+    if (t.includes('site_visit')) return <Calendar className="w-5 h-5 text-blue-400" />;
+    if (t.includes('lead')) return <UserPlus className="w-5 h-5 text-purple-400" />;
+    if (t.includes('ai')) return <Cpu className="w-5 h-5 text-indigo-400" />;
     return <AlertCircle className="w-5 h-5 text-gray-400" />;
   };
 
   const getEventBg = (type: string) => {
-    if (type.includes('whatsapp')) return 'bg-green-500/10 border-green-500/20';
-    if (type.includes('payment')) return 'bg-emerald-500/10 border-emerald-500/20';
-    if (type.includes('site_visit')) return 'bg-blue-500/10 border-blue-500/20';
-    if (type.includes('lead')) return 'bg-purple-500/10 border-purple-500/20';
-    if (type.includes('ai') || type.includes('scored')) return 'bg-indigo-500/10 border-indigo-500/20';
+    const t = type.toLowerCase();
+    if (t.includes('hot') || t.includes('escalat'))
+      return 'bg-orange-500/10 border-orange-500/25';
+    if (t.includes('negotiation')) return 'bg-amber-500/10 border-amber-500/20';
+    if (t.includes('whatsapp') || t.includes('message') || t.includes('followup'))
+      return 'bg-green-500/10 border-green-500/20';
+    if (t.includes('payment')) return 'bg-emerald-500/10 border-emerald-500/20';
+    if (t.includes('site_visit')) return 'bg-blue-500/10 border-blue-500/20';
+    if (t.includes('handoff') || t.includes('assigned'))
+      return 'bg-purple-500/10 border-purple-500/20';
+    if (t.includes('sales_ai') || t.includes('scored') || t.includes('ai'))
+      return 'bg-indigo-500/10 border-indigo-500/20';
+    if (t.includes('lead') || t.includes('audit') || t.includes('tracking'))
+      return 'bg-purple-500/10 border-purple-500/20';
     return 'bg-gray-800/50 border-gray-700';
   };
 
@@ -269,6 +329,8 @@ function SalesCopilotContent() {
             {leadOptions.map((o) => (
               <option key={o.id} value={o.id}>
                 {o.label} (#{o.id})
+                {o.temperature ? ` · ${o.temperature}` : ''}
+                {o.stage ? ` · ${o.stage}` : ''}
               </option>
             ))}
           </select>
@@ -308,6 +370,7 @@ function SalesCopilotContent() {
           ) : (
             <div className="flex-1 min-h-[180px]">
               <GraphWrapper
+                key={leadId || 'none'}
                 data={graphData as { nodes: Record<string, unknown>[]; edges: Record<string, unknown>[] }}
                 onNodeClick={() => {}}
               />

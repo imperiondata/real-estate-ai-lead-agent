@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect, useCallback } from 'react';
 import { Canvas } from '@react-three/fiber';
-import { OrbitControls } from '@react-three/drei';
+import { Html, OrbitControls } from '@react-three/drei';
 import type { ProjectData, UnitData } from '@/lib/api/mockTwinService';
 import { Building2, X, DollarSign, Activity } from 'lucide-react';
 import { formatInrCr } from '@/lib/format';
@@ -11,44 +11,115 @@ interface UnitMeshProps {
   unit: UnitData;
   position: [number, number, number];
   hideSold: boolean;
-  onHover: (unit: UnitData | null) => void;
   onClick: (unit: UnitData) => void;
   selectedId: string | null;
 }
 
-const UnitMesh = ({ unit, position, hideSold, onHover, onClick, selectedId }: UnitMeshProps) => {
+/**
+ * Hover label: drei Html in transform+sprite mode (billboard in 3D, locked to mesh).
+ * Avoid transform={false}/portal — those float in screen space and drift off the block.
+ */
+const UnitMesh = ({ unit, position, hideSold, onClick, selectedId }: UnitMeshProps) => {
+  const [hovered, setHovered] = useState(false);
   const isSold = unit.status === 'Sold';
   if (hideSold && isSold) return null;
 
   const color =
     unit.status === 'Available' ? '#10b981' : unit.status === 'Hold' ? '#f59e0b' : '#ef4444';
   const isSelected = selectedId === unit.id;
+  const showTip = hovered && !isSelected;
 
   return (
-    <mesh
-      position={position}
-      onPointerOver={(e) => {
-        e.stopPropagation();
-        onHover(unit);
-      }}
-      onPointerOut={(e) => {
-        e.stopPropagation();
-        onHover(null);
-      }}
-      onClick={(e) => {
-        e.stopPropagation();
-        onClick(unit);
-      }}
-    >
-      <boxGeometry args={[1.8, 0.8, 1.8]} />
-      <meshStandardMaterial
-        color={color}
-        emissive={color}
-        emissiveIntensity={isSelected ? 0.8 : isSold ? 0.1 : 0.4}
-        transparent
-        opacity={isSold ? 0.4 : isSelected ? 1 : 0.8}
-      />
-    </mesh>
+    <group position={position}>
+      <mesh
+        onPointerOver={(e) => {
+          e.stopPropagation();
+          setHovered(true);
+          document.body.style.cursor = 'pointer';
+        }}
+        onPointerOut={(e) => {
+          e.stopPropagation();
+          setHovered(false);
+          document.body.style.cursor = 'auto';
+        }}
+        onClick={(e) => {
+          e.stopPropagation();
+          onClick(unit);
+        }}
+      >
+        <boxGeometry args={[1.8, 0.8, 1.8]} />
+        <meshStandardMaterial
+          color={color}
+          emissive={color}
+          emissiveIntensity={isSelected ? 0.8 : isSold ? 0.1 : 0.4}
+          transparent
+          opacity={isSold ? 0.4 : isSelected ? 1 : 0.8}
+        />
+      </mesh>
+      {showTip && (
+        <Html
+          position={[0, 0.55, 0]}
+          transform
+          sprite
+          distanceFactor={4}
+          style={{ pointerEvents: 'none', userSelect: 'none' }}
+          zIndexRange={[20, 0]}
+        >
+          <div
+            style={{
+              transform: 'scale(0.5)',
+              transformOrigin: 'center bottom',
+            }}
+          >
+            <div
+              style={{
+                transform: 'scale(2)',
+                minWidth: 132,
+                padding: '8px 12px',
+                borderRadius: 8,
+                border: '1px solid #4b5563',
+                background: 'rgba(15,15,19,0.94)',
+                boxShadow: '0 4px 16px rgba(0,0,0,0.5)',
+                whiteSpace: 'nowrap',
+                textAlign: 'center',
+              }}
+            >
+              <div style={{ fontSize: 14, fontWeight: 700, color: '#fff', lineHeight: 1.2 }}>
+                Unit {unit.unit_number}
+              </div>
+              <div
+                style={{
+                  fontSize: 13,
+                  marginTop: 3,
+                  display: 'flex',
+                  gap: 6,
+                  justifyContent: 'center',
+                  alignItems: 'center',
+                }}
+              >
+                <span
+                  style={{
+                    fontWeight: 600,
+                    color:
+                      unit.status === 'Available'
+                        ? '#34d399'
+                        : unit.status === 'Hold'
+                          ? '#fbbf24'
+                          : '#f87171',
+                  }}
+                >
+                  {unit.status}
+                </span>
+                <span style={{ color: '#6b7280' }}>|</span>
+                <span style={{ fontWeight: 600, color: '#e5e7eb' }}>
+                  {formatInrCr(unit.price)}
+                </span>
+              </div>
+            </div>
+          </div>
+        </Html>
+      )}
+    </group>
   );
 };
 
@@ -134,7 +205,6 @@ function mapTwinApiToProject(payload: {
 export default function DigitalTwinPage() {
   const [project, setProject] = useState<ProjectData | null>(null);
   const [counts, setCounts] = useState({ available: 0, hold: 0, sold: 0 });
-  const [hoveredUnit, setHoveredUnit] = useState<UnitData | null>(null);
   const [selectedUnit, setSelectedUnit] = useState<UnitData | null>(null);
   const [hideSold, setHideSold] = useState(false);
   const [emptyReason, setEmptyReason] = useState<string | null>(null);
@@ -240,7 +310,6 @@ export default function DigitalTwinPage() {
                           unit={unit}
                           position={[px, 0.5, pz]}
                           hideSold={hideSold}
-                          onHover={(u) => setHoveredUnit(u)}
                           onClick={(u) => setSelectedUnit(u)}
                           selectedId={selectedUnit?.id || null}
                         />
@@ -253,27 +322,6 @@ export default function DigitalTwinPage() {
           })}
         </group>
       </Canvas>
-
-      {hoveredUnit && !selectedUnit && (
-        <div className="absolute top-6 right-[350px] bg-[#0f0f13]/90 backdrop-blur-md border border-gray-800 rounded-lg p-3 shadow-2xl pointer-events-none z-10 hidden md:block">
-          <p className="text-xs font-bold text-white mb-1">Unit {hoveredUnit.unit_number}</p>
-          <div className="flex items-center gap-3 text-xs">
-            <span
-              className={
-                hoveredUnit.status === 'Available'
-                  ? 'text-emerald-400'
-                  : hoveredUnit.status === 'Hold'
-                    ? 'text-amber-400'
-                    : 'text-red-400'
-              }
-            >
-              {hoveredUnit.status}
-            </span>
-            <span className="text-gray-400">|</span>
-            <span className="text-gray-300">{formatInrCr(hoveredUnit.price)}</span>
-          </div>
-        </div>
-      )}
 
       <div className="absolute top-6 left-6 w-64 bg-[#0f0f13]/80 backdrop-blur-xl border border-gray-800 rounded-2xl shadow-2xl overflow-hidden z-10">
         <div className="p-4 border-b border-gray-800 bg-[#15151a]/50 flex items-center gap-2">

@@ -72,9 +72,13 @@ def _lead_node(lead: Lead, *, center: bool = False) -> dict:
         "label": "Lead",
         "properties": {
             "name": lead.name or f"Lead {lead.id}",
+            "phone": lead.phone or "",
+            "location": lead.location or "",
             "score": score_val,
             "temperature": temp,
             "lead_id": lead.id,
+            "funnel_stage": lead.funnel_stage or "",
+            "property_type": lead.property_type or "",
         },
         "val": 24 if center else 16,
         "color": _temp_color(lead.lead_temperature),

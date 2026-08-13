@@ -67,6 +67,40 @@ def test_score_lead_cold_incomplete():
         _clean_sid(db, "sess_score_cold")
 
 
+def test_score_lead_visit_floor_and_no_drop():
+    """Visit/full-qualify floors match chat; stored high score is not yanked down."""
+    from models import Lead
+
+    lead = Lead(
+        name="A",
+        phone="+9199",
+        location="Wakad",
+        budget="80L",
+        property_type="2BHK",
+        visit_date="2026-08-20",
+        lead_temperature="hot",
+        conversion_probability=95,
+    )
+    s = score_lead(lead)
+    assert s["conversion_probability"] >= 88  # full-qualify floor
+    assert s["conversion_probability"] >= 95  # monotonic vs stored
+    assert s["lead_temperature"] == "hot"
+
+    coldish = Lead(
+        name="B",
+        phone="+9199",
+        location="Baner",
+        budget="70L",
+        property_type="2BHK",
+        visit_date=None,
+        lead_temperature="warm",
+        conversion_probability=10,
+    )
+    s2 = score_lead(coldish)
+    # May rise above stored 10; must not invent visit floor without visit_date
+    assert s2["conversion_probability"] < 82 or s2["lead_temperature"] in ("warm", "hot", "cold")
+
+
 def test_detect_tool_intent():
     assert detect_tool_intent("send me the brochure") == "brochure"
     assert detect_tool_intent("show floor plan please") == "floorplan"

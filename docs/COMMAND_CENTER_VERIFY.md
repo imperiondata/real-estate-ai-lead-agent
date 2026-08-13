@@ -39,7 +39,7 @@ inactive clients still get 401.
 | Frontend | `cd frontend && npm run dev` |
 | Seed clients | `python seed.py` (`admin@revenueos.com` / `password123`, keys `secret-client-key-123`/`-456`) |
 | Seed twin inventory (40 units) | `python seed_twin_demo.py --client-id 1 --clear` |
-| Leads for graph | any seeded/ingested lead for the logged-in client |
+| Leads + Neo4j | `python seed_dummy_leads.py --count 25 --client-id 1` (projects Neo4j unless `--no-neo4j`); or `python project_leads_to_neo4j.py --client-id 1` |
 | Flags (defaults OK) | `FEATURE_TWIN_LIVE=true`, `FEATURE_GRAPH_VIZ=true` |
 | Graph check | `GET /api/v1/graph/health` → `"available": true` |
 
@@ -93,14 +93,41 @@ tests. Full suite: `pytest tests/ -q` (439 passed / 4 skipped as of 2026-08-13).
 | Predictions **500** (not 401) | Service/DB error (auth already passed) | Check backend logs; DB up |
 | SSE no frames | Bus down (`503`) | `GET /api/v1/events/stream` with key; check Redis |
 
-## Sales AI behavior (one-liner)
+## Sales AI behavior
 
-- **preview** (default): scores + sticky-assignment suggestion + next-best
-  action; **no DB/CRM writes** (`applied:false`).
-- **execute**: score + assign + funnel-stage + CRM via AE→EE (`applied:true`).
-- NBA policy: missing fields → `request_info`; hot → `escalate_hot`;
-  visit date → `schedule_site_visit`; warm + assigned → `send_brochure`; else
-  nurture / assign-notify.
+- **preview** (default): fresh `score_lead` + NBA; **does not write DB**. Modal
+  shows computed % and **“Stored in DB: X%”** if different. May show `proposed_stage`.
+- **execute**: writes scores/assignee/stage (policy) + EventLog + NBA AE.
+  Modal: **“Stored was X% → now Y%”** (X = Postgres before Confirm).
+- **Scoring (UX)**: same **floors as chat** (full qualify ≥88, visit ≥82);
+  **does not drop** a higher stored conversion while the lead stays complete
+  (no more surprise 95→80 on Confirm). Incomplete leads still recompute low.
+- **`send_brochure`**: AE `send_whatsapp`; **10 min Redis debounce** per lead.
+  **`TEST_MODE=true`**: no real Twilio — amber banner + delivery note.
+- Twin hover: screen-stable **Html** label (no `distanceFactor` shrink).
+- NBA: **Closed Won/Lost → `deal_closed`** (no AE); missing fields →
+  `request_info`; hot → `escalate_hot`; visit → `schedule_site_visit`;
+  warm+assigned → `send_brochure`; else nurture/assign.
+- Timeline **orange** `!` on `lead.hot` = hot alert styling (not an error).
+
+## UI smoke (post 2026-08-13 UX batch)
+
+| Check | Pass |
+|-------|------|
+| Twin hover | **drei `Html` on mesh** — card above unit; readable `text-sm` + `distanceFactor={8}` |
+| Graph hover | Label shows name, phone, temp, score, location |
+| Graph fit | One `zoomToFit` per graph identity; **click = select only** (no `centerAt`/`zoom`); `minZoom`/`maxZoom` clamp |
+| Graph click panel | Styled fields (not raw JSON) |
+| Sales AI Confirm | Modal stays open; **Actions Executed**; stage before→after; scores unchanged note; dropdown/timeline/graph refresh |
+| Timeline filters | system/ai/comms include hot, negotiation, handoff, sales_ai, scored |
+| Sync | Same `lead_id` in URL, dropdown, ego graph, timeline after switch |
+
+## CC surface sync
+
+1. Changing lead on KG or copilot updates graph + timeline + `?lead_id=`  
+2. “Open in Sales Copilot” preserves `lead_id`  
+3. After Sales AI execute: options reload (temp/stage in label); timeline/graph refetch  
+4. SSE still refetches graph/timeline on `lead.scored` / `lead.assigned` / `lead.hot`
 
 ## Refs
 

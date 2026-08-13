@@ -1,7 +1,7 @@
 # Command Center UI/UX Fixes Plan
 
 **Date:** 2026-08-13  
-**Status:** Plan — awaiting execution approval  
+**Status:** Implemented 2026-08-13 (auth already in `9b9e3f7`; UI batch this change)  
 **Branch:** `post_automation_fixes`
 
 ---

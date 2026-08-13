@@ -868,6 +868,21 @@ async def process_chat(session_id: str, user_message: str, db: DBSession, client
             f_state.follow_up_status = "stopped"
             f_state.next_follow_up_at = None
 
+        db.add(EventLog(
+            session_id=session_id,
+            client_id=client_id,
+            event_type="lead.handoff",
+            action_type="human_handoff_requested",
+            agent_type="System",
+        ))
+        db.add(EventLog(
+            session_id=session_id,
+            client_id=client_id,
+            event_type="lead.hot",
+            action_type="human_handoff",
+            agent_type="System",
+        ))
+
         db.commit()
 
         logger.info(f"🚨 HUMAN HANDOFF TRIGGERED: Lead {lead.phone} requested an agent!")
@@ -951,6 +966,13 @@ async def process_chat(session_id: str, user_message: str, db: DBSession, client
     if any(phrase in msg_clean for phrase in _NEGOTIATION_PHRASES):
         if not lead.is_negotiating:
             lead.is_negotiating = True
+            db.add(EventLog(
+                session_id=session_id,
+                client_id=client_id,
+                event_type="lead.negotiation.started",
+                action_type="user_phrase",
+                agent_type="System",
+            ))
             db.commit()
 
         from app.events.negotiation import publish_negotiation_started
@@ -1530,6 +1552,14 @@ async def process_chat(session_id: str, user_message: str, db: DBSession, client
         logger.info(
             f"🔔 HOT THRESHOLD: Lead {lead.phone} conversion_probability={prob}; notifying after assignment."
         )
+        db.add(EventLog(
+            session_id=session_id,
+            client_id=client_id,
+            event_type="lead.hot",
+            action_type=f"hot_threshold_score_{prob}",
+            agent_type="System",
+        ))
+        db.commit()
         asyncio.create_task(
             trigger_hot_lead_notification(
                 lead.id,

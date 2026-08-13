@@ -115,6 +115,10 @@ def test_execute_applies_scores_and_commits(monkeypatch):
         "app.agents.sales_agent.ensure_lead_assignment",
         _assign,
     )
+    async def _fake_ae(lead, client_id, recommendation):
+        return [{"action": "send_whatsapp", "status": "ok", "nba": recommendation.get("action")}]
+
+    monkeypatch.setattr("app.agents.sales_agent._nba_to_ae_action", _fake_ae)
     committed = {"ok": False}
 
     class _Db:
@@ -136,6 +140,10 @@ def test_execute_applies_scores_and_commits(monkeypatch):
     assert lead.lead_temperature == "warm"
     assert lead.conversion_probability == 55.0
     assert lead.assigned_agent == "AssignedX"
+    assert "actions_executed" in res
+    assert res["actions_executed"][0]["action"] == "send_whatsapp"
+    assert "scores_before" in res
+    assert "note" in res
 
 
 def test_invalid_mode_raises():

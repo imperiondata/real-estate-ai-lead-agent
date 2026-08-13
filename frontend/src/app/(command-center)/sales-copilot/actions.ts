@@ -44,11 +44,20 @@ export async function fetchLeadOptions() {
   });
   if (!res.ok) return [];
   const data = await res.json();
-  return (data.leads || []).map((l: { id: number; name?: string; phone?: string; lead_temperature?: string }) => ({
-    id: String(l.id),
-    label: l.name || l.phone || `Lead ${l.id}`,
-    temperature: l.lead_temperature || 'cold',
-  }));
+  return (data.leads || []).map(
+    (l: {
+      id: number;
+      name?: string;
+      phone?: string;
+      lead_temperature?: string;
+      funnel_stage?: string;
+    }) => ({
+      id: String(l.id),
+      label: l.name || l.phone || `Lead ${l.id}`,
+      temperature: l.lead_temperature || 'cold',
+      stage: l.funnel_stage || '',
+    })
+  );
 }
 
 export async function fetchNeighborhood(leadId: string | number) {

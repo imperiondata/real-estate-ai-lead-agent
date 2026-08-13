@@ -23,6 +23,7 @@
 | Gate | Status |
 |---|---|
 | Backend + FE implementation (P4-0…P4-9) | `[x]` G5 green 2026-08-10 · HEAD `8f5c38b` |
+| Command Center auth (twin/graph/predictions cookie+Bearer) | `[x]` fixed 2026-08-13 — verify via `docs/COMMAND_CENTER_VERIFY.md` |
 | FE lint / tsc / build | `[x]` exit 0 — `4494307` (2026-08-11) |
 | Full pytest + isolation + DLQ + WA→SSE smoke | `[x]` pre-freeze baseline (see Evidence Pack) |
 | **Code debt for 4.0 MVP** | `[x]` none blocking — flags/timings at prod defaults in `config.py` |

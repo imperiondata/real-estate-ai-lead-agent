@@ -210,6 +210,7 @@ IS_PRODUCTION=false
 ## Production Go-Live Checklist (config-later flags)
 
 **Single source + full matrix (flag matrix, secrets track, infra adoption, integration runbooks): `docs/PROD_READINESS_CHECKLIST.md`.** QA gate (P4-QA) = checklist executed; release gate (P4-REL) = runbook approved (Mayank).  
+**Command Center smoke (auth/twin/graph/copilot/predictions): `docs/COMMAND_CENTER_VERIFY.md`** — dashboard JWT = Bearer **or** cookie on all JWT routes (twin/neighborhood included; unified 2026-08-13).  
 **Eng freeze handoff (Mayank + Piyush):** `plans/phase4/HANDOFF_MAYANK_PIYUSH.md` — twin at `/digital-twin` (command-center); docker n8n Publish after volume wipe = Mayank; Twilio secrets = Piyush.
 
 Flip these in `.env` at deploy (see `.env.example` footer): `IS_PRODUCTION=true`, `TEST_MODE=false`, `FOLLOW_UP_TEST_MODE=false`, `FOLLOW_UP_DLQ_TEST=false`, real `TWILIO_*`. Optional: `NEO4J_*`, `N8N_*`, `GOOGLE_CALENDAR_*`, `BROCHURE_*`/`FLOORPLAN_*`, `COMPETITOR_KEYWORDS`, real `CRM_API_*` + `FEATURE_HUBSPOT_LIVE=true` (HubSpot skippable). Everything degrades gracefully when an integration is left unconfigured.

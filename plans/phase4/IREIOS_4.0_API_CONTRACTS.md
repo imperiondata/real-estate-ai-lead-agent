@@ -8,7 +8,7 @@
 **Status:** **FROZEN** for MVP per lead answers 2026-08-07 (implement against this doc)  
 **Compat:** Additive fields OK after freeze. Renames require coordinated FE+BE PR.
 
-Auth: **JWT** (Bearer or HttpOnly `jwt` cookie). Prefer cookie for browser. No hard-coded api_key in FE bundles.
+Auth: **JWT** (Bearer or HttpOnly `jwt` cookie). Prefer cookie for browser. No hard-coded api_key in FE bundles. **All JWT routes accept both styles** — `Authorization: Bearer <jwt>` or cookie `jwt` — including `/inventory/twin`, `/graph/neighborhood`, and `/predictions/*` (BE unify 2026-08-13; see `docs/COMMAND_CENTER_VERIFY.md`). Events/graph family additionally accept `X-API-Key` / `?api_key=`.
 
 ---
 

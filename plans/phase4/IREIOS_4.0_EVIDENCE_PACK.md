@@ -151,6 +151,7 @@ These prove MVP quality **before** 2026-08-20. Freeze day still re-confirms (QA.
 - [x] FE lint + tsc + build exit 0 (`4494307`, 2026-08-11)
 - [x] `task3_runner` **waived** (Gemini quota, Mayank ack)
 - [x] Twin API + FE page shipped; seed script `seed_twin_demo.py` (40 units). **UI path:** command-center **`/digital-twin`** (not product `/dashboard` sidebar). Empty canvas = missing seed or JWT client with 0 inventory — not missing code.
+- [x] **Command Center JWT auth unify (2026-08-13)** — twin/predictions (cookie fetch) + neighborhood (Bearer server action) all authenticate: `get_current_client` + `get_events_client` accept Bearer **or** cookie; `tests/test_f4_jwt_auth.py` (13 new); full suite **439 passed / 4 skipped**; manual curl: twin/neighborhood/predictions 200 via Bearer + cookie, 401 unauth. Verify doc: `docs/COMMAND_CENTER_VERIFY.md`
 
 ### Freeze ceremony (still open — Mayank)
 

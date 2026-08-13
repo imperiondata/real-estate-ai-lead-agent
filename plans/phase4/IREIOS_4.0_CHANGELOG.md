@@ -30,6 +30,16 @@
 
 ## Entries
 
+### 2026-08-13 — Command Center JWT auth unify (twin/graph/predictions) + verify doc
+
+- **Bug (confirmed live):** `/digital-twin` 401 (browser fetch + cookie vs `get_current_client` Bearer-only) and `/knowledge-graph`/copilot ego auth-empty (server action Bearer vs `get_events_client` cookie/api-key-only). `dashboard-mvp` predictions shared the twin 401 risk.
+- **Fix (BE-only, no FE change):** `auth.py` now ships shared `_client_from_jwt_token` + `resolve_jwt_from_request`; `get_current_client` accepts `Authorization: Bearer` **or** HttpOnly `jwt` cookie (`OAuth2PasswordBearer(auto_error=False)`; missing/invalid still 401). `get_events_client` (`app/api/events.py`) order: API key → Bearer → cookie → 401. `app/api/predictions.py` fixed latent `client["id"]` → `client.id` (would 500 after auth pass).
+- **Files:** `auth.py`, `app/api/events.py`, `app/api/predictions.py`, `tests/test_f4_jwt_auth.py` (new, 13 tests).
+- **Tests:** f4 suite 35 passed; full suite **439 passed / 4 skipped** (services up) — baseline was 426/4 (+13 auth tests).
+- **Manual:** twin Bearer/cookie 200 (40 units), no-auth 401; neighborhood Bearer/cookie/api-key 200 (5 nodes/4 edges on lead 23), no-auth 401; predictions cookie/bearer 200; sales-ai preview success; graph health available.
+- **Docs:** NEW `docs/COMMAND_CENTER_VERIFY.md` (CC smoke single source — auth model, route map, manual checklist, failure matrix, Sales AI behavior); pointers added in `docs/FRONTEND_BACKLOG.md`, `docs/PROD_READINESS_CHECKLIST.md`, `AGENTS.md`, `IREIOS_4.0_API_CONTRACTS.md`, this changelog, Evidence Pack, HANDOFF doc.
+- **Rollback:** revert `auth.py` + `app/api/events.py` (+ predictions.py) only.
+
 ### 2026-08-13 — Final audit + Mayank/Piyush handoff
 
 - **Code audit:** no blocking 4.0 code debt. Flags/timings match prod defaults (`FEATURE_*`, `FOLLOWUP_ENGINE=v3`, WA 13s / LLM 22s). Twin/graph/Sales AI FE present.

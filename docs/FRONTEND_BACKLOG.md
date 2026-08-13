@@ -2,7 +2,7 @@
 
 Backend Waves A–D / Gate G3 are **code-complete**. FE cutover under **IREIOS 4.0** (`plans/phase4/`).
 
-**Last reviewed:** 2026-08-11 (FE Wave P4-5…P4-9 + **G5 green** + lint/tsc/build resolved)  
+**Last reviewed:** 2026-08-13 (Command-Center JWT auth unified BE-side: Bearer **or** cookie on twin/neighborhood/predictions; verify doc `docs/COMMAND_CENTER_VERIFY.md`)  
 **Home route:** `/dashboard` · **Freeze:** 2026-08-20 · **Release:** 2026-09-03
 
 ---
@@ -37,6 +37,7 @@ Same-origin: Next `rewrites` `/api/v1/:path*` → `NEXT_PUBLIC_API_URL` so brows
 | Digital Twin live | **Done** | Route **`/digital-twin`** under **command-center** (sidebar “Digital Twin”) — **not** on product `/dashboard` nav. API `GET /api/v1/inventory/twin` + 30s poll. Seed: `python seed_twin_demo.py --client-id 1 --clear` (40 units). Empty page = no inventory for JWT tenant, not missing FE. |
 | Command-center JWT middleware | **Done** | `proxy.ts` guards CC routes |
 | Login home `/dashboard` | **Done** | `auth.ts` redirect |
+| **Twin / graph / predictions JWT auth gap** | **Fixed 2026-08-13** | BE unify: `get_current_client` + `get_events_client` accept Bearer **or** cookie `jwt` (`auth.py` helpers `_client_from_jwt_token` / `resolve_jwt_from_request`). Twin (cookie fetch) no longer 401; neighborhood (Bearer server action) no longer auth-empty; `/predictions/*` cookie works. No FE changes needed. Verify: `docs/COMMAND_CENTER_VERIFY.md` + `tests/test_f4_jwt_auth.py` |
 
 ---
 
@@ -47,7 +48,7 @@ Same-origin: Next `rewrites` `/api/v1/:path*` → `NEXT_PUBLIC_API_URL` so brows
 - [x] Timeline for selected owned lead
 - [x] Forecast widgets from `/predictions/*` + heuristic label
 - [x] Sales AI preview+confirm on copilot + leads
-- [x] Graph ego (`/knowledge-graph` + copilot embed) + twin live at **`/digital-twin`** (or empty when flag/Neo4j/inventory off)
+- [x] Graph ego (`/knowledge-graph` + copilot embed) + twin live at **`/digital-twin`** (or empty when flag/Neo4j/inventory off) — runtime auth mismatch (cookie vs Bearer) **fixed 2026-08-13** (BE unify; no FE change)
 - [x] Full `npm run lint` exit 0 + `tsc --noEmit` clean + `npm run build` exit 0 (resolved 2026-08-11 — 23 errors + 17 warnings cleared per `docs/MAINTENANCE.md` §11.1; command-center tsc errors + Suspense prerender fixed in `4494307`)
 - [x] G5 automated demos / API evidence 2026-08-10; WA → SSE live smoke PASS 2026-08-11 (`wa_sse_smoke.py`, both modes)
 

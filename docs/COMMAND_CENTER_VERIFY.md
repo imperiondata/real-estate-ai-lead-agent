@@ -80,7 +80,7 @@ pytest tests/test_f4_jwt_auth.py tests/test_f4_twin.py tests/test_f4_graph_neigh
 
 Coverage: Bearer + cookie + no-auth on `get_current_client` (twin), API key +
 Bearer + cookie + no-auth on `get_events_client` (neighborhood), helper unit
-tests. Full suite: `pytest tests/ -q` (439 passed / 4 skipped as of 2026-08-13).
+tests. Full suite: `pytest tests/ -q` (441 passed / 4 skipped as of 2026-08-14).
 
 ## Failure matrix
 
@@ -114,7 +114,7 @@ tests. Full suite: `pytest tests/ -q` (439 passed / 4 skipped as of 2026-08-13).
 
 | Check | Pass |
 |-------|------|
-| Twin hover | **drei `Html` on mesh** — card above unit; readable `text-sm` + `distanceFactor={8}` |
+| Twin hover | **drei `Html` on mesh** (`transform` + `sprite`, `distanceFactor={4}`) — card sits on the unit; CSS 14/13px, readable at default zoom |
 | Graph hover | Label shows name, phone, temp, score, location |
 | Graph fit | One `zoomToFit` per graph identity; **click = select only** (no `centerAt`/`zoom`); `minZoom`/`maxZoom` clamp |
 | Graph click panel | Styled fields (not raw JSON) |

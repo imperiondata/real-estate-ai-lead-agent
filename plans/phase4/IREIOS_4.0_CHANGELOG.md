@@ -30,6 +30,18 @@
 
 ## Entries
 
+### 2026-08-14 — Docs sync to HEAD `127920e` + 441/4 baseline verified
+
+- Re-ran full suite on running stack: **441 passed / 4 skipped** (final CC UX baseline).
+- Handoff (`HANDOFF_MAYANK_PIYUSH.md`) HEAD `8f5c38b` → **`127920e`**; pytest row 426 → **441/4**; added CC UX batch row (§0).
+- `docs/PROD_READINESS_CHECKLIST.md` HEAD → `127920e`.
+- `docs/COMMAND_CENTER_VERIFY.md` suite count 439 → **441/4**; twin hover row updated to shipped `distanceFactor={4}` + transform/sprite.
+- `IREIOS_4.0_EVIDENCE_PACK.md` pre-freeze baseline: 426/439 → **441/4** + new CC UX batch checkbox.
+- `IREIOS_4.0_STEP_BY_STEP.md` QA.1.2 baseline → **441/4**.
+- `COMMAND_CENTER_UI_FIXES_PLAN.md` Issue 1 fix description corrected to shipped drei `Html` approach (was stale cursor-follow text).
+- `IREIOS_4.0_API_CONTRACTS.md` sales-ai execute response documented (additive per freeze rules): `actions_executed`, `stage_before`, `scores_before`, `scores_unchanged`, `test_mode`, `note` + `deal_closed` enum entry.
+- OpenAPI snapshot re-verified from running app — no route drift (only unicode-escape noise); file unchanged.
+
 ### 2026-08-13 — Terminal NBA gate + twin Html portal
 
 - `recommend_next_action`: Closed Won/Lost/Lost → `deal_closed` (no brochure/visit AE).

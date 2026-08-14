@@ -44,7 +44,16 @@ Auth: **JWT** (Bearer or HttpOnly `jwt` cookie). Prefer cookie for browser. No h
   },
   "funnel_stage": "Contacted",
   "crm_sync": null,
-  "applied": false
+  "applied": false,
+  "actions_executed": [],
+  "stage_before": "New",
+  "scores_before": {
+    "conversion_probability": 47.0,
+    "lead_temperature": "cold"
+  },
+  "scores_unchanged": false,
+  "test_mode": false,
+  "note": "string"
 }
 ```
 
@@ -56,10 +65,16 @@ Auth: **JWT** (Bearer or HttpOnly `jwt` cookie). Prefer cookie for browser. No h
 | `assigned_agent` | current or would-be (no write) | after `ensure_lead_assignment` |
 | `funnel_stage` | current (no advance) | after `progress_deal_stage` |
 | `crm_sync` | `null` | AE result object or error |
+| `actions_executed` | `[]` | AE action results `[{"action": str, "status": "ok"\|"skipped", "note": str?}]` |
+| `stage_before` | — (execute only) | DB funnel stage before Confirm |
+| `scores_before` | — (execute only) | DB `conversion_probability` + `lead_temperature` before Confirm |
+| `scores_unchanged` | — (execute only) | `true` when stored scores equal recomputed (no drop applied) |
+| `test_mode` | `false` | `settings.TEST_MODE` — `true` = WhatsApp not delivered to real phones |
+| `note` | (execute only) | human-readable summary (score floors / TEST_MODE warning) |
 | side effects (WhatsApp/notify/task) | **none** | yes via existing NBA→AE path |
 
 **`recommendation.action` enum (frozen):**  
-`request_info` | `schedule_site_visit` | `escalate_hot` | `send_brochure` | `assign_agent` | `nurture_followup`
+`request_info` | `schedule_site_visit` | `escalate_hot` | `send_brochure` | `assign_agent` | `nurture_followup` | `deal_closed` (terminal stage — **no AE**; execute `actions_executed` may contain a single `{"action": "deal_closed", "status": "skipped"}` entry)
 
 **FE flow:**  
 1. User clicks Sales AI → `mode=preview` → render action/rationale/scores/stage.  

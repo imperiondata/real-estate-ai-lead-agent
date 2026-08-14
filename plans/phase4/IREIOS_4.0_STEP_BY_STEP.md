@@ -293,8 +293,8 @@
 - **Status:** `[ ]`
 
 ### Task QA.1.2 — Full regression re-run (at freeze)
-- **Pre-freeze baseline already green** (2026-08-10/11) — see Evidence Pack § QA pre-freeze. This task = **re-confirm on freeze day / RC1**, not first-time execution.
-- `pytest tests/ -q` — expect ≥ baseline **426 passed / 4 skipped**
+- **Pre-freeze baseline already green** (2026-08-10/11 + CC UX batch `127920e` 2026-08-14) — see Evidence Pack § QA pre-freeze. This task = **re-confirm on freeze day / RC1**, not first-time execution.
+- `pytest tests/ -q` — expect ≥ baseline **441 passed / 4 skipped**
 - `python gate_isolation_test.py`
 - `python gate_dlq_drill.py` + `python dlq_replay.py`
 - `python wa_sse_smoke.py` both modes (`TEST_MODE=true` for smoke)

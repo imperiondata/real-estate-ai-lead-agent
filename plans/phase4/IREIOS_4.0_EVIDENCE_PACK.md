@@ -143,7 +143,7 @@ Exit gate: `docs/PROD_READINESS_CHECKLIST.md` executed. Tasks: `IREIOS_4.0_STEP_
 
 These prove MVP quality **before** 2026-08-20. Freeze day still re-confirms (QA.1.2/1.3) on the RC1 env.
 
-- [x] pytest full suite **426 passed / 4 skipped** (2026-08-10 G5 + 2026-08-11 re-run)
+- [x] pytest full suite **441 passed / 4 skipped** (2026-08-14, `127920e`; 426/4 at G5 2026-08-10)
 - [x] `gate_isolation_test.py` PASS (2026-08-10)
 - [x] `gate_dlq_drill.py` PASS stub path (2026-08-10)
 - [x] `wa_sse_smoke.py` both modes PASS (2026-08-11)
@@ -151,7 +151,8 @@ These prove MVP quality **before** 2026-08-20. Freeze day still re-confirms (QA.
 - [x] FE lint + tsc + build exit 0 (`4494307`, 2026-08-11)
 - [x] `task3_runner` **waived** (Gemini quota, Mayank ack)
 - [x] Twin API + FE page shipped; seed script `seed_twin_demo.py` (40 units). **UI path:** command-center **`/digital-twin`** (not product `/dashboard` sidebar). Empty canvas = missing seed or JWT client with 0 inventory — not missing code.
-- [x] **Command Center JWT auth unify (2026-08-13)** — twin/predictions (cookie fetch) + neighborhood (Bearer server action) all authenticate: `get_current_client` + `get_events_client` accept Bearer **or** cookie; `tests/test_f4_jwt_auth.py` (13 new); full suite **439 passed / 4 skipped**; manual curl: twin/neighborhood/predictions 200 via Bearer + cookie, 401 unauth. Verify doc: `docs/COMMAND_CENTER_VERIFY.md`
+- [x] **Command Center JWT auth unify (2026-08-13)** — twin/predictions (cookie fetch) + neighborhood (Bearer server action) all authenticate: `get_current_client` + `get_events_client` accept Bearer **or** cookie; `tests/test_f4_jwt_auth.py` (13 new); manual curl: twin/neighborhood/predictions 200 via Bearer + cookie, 401 unauth. Verify doc: `docs/COMMAND_CENTER_VERIFY.md`
+- [x] **CC UX batch (`127920e`, 2026-08-14)** — twin drei `Html` labels (transform+sprite), force-graph camera freeze (no click zoom; fit-once), Sales AI execute `actions_executed` + before/after, score floors + no-drop, terminal NBA `deal_closed`, brochure 10-min debounce, EventLog scored/hot/handoff/negotiation, timeline filters. Full suite **441 passed / 4 skipped**; FE lint exit 0. Verify doc: `docs/COMMAND_CENTER_VERIFY.md` § UI smoke
 
 ### Freeze ceremony (still open — Mayank)
 

@@ -22,7 +22,7 @@
 
 | Gate | Status |
 |---|---|
-| Backend + FE implementation (P4-0…P4-9) | `[x]` G5 green 2026-08-10 · HEAD `8f5c38b` |
+| Backend + FE implementation (P4-0…P4-9) | `[x]` G5 green 2026-08-10 · HEAD `127920e` (CC UX batch 2026-08-14) |
 | Command Center auth (twin/graph/predictions cookie+Bearer) | `[x]` fixed 2026-08-13 — verify via `docs/COMMAND_CENTER_VERIFY.md` |
 | FE lint / tsc / build | `[x]` exit 0 — `4494307` (2026-08-11) |
 | Full pytest + isolation + DLQ + WA→SSE smoke | `[x]` pre-freeze baseline (see Evidence Pack) |

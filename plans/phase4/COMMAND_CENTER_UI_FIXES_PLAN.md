@@ -1,7 +1,7 @@
 # Command Center UI/UX Fixes Plan
 
 **Date:** 2026-08-13  
-**Status:** Implemented 2026-08-13 (auth already in `9b9e3f7`; UI batch this change)  
+**Status:** Implemented — auth `9b9e3f7` (2026-08-13); UI batch `127920e` (2026-08-14)  
 **Branch:** `post_automation_fixes`
 
 ---
@@ -10,13 +10,12 @@
 
 **Problem**: Tooltip at `top-6 right-[350px]` is fixed near the "Live twin" badge, not near the hovered unit.
 
-**Root cause**: `digital-twin/page.tsx:258` uses `absolute top-6 right-[350px]` — a fixed screen location.
+**Root cause**: `digital-twin/page.tsx` used a DOM overlay (`absolute top-6 right-[350px]`), then cursor-follow math (`clientX`/`clientY`) — both unreliable in WebGL/OrbitControls space (tip landed far from the block).
 
-**Fix (FE only)**:
-- Track mouse position (`clientX`/`clientY`) in state
-- In `UnitMesh.onPointerOver`, capture `e.nativeEvent.clientX/clientY` and pass to parent via updated `onHover(unit, {x, y})`
-- Position tooltip at `style={{left: mousePos.x + 12, top: mousePos.y - 20}}` (offset from cursor)
-- Remove `right-[350px]` fixed positioning
+**Fix (FE only) — shipped `127920e`**:
+- **drei `Html` child of the unit mesh** (`transform` + `sprite` + `distanceFactor={4}`) — HTML billboard projects in 3D and rides the block, no DOM cursor math
+- Compact card (CSS 14/13px) sits just above the unit (`y: 0.55`)
+- Click-to-select side panel unchanged
 
 **File**: `frontend/src/app/(command-center)/digital-twin/page.tsx`
 

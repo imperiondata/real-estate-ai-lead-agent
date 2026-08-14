@@ -1,8 +1,8 @@
 # IREIOS 4.0 — Engineering freeze handoff (Mayank + Piyush)
 
-**Date:** 2026-08-13  
-**Branch / HEAD:** `post_automation_fixes` @ `8f5c38b` (FE quality `4494307`)  
-**Program status:** P4-0…P4-9 + **G5 green** · **no blocking code debt** · remaining = freeze ceremony (08-20) + secrets + deploy (09-03)  
+**Date:** 2026-08-14  
+**Branch / HEAD:** `post_automation_fixes` @ `127920e` (FE quality `4494307`, CC UX batch `127920e`)  
+**Program status:** P4-0…P4-9 + **G5 green** · CC UX polish shipped · **no blocking code debt** · remaining = freeze ceremony (08-20) + secrets + deploy (09-03)  
 **Authoritative queue:** `UNIFIED_EXECUTION_ORDER.md` · readiness: `docs/PROD_READINESS_CHECKLIST.md` · evidence: `IREIOS_4.0_EVIDENCE_PACK.md`
 
 ---
@@ -15,9 +15,10 @@
 | FE cutover (Sales AI, forecast, graph, twin, JWT/SSE) | Shipped | P4-5…P4-9 |
 | G5 gate | Green 2026-08-10 | Evidence Pack § G5 |
 | FE lint / tsc / build | Exit 0 | `4494307` |
-| Full pytest | 426 passed / 4 skipped | 2026-08-10 + 08-11 |
+| Full pytest | 441 passed / 4 skipped | 2026-08-14 (`127920e` + auth unify) |
 | Isolation + DLQ drills | PASS | 2026-08-10 |
 | WA → SSE live smoke | PASS both modes | `wa_sse_smoke.py` 2026-08-11 |
+| CC UX batch (twin Html labels, graph zoom freeze, sales-ai execute UX, terminal NBA) | Shipped | `127920e`, 2026-08-14 |
 | n8n bridge **code** + unit tests | 14/14 | `tests/test_e20_n8n_bridge.py` |
 | `task3_runner` | **Waived** (Gemini quota) | Mayank ack @ G5 |
 | Flags / timeouts defaults | Correct in `config.py` | See §3 below |

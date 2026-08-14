@@ -640,8 +640,7 @@ Structured logs use `request_id` / `tenant_id` contextvars when set.
 | FE lint runbook | `docs/MAINTENANCE.md` §11.1 (23e/17w baseline → **resolved 2026-08-11**, exit 0) |
 | `plans/phase4/UNIFIED_EXECUTION_ORDER.md` | **Active** Product Phase 4 order / gates (**G5 green 2026-08-10**) |  
 | `plans/phase4/IREIOS_4.0_EVIDENCE_PACK.md` | Phase 4 gate evidence (G5 filled) |  
-| `plans/phase4/TEAM_LEAD_QUESTIONNAIRE_ANSWERED.md` | Locked lead decisions |  
-| `plans/phase4/TEAM_LEAD_QUESTIONNAIRE.md` | Phase 4 lead decisions + false-claim audit (blank template) |  
+| `plans/phase4/TEAM_LEAD_QUESTIONNAIRE_ANSWERED.md` | Locked lead decisions (blank template removed 2026-08-14 — answered copy is canonical) |  
 | `plans/phase3/UNIFIED_EXECUTION_ORDER.md` | Archived IREIOS 3.0 order / gates |
 | `plans/phase3/IREIOS_3.0_EVIDENCE_PACK.md` | 3.0 release evidence |
 | `plans/phase4/IREIOS_4.0_EVIDENCE_PACK.md` | 4.0 release evidence |

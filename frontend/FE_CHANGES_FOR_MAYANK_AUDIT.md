@@ -119,6 +119,17 @@ new one (no abort, no stale-guard).
 the lead dropdown go stale after live rescore events.
 *Proposed fix:* refresh options on `lead.scored` SSE (same debounce as B1).
 
+**B4 — Green before/after deltas inaccurate or one execution late (reported).**
+The modal's "Stored was X% → now Y%" / stage-delta lines are computed from
+`result.scores_before` vs `result.scores`. In the execute path the backend snapshots
+`scores_before`/`stage_before` straight off the request-scoped ORM object **with no fresh
+DB read** (`app/agents/sales_agent.py:191-195`; `_preview_sales_ai` does `db.refresh`
+at `sales_agent.py:304`, the execute path does not). If the in-memory object is stale
+(loaded earlier, or updated by another worker — WhatsAppAgent, SSE, a previous execute),
+the displayed delta is wrong and can surface one execution later.
+*Proposed fix:* `db.refresh(lead)` (or re-query) immediately before capturing
+`scores_before`/`stage_before` in the execute path; keep preview/execute recompute aligned.
+
 ---
 
 ## 5. Other frontend sections Mayank should audit

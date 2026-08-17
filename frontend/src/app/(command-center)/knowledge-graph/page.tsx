@@ -116,6 +116,27 @@ function KnowledgeGraphContent() {
           </div>
           {(() => {
             const p = (selectedNode.properties as Record<string, unknown>) || {};
+            if (selectedNode.node_type === 'stub') {
+              return (
+                <div className="text-xs text-gray-500 italic mt-2">
+                  No extended data for this node
+                </div>
+              );
+            }
+            if (selectedNode.node_type === 'agent') {
+              return (
+                <dl className="space-y-2 text-xs mt-2">
+                  <div className="flex justify-between gap-3">
+                    <dt className="text-gray-500 shrink-0">Name</dt>
+                    <dd className="text-gray-200 text-right truncate">{String(p.name || '—')}</dd>
+                  </div>
+                  <div className="flex justify-between gap-3">
+                    <dt className="text-gray-500 shrink-0">Role</dt>
+                    <dd className="text-gray-200 text-right truncate">{String(p.role || 'Assigned Agent')}</dd>
+                  </div>
+                </dl>
+              );
+            }
             const rows: [string, string][] = [
               ['Name', String(p.name || '—')],
               ['Phone', String(p.phone || '—')],
@@ -126,7 +147,7 @@ function KnowledgeGraphContent() {
               ['Type', String(p.property_type || '—')],
             ];
             return (
-              <dl className="space-y-2 text-xs">
+              <dl className="space-y-2 text-xs mt-2">
                 {rows.map(([k, v]) => (
                   <div key={k} className="flex justify-between gap-3">
                     <dt className="text-gray-500 shrink-0">{k}</dt>

@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect, useCallback, Suspense } from 'react';
+import React, { useState, useEffect, useCallback, Suspense, useRef } from 'react';
 import dynamic from 'next/dynamic';
 import {
   MessageCircle,
@@ -60,6 +60,11 @@ function SalesCopilotContent() {
   const [isExecuting, setIsExecuting] = useState(false);
   const [isPreviewOpen, setIsPreviewOpen] = useState(false);
   const [salesError, setSalesError] = useState<string | null>(null);
+  
+  const leadIdRef = useRef(leadId);
+  useEffect(() => {
+    leadIdRef.current = leadId;
+  }, [leadId]);
 
   const [graphData, setGraphData] = useState<{ nodes: unknown[]; edges: unknown[] }>({
     nodes: [],
@@ -159,6 +164,9 @@ function SalesCopilotContent() {
   useEffect(() => {
     if (!leadId) return;
     const es = new EventSource('/api/v1/events/stream', { withCredentials: true });
+    let debounceTimer: number | null = null;
+    let needsOptionsRefresh = false;
+
     es.onmessage = (event) => {
       if (!event.data || event.data.startsWith(':')) return;
       try {
@@ -171,12 +179,19 @@ function SalesCopilotContent() {
           entity.endsWith(`_${leadId}`) ||
           String(data.payload?.lead_id) === leadId;
         if (!match) return;
-        if (t === 'lead.scored' || t === 'lead.assigned' || t === 'lead.hot') {
-          loadGraph(leadId);
-          loadTimeline(leadId);
-        }
+
         if (t?.startsWith('lead.') || t?.includes('whatsapp') || t === 'conversation.updated') {
-          loadTimeline(leadId);
+          if (t === 'lead.scored') needsOptionsRefresh = true;
+
+          if (debounceTimer) window.clearTimeout(debounceTimer);
+          debounceTimer = window.setTimeout(() => {
+            void loadTimeline(leadId);
+            void loadGraph(leadId);
+            if (needsOptionsRefresh) {
+              void refreshLeadOptions();
+              needsOptionsRefresh = false;
+            }
+          }, 2500);
         }
       } catch {
         /* ignore parse / ping */
@@ -185,8 +200,11 @@ function SalesCopilotContent() {
     es.onerror = () => {
       /* browser auto-reconnects */
     };
-    return () => es.close();
-  }, [leadId, loadGraph, loadTimeline]);
+    return () => {
+      es.close();
+      if (debounceTimer) window.clearTimeout(debounceTimer);
+    };
+  }, [leadId, loadGraph, loadTimeline, refreshLeadOptions]);
 
   const onLeadChange = (id: string) => {
     setLeadId(id);
@@ -215,18 +233,22 @@ function SalesCopilotContent() {
 
   const handleConfirm = async () => {
     if (!leadId || isExecuting) return;
+    const executedLeadId = leadId;
     setIsExecuting(true);
     setSalesError(null);
     try {
-      const data = await runSalesAi(leadId, 'execute');
+      const data = await runSalesAi(executedLeadId, 'execute');
+      if (leadIdRef.current !== executedLeadId) return;
+      
       setSalesAIResult(data);
       await Promise.all([
-        loadTimeline(leadId),
-        loadGraph(leadId),
+        loadTimeline(executedLeadId),
+        loadGraph(executedLeadId),
         refreshLeadOptions(),
       ]);
       // Keep modal open so actions_executed is visible; user closes manually
     } catch (err) {
+      if (leadIdRef.current !== executedLeadId) return;
       setSalesError(err instanceof Error ? err.message : 'Execute failed');
     } finally {
       setIsExecuting(false);
@@ -323,7 +345,8 @@ function SalesCopilotContent() {
           <select
             value={leadId}
             onChange={(e) => onLeadChange(e.target.value)}
-            className="w-full bg-[#0f0f13] border border-gray-700 text-white text-sm rounded-lg px-3 py-2"
+            disabled={isExecuting}
+            className="w-full bg-[#0f0f13] border border-gray-700 text-white text-sm rounded-lg px-3 py-2 disabled:opacity-50 disabled:cursor-not-allowed"
           >
             {leadOptions.length === 0 && <option value={leadId || ''}>{selectedLabel}</option>}
             {leadOptions.map((o) => (

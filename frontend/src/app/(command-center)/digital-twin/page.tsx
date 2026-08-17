@@ -61,7 +61,7 @@ const UnitMesh = ({ unit, position, hideSold, onClick, selectedId }: UnitMeshPro
           position={[0, 0.55, 0]}
           transform
           sprite
-          distanceFactor={4}
+          distanceFactor={8}
           style={{ pointerEvents: 'none', userSelect: 'none' }}
           zIndexRange={[20, 0]}
         >
@@ -84,12 +84,12 @@ const UnitMesh = ({ unit, position, hideSold, onClick, selectedId }: UnitMeshPro
                 textAlign: 'center',
               }}
             >
-              <div style={{ fontSize: 14, fontWeight: 700, color: '#fff', lineHeight: 1.2 }}>
+              <div style={{ fontSize: 16, fontWeight: 700, color: '#fff', lineHeight: 1.2 }}>
                 Unit {unit.unit_number}
               </div>
               <div
                 style={{
-                  fontSize: 13,
+                  fontSize: 14,
                   marginTop: 3,
                   display: 'flex',
                   gap: 6,

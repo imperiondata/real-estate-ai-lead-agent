@@ -6,12 +6,7 @@ if (!BACKEND_URL) {
 }
 
 async function authFetch(url: string, options?: RequestInit) {
-  const res = await fetch(url, options)
-  if (res.status === 401) {
-    const { redirect } = await import('next/navigation')
-    redirect('/login')
-  }
-  return res
+  return fetch(url, options)
 }
 
 export interface Lead {

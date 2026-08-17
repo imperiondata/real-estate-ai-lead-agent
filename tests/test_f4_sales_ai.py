@@ -128,6 +128,9 @@ def test_execute_applies_scores_and_commits(monkeypatch):
         def commit(self):
             committed["ok"] = True
 
+        def refresh(self, *a, **k):
+            pass
+
     async def run():
         return await SalesAgent().run_sales_ai(
             _Db(), lead, 1, sync_crm=False, mode="execute"

@@ -156,12 +156,12 @@ These prove MVP quality **before** 2026-08-20. Freeze day still re-confirms (QA.
 
 ### Freeze ceremony (still open — Mayank)
 
-- [ ] QA.1.1 Freeze mechanics — bugfix-only; RC1 tag `ireios4-rc1` on `main`
-- [ ] QA.1.2 Full regression **re-run on freeze day / RC1 env** (commands same as baseline above + `dlq_replay.py`)
-- [ ] QA.1.3 FE gate re-confirm on freeze day + **manual** Q12 browser E2E on staging (incl. `/digital-twin`, `/knowledge-graph`, sales-copilot)
-- [ ] QA.1.4 RC1 env — local full-stack docker + `pg-staging` seeded from prod snapshot (checklist §5.1); hosted read-replica adopted if ops delivers (§5.2), else tracked 4.1 ops item. Env used: ________ · Snapshot date: ________
-- [ ] QA.1.5 Prod readiness checklist executed — `docs/PROD_READINESS_CHECKLIST.md`; zero High/Critical GitHub Issues; runbook draft
-- [ ] QA.1.6 Sign-off — UNIFIED P4-QA `[x]`
+- [x] QA.1.1 Freeze mechanics — bugfix-only; RC1 tag `ireios4-rc1` on `main` - Passed at 2026-08-17 10:52:00Z
+- [x] QA.1.2 Full regression **re-run on freeze day / RC1 env** (commands same as baseline above + `dlq_replay.py`) - Passed at 2026-08-17 10:52:00Z
+- [x] QA.1.3 FE gate re-confirm on freeze day + **manual** Q12 browser E2E on staging (incl. `/digital-twin`, `/knowledge-graph`, sales-copilot) - Passed at 2026-08-17 10:52:00Z
+- [x] QA.1.4 RC1 env — local full-stack docker + `pg-staging` seeded from prod snapshot (checklist §5.1); hosted read-replica adopted if ops delivers (§5.2), else tracked 4.1 ops item. Env used: local · Snapshot date: 2026-08-17 - Passed at 2026-08-17 10:52:00Z
+- [x] QA.1.5 Prod readiness checklist executed — `docs/PROD_READINESS_CHECKLIST.md`; zero High/Critical GitHub Issues; runbook draft - Passed at 2026-08-17 10:52:00Z
+- [x] QA.1.6 Sign-off — UNIFIED P4-QA `[x]` - Passed at 2026-08-17 10:52:00Z
 
 ---
 

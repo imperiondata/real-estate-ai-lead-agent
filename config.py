@@ -123,6 +123,8 @@ class Settings(BaseSettings):
     N8N_WEBHOOK_MAP: str = ""
     # Phase 8 competitor monitor watch-list (comma-separated, no network call)
     COMPETITOR_KEYWORDS: str = ""
+    # Admin API key for internal webhooks
+    ADMIN_API_KEY: str = ""
     # Wave D.4: WhatsApp brochure/floor plan media URL (public HTTPS). Empty = text fallback.
     BROCHURE_MEDIA_URL: str = ""
     FLOORPLAN_MEDIA_URL: str = ""
@@ -136,7 +138,7 @@ class Settings(BaseSettings):
     FEATURE_TWIN_LIVE: bool = True
     FEATURE_HUBSPOT_LIVE: bool = False
 
-    model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8")
+    model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
 
     @property
     def CLIENT_KEYS(self) -> dict:

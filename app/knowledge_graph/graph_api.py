@@ -70,6 +70,7 @@ def _lead_node(lead: Lead, *, center: bool = False) -> dict:
     return {
         "id": f"lead:{lead.id}",
         "label": "Lead",
+        "node_type": "lead",
         "properties": {
             "name": lead.name or f"Lead {lead.id}",
             "phone": lead.phone or "",
@@ -89,7 +90,8 @@ def _agent_node(name: str) -> dict:
     return {
         "id": f"agent:{name}",
         "label": "Agent",
-        "properties": {"name": name},
+        "node_type": "agent",
+        "properties": {"name": name, "role": "Assigned Agent"},
         "val": 18,
         "color": _AGENT_COLOR,
     }
@@ -174,6 +176,7 @@ async def graph_neighborhood(
                 nodes.append({
                     "id": f"lead:{sid}",
                     "label": "Lead",
+                    "node_type": "stub",
                     "properties": {
                         "name": f"Lead {sid}",
                         "score": 0,

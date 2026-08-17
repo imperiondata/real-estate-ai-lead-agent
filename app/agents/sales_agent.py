@@ -188,6 +188,7 @@ class SalesAgent:
 
         from models import EventLog
 
+        db.refresh(lead)
         stage_before = lead.funnel_stage or "New"
         scores_before = {
             "conversion_probability": getattr(lead, "conversion_probability", None),

@@ -333,6 +333,8 @@ class WhatsAppAgent:
 
                 if scores.get("budget_alignment_status") and scores["budget_alignment_status"] not in (
                     "aligned",
+                    "excellent",
+                    "strong",
                     "unknown",
                 ):
                     if not lead.is_negotiating:

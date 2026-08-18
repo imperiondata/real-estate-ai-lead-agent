@@ -158,7 +158,8 @@ Implementation process, in order:
 ### Brochure / floorplan
 - Enable: public **HTTPS** URLs → **verify** TwiML `<Media>` + FE staged `media_url` → **rollback:** empty vars (plain-text generators).
 ### HubSpot (optional)
-- Enable: `CRM_API_URL`/`CRM_API_KEY` (Private App Token, contacts r/w scope) + `FEATURE_HUBSPOT_LIVE=true` → **verify** contact upsert + DLQ on failure → **rollback:** `FEATURE_HUBSPOT_LIVE=false` (stub) — HubSpot is skippable at release.
+- Enable: `CRM_API_URL`/`CRM_API_KEY` (Private App Token) + `FEATURE_HUBSPOT_LIVE=true` → **verify** contact create (POST) + update-in-place (PATCH, no duplicates) + DLQ on failure → **rollback:** `FEATURE_HUBSPOT_LIVE=false` (stub) — HubSpot is skippable at release.
+- Prerequisites: Private App scopes `crm.objects.contacts.read`/`.write` (companies read/write optional) and the 10 custom contact properties pre-created in the portal — full checklist, property map, and troubleshooting: `docs/HUBSPOT_INTEGRATION.md`.
 ### Competitor monitor
 - Enable: `COMPETITOR_KEYWORDS=a,b,c` → **verify** nightly 01:00 `market.alert.generated` + `NotificationLog` rows → **rollback:** empty (job no-op).
 

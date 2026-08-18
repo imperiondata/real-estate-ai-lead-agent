@@ -141,9 +141,9 @@ High-signal, repo-specific facts an agent would likely miss without help.
 
 ## CRM Sync (P5)
 
-- `crm_sync.py`: **create-time CRM is bus-owned** (`lead.created` → `crm_automation` → AE→EE `update_crm`). Helpers in `crm_sync` remain for `CRMExecutor` + `crm_resync_job` (debounced field re-sync every 5 min). Do not call `sync_lead_to_crm` from chat/webhook paths.
+- `crm_sync.py`: **create-time CRM is bus-owned** (`lead.created` → `crm_automation` → AE→EE `update_crm`). Helpers in `crm_sync` remain for `CRMExecutor` + `crm_resync_job` (debounced field re-sync every 5 min). Do not call `sync_lead_to_crm` from chat/webhook paths. **Re-syncs PATCH the existing contact** (`_push_to_hubspot(payload, external_id=lead.external_crm_id)`) — never creates duplicates; first push is POST.
 - **P5.1:** after a meaningful field change on an already-synced lead, `agent.py` sets `Lead.crm_resync_pending = True`; `crm_resync_job` (scheduler, every 5 min) re-pushes and clears the flag. Failed re-sync keeps the flag set for retry.
-- **P5.2:** extended property map (location, intent, property_type, visit_date, assignee, budget_alignment_status, urgency_level, engagement_score, lead_temperature) gated by `CRM_SYNC_EXTENDED_PROPERTIES` (default True). A 4xx for an unknown custom property drops that property and retries once.
+- **P5.2:** extended property map (location, intent, property_type, visit_date, assignee, budget_alignment_status, urgency_level, engagement_score, lead_temperature) gated by `CRM_SYNC_EXTENDED_PROPERTIES` (default True). A 4xx for an unknown custom property is stripped **in a loop** (up to 10 iterations) with retry — property name parsed from `errors[].context.propertyName` first, regex fallbacks after.
 - **P5.3:** `decide_crm_status_after_poll` leaves `crm_sync_status = "pending"` (never "success") when both `phone` and `name` are still empty after the create-time poll, so the next field update re-syncs.
 
 ## Feedback learning (P6.1)
@@ -268,6 +268,7 @@ Sales hot escalate: notify_agent + create_task → agent_tasks
 - **Archived IREIOS 3.0 plans:** `plans/phase3/` (do not add new Phase 4 tasks there)
 - **Timeouts & timings (all race/TTL/scheduler values):** `docs/TIMEOUTS_AND_TIMINGS.md`
 - n8n: Compose + AE path + **bridge** shipped; **6/6 workflows** (Gmail + Sheets). Full Cloud Console + import runbook: `docs/N8N_GOOGLE_CREDENTIALS_SETUP.md`. Arch: `docs/N8N_INTEGRATION.md`. Brochure HTTPS URLs optional until set.
+- HubSpot: endpoints, scopes, property map, retry/strip-loop, DLQ + portal setup: `docs/HUBSPOT_INTEGRATION.md`
 - **Post-G3 automations closeout (Step 24):** `plans/phase3/PHASE3_AUTOMATIONS_CLOSEOUT.md`. Canonical bus (`lead.hot` + `trigger`). HubSpot Python stays skipped.
 - **BA-1…BA-7 + bridge:** `lead_hot.py`; `chat_context`; EE visit merge; HITL paths; calendar REST; **`n8n_bridge`** (not stock Redis→n8n). Tests: `tests/test_e18_*.py`, `tests/test_e20_n8n_bridge.py`.
 - Frontend remaining work: `docs/FRONTEND_BACKLOG.md` (SSE live + JWT cookie + MockSSE purged + lint/tsc/build exit 0 as of 2026-08-11)

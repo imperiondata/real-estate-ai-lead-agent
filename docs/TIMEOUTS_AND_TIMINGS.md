@@ -153,9 +153,10 @@ SMS does **not** use the WA race/interim pattern; it awaits `process_unified_lea
 
 | Timing | Value | Description | Location |
 |--------|-------|-------------|----------|
-| HubSpot HTTP | **10.0s** | per request | `crm_sync.py` ~135, ~147 |
-| Tenacity | **5** attempts, wait exp min **2s** max **30s** | permanent fail → DLQ | `crm_sync.py` ~109–110 |
-| Poll sleep | **0.5s** | between create-status polls | `crm_sync.py` ~177 |
+| HubSpot HTTP | **10.0s** | per request (POST create / PATCH update) | `crm_sync.py` ~169, ~184 |
+| Tenacity | **5** attempts, wait exp min **2s** max **30s** | permanent fail → DLQ | `crm_sync.py` ~121–126 |
+| Property-strip loop | **≤ 10** iterations | 4xx unknown property → strip + retry | `crm_sync.py` ~176–188 |
+| Poll sleep | **0.5s** | between create-status polls (≤10 attempts = ≤5s) | `crm_sync.py` ~214 |
 | Resync job | every **5 min** | scheduler | `main.py` ~369 |
 
 ---

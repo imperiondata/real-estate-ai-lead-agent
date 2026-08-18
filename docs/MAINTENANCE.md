@@ -380,7 +380,7 @@ Restart uvicorn to pick up code; scheduler lives in the API process (not a separ
 |-------------|--------|--------------|
 | Gemini | `GEMINI_API_KEY`, `GEMINI_MODEL` | Chat fails / quota errors |
 | Twilio WA | `TWILIO_*`; `TEST_MODE` skips send | DLQ / logs |
-| HubSpot CRM | `CRM_API_URL` + key; else demo stub (skippable) | DLQ `hubspot_crm` |
+| HubSpot CRM | `CRM_API_URL` + key; else demo stub (skippable) | DLQ `hubspot_crm` — POST creates, PATCH updates (see `docs/HUBSPOT_INTEGRATION.md`) |
 | Neo4j | `NEO4J_*` | Graph no-op |
 | n8n | `N8N_*` | `n8n_not_configured` (code path shipped; instance ops-pending) |
 | Google Calendar | `GOOGLE_CALENDAR_*` set → real events; empty → synthetic `visit_id` stub |
@@ -583,7 +583,7 @@ Structured logs use `request_id` / `tenant_id` contextvars when set.
 | App won’t start | `.env`, Postgres up, `pip check`, traceback on import |
 | EventBus errors | Redis container, `EVENT_STREAM_*` |
 | No WA send | `TEST_MODE`, Twilio creds, EE WhatsAppExecutor logs, DLQ |
-| CRM not updating | bus `crm_automation`, `crm_sync_status`, DLQ `hubspot_crm` |
+| CRM not updating | bus `crm_automation`, `crm_sync_status`, DLQ `hubspot_crm`; duplicates → check PATCH path + `docs/HUBSPOT_INTEGRATION.md` |
 | Graph empty | `NEO4J_URI`, `project_leads_to_neo4j.py`, writer logs |
 | Wrong tenant data | isolation gate; missing `client_id` filter |
 | Double messages | webhook MessageSid / Redis locks (P3) |

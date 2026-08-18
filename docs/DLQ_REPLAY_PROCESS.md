@@ -121,8 +121,11 @@ Prometheus alert rule `DLQDepthHigh` in `prometheus_alerts.yml` fires when
 
 ## Replay Safety
 
-- **Idempotency:** HubSpot replay may create duplicate contacts if the first push
-  partially succeeded. Check for duplicates by `phone` in HubSpot after replay.
+- **Idempotency:** HubSpot re-pushes now **PATCH** the existing contact when the
+  lead has an `external_crm_id` (stored on first successful POST), so replay
+  updates in place instead of duplicating. A replay may still create a duplicate
+  if the first push never returned an id (contact created but `external_crm_id`
+  never stored) — check for duplicates by `phone` in HubSpot after replay.
 - **Twilio replay:** Messages are sent regardless of whether the original was
   received. Notify the lead only once where possible — check `messages` table before
   manual escalation.

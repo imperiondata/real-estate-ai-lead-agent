@@ -1,10 +1,11 @@
 'use client';
 
-import React, { useState, useEffect, Suspense } from 'react';
+import React, { useState, useEffect, useCallback, Suspense } from 'react';
 import dynamic from 'next/dynamic';
 import { Filter, Zap, X, Network } from 'lucide-react';
 import { useSearchParams } from 'next/navigation';
 import { fetchNeighborhood, fetchLeadOptions } from '../sales-copilot/actions';
+import { useNeighborhoodSse } from '@/lib/useNeighborhoodSse';
 
 const GraphWrapper = dynamic(() => import('./GraphWrapper'), {
   ssr: false,
@@ -56,17 +57,34 @@ function KnowledgeGraphContent() {
       .catch(() => {});
   }, [leadId]);
 
-  useEffect(() => {
-    if (!leadId) return;
-    fetchNeighborhood(leadId).then((res) => {
+  const loadNeighborhood = useCallback(async (id: string) => {
+    if (!id) return;
+    try {
+      const res = await fetchNeighborhood(id);
       setAvailable(Boolean(res.available));
       setSummary(res.ai_summary || '');
       setData({
         nodes: res.data?.nodes || [],
         edges: res.data?.edges || [],
       });
-    });
-  }, [leadId]);
+    } catch {
+      setAvailable(false);
+      setData({ nodes: [], edges: [] });
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!leadId) return;
+    const t = window.setTimeout(() => {
+      void loadNeighborhood(leadId);
+    }, 0);
+    return () => window.clearTimeout(t);
+  }, [leadId, loadNeighborhood]);
+
+  // SSE: refetch ego graph on lead.scored / lead.assigned / lead.hot for the selected lead
+  useNeighborhoodSse(leadId, {
+    onScoredHot: () => loadNeighborhood(leadId),
+  });
 
   return (
     <div className="relative w-full h-[calc(100vh-4rem)] -m-6 md:-m-8 bg-[#0a0a0a]">

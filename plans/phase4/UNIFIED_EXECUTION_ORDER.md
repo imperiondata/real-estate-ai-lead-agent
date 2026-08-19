@@ -55,7 +55,7 @@
 | **P4-3** | Twin API | `GET /api/v1/inventory/twin` + seed 1×2×10×40 | pytest `test_f4_twin*` + seed | Aritro | `[x]` |
 | **P4-4** | HubSpot outbound | Live `CRM_API_*` when Piyush delivers key; outbound only; flag `FEATURE_HUBSPOT_LIVE` | Contact upsert demo or `[-]` Sheets fallback | Aritro/Maitri | `[x]` flag shipped; live upsert pending Piyush key |
 | **P4-5** | FE Sales AI | Preview+Confirm on **sales-copilot**, then Leads table | No mock NBA; lint | Mayank | `[x]` |
-| **P4-6** | FE Forecast | Live `/predictions/*` on dashboard-mvp + product dashboard; ₹ Cr; heuristic label | FRONTEND_BACKLOG §7 | Mayank | `[x]` |
+| **P4-6** | FE Forecast | Live `/predictions/*` on dashboard-mvp + product dashboard; ₹ Cr; heuristic label | `docs/FRONTEND_BACKLOG.md` → Acceptance (production FE / G5) | Mayank | `[x]` |
 | **P4-7** | FE Graph | Ego graph embed on **Sales Copilot** (+ optional knowledge-graph page) | SSE refetch; empty state | Mayank | `[x]` |
 | **P4-8** | FE Twin | Wire R3F to twin API; read-only; 30s poll | Seeded colors/status | Mayank | `[x]` |
 | **P4-9** | FE SSE/JWT | JWT cookie only; guard command-center; purge MockSSE + hard-coded keys; home `/dashboard` | grep clean + backlog acceptance | Mayank | `[x]` |

@@ -30,6 +30,14 @@
 
 ## Entries
 
+### 2026-08-19 — Post-baseline fixes + docs sync to HEAD `6d96be4`
+
+- Post-baseline code (2026-08-18): HubSpot **PATCH** existing contacts + drop rejected properties in a loop (`6ea7836`); frontend authFetch stops `redirect()` on 401 to avoid NEXT_REDIRECT overlay (`64579c6`); HubSpot integration reference + P5 docs sync (`6d96be4`).
+- **Discrepancy fixes (freeze-pre pounce):** `FEATURE_HUBSPOT_LIVE` default flipped `True` → **`False`** (`config.py`) to match docs/.env.example (fail-closed stub until real PAT); command-center `error.tsx` boundary added (DoD "Error boundaries"); shared `useNeighborhoodSse` hook extracted — knowledge-graph page now SSE-refetches the ego graph on `lead.scored`/`assigned`/`hot` (was copilot-only).
+- `UNIFIED_EXECUTION_ORDER.md` P4-6 exit gate references the current `docs/FRONTEND_BACKLOG.md` Acceptance section (stale `§7` removed).
+- Handoff + Evidence Pack + PROD_READINESS_CHECKLIST + COMMAND_CENTER_UI_FIXES_PLAN HEAD → `6d96be4` (branch `phase4_tests`).
+- Full-suite pytest **441 passed / 4 skipped re-verified 2026-08-19** (matches 08-14 baseline). Two test-isolation fixes: `test_p5_crm` hermetic vs live `.env` HubSpot creds (was PATCHing the real portal with fake `ext-123` → 404) and `test_e17_wave_d` brochure test hermetic vs the 10-min Redis debounce (was order/timing flaky across runs).
+
 ### 2026-08-14 — Docs sync to HEAD `127920e` + 441/4 baseline verified
 
 - Re-ran full suite on running stack: **441 passed / 4 skipped** (final CC UX baseline).

@@ -136,7 +136,9 @@ class Settings(BaseSettings):
     # IREIOS 4.0 feature flags
     FEATURE_GRAPH_VIZ: bool = True
     FEATURE_TWIN_LIVE: bool = True
-    FEATURE_HUBSPOT_LIVE: bool = True
+    # HubSpot live outbound is fail-closed: default false (demo stub) until a real
+    # CRM_API_KEY/CRM_API_URL + FEATURE_HUBSPOT_LIVE=true are set at deploy.
+    FEATURE_HUBSPOT_LIVE: bool = False
 
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8")
 

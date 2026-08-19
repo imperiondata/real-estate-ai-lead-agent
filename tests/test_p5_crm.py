@@ -87,7 +87,15 @@ def test_status_success_when_name_present():
 
 
 @pytest.mark.integration
-def test_resync_job_clears_pending_after_sync():
+def test_resync_job_clears_pending_after_sync(monkeypatch):
+    import crm_sync
+
+    # Hermetic: force the demo stub regardless of ambient .env HubSpot creds
+    # (local .env may have a real PAT + FEATURE_HUBSPOT_LIVE=true, which would
+    # make this test PATCH the live portal with a fake external_id and 404).
+    monkeypatch.setattr(crm_sync, "CRM_API_KEY", "demo-hubspot-key")
+    monkeypatch.setattr(crm_sync.settings, "FEATURE_HUBSPOT_LIVE", False)
+
     from database import SessionLocal
     from models import Lead, Client, Session
 

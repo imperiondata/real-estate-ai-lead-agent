@@ -1,7 +1,7 @@
 # Frontend Changes for Mayank — Audit Handoff
 
 **Audience:** Mayank (frontend owner)
-**Branch:** `post_automation_fixes` → PR into `main`
+**Branch:** `phase4_tests` (formerly `post_automation_fixes`) → PR into `main`
 **Author of these changes:** Macmill-340
 **Companion docs:** `docs/COMMAND_CENTER_VERIFY.md` (smoke/auth matrix) · `plans/phase4/HANDOFF_MAYANK_PIYUSH.md` (eng freeze handoff)
 

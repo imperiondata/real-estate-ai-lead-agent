@@ -80,7 +80,7 @@ pytest tests/test_f4_jwt_auth.py tests/test_f4_twin.py tests/test_f4_graph_neigh
 
 Coverage: Bearer + cookie + no-auth on `get_current_client` (twin), API key +
 Bearer + cookie + no-auth on `get_events_client` (neighborhood), helper unit
-tests. Full suite: `pytest tests/ -q` (441 passed / 4 skipped as of 2026-08-14).
+tests. Full suite: `pytest tests/ -q` (441 passed / 4 skipped — verified 2026-08-14 and re-verified 2026-08-19; re-confirm at RC1 QA.1.2).
 
 ## Failure matrix
 

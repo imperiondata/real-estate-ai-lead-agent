@@ -315,6 +315,24 @@ def test_sales_send_brochure_includes_media_url(monkeypatch):
     from app.agents.sales_agent import _nba_to_ae_action
     from config import settings
 
+    # Hermetic: neutralize the 10-min Redis brochure debounce (key
+    # `sales_ai_brochure:{client_id}:{lead_id}`) so a previous run within the
+    # TTL does not make this test skip the AE dispatch.
+    class _FakeRedis:
+        async def get(self, key):
+            return None
+
+        async def set(self, key, value, ex=None):
+            return True
+
+        async def aclose(self):
+            pass
+
+    def fake_from_url(url, **kwargs):
+        return _FakeRedis()
+
+    monkeypatch.setattr("redis.asyncio.from_url", fake_from_url)
+
     monkeypatch.setattr(settings, "BROCHURE_MEDIA_URL", "https://cdn.example.com/brochure.pdf")
 
     submitted = []

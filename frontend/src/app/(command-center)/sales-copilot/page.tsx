@@ -20,6 +20,7 @@ import {
   fetchNeighborhood,
 } from './actions';
 import SalesAiModal, { type SalesAiResult } from '@/components/SalesAiModal';
+import { useNeighborhoodSse } from '@/lib/useNeighborhoodSse';
 
 type TimelineEvent = {
   id: string;
@@ -156,37 +157,13 @@ function SalesCopilotContent() {
   }, [leadId, loadTimeline, loadGraph]);
 
   // SSE: refetch graph/timeline on relevant events for selected lead
-  useEffect(() => {
-    if (!leadId) return;
-    const es = new EventSource('/api/v1/events/stream', { withCredentials: true });
-    es.onmessage = (event) => {
-      if (!event.data || event.data.startsWith(':')) return;
-      try {
-        const data = JSON.parse(event.data);
-        const t = data.event_type as string;
-        const entity = String(data.entity_id || data.payload?.lead_id || '');
-        const match =
-          entity === leadId ||
-          entity === `lead:${leadId}` ||
-          entity.endsWith(`_${leadId}`) ||
-          String(data.payload?.lead_id) === leadId;
-        if (!match) return;
-        if (t === 'lead.scored' || t === 'lead.assigned' || t === 'lead.hot') {
-          loadGraph(leadId);
-          loadTimeline(leadId);
-        }
-        if (t?.startsWith('lead.') || t?.includes('whatsapp') || t === 'conversation.updated') {
-          loadTimeline(leadId);
-        }
-      } catch {
-        /* ignore parse / ping */
-      }
-    };
-    es.onerror = () => {
-      /* browser auto-reconnects */
-    };
-    return () => es.close();
-  }, [leadId, loadGraph, loadTimeline]);
+  useNeighborhoodSse(leadId, {
+    onScoredHot: () => {
+      loadGraph(leadId);
+      loadTimeline(leadId);
+    },
+    onTimelineEvent: () => loadTimeline(leadId),
+  });
 
   const onLeadChange = (id: string) => {
     setLeadId(id);

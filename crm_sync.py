@@ -48,13 +48,26 @@ def _rejected_property_from_4xx(exc) -> str | None:
         body = exc.response.json()
     except Exception:
         return None
+
+    # HubSpot structured error: body["errors"][0]["context"]["propertyName"]
+    errors = body.get("errors", [])
+    if errors and isinstance(errors[0], dict):
+        ctx = errors[0].get("context", {})
+        prop_names = ctx.get("propertyName", [])
+        if prop_names:
+            return prop_names[0]
+
     msg = body.get("message", "") if isinstance(body, dict) else ""
-    match = re.search(r"property ([a-z_]+) does not exist", msg)
-    if match:
-        return match.group(1)
-    match = re.search(r"unknown property[: ]+([a-z_]+)", msg, re.IGNORECASE)
-    if match:
-        return match.group(1)
+    for pattern in [
+        r"[Pp]roperty ['\"]?([a-zA-Z0-9_.]+)['\"]? does not exist",
+        r"[Uu]nknown property[: ]+['\"]?([a-zA-Z0-9_.]+)['\"]?",
+        r"[Ii]nvalid value for property ['\"]?([a-zA-Z0-9_.]+)['\"]?",
+        r"[Uu]nknown property name[: ]+['\"]?([a-zA-Z0-9_.]+)['\"]?",
+        r"[Nn]o such property ['\"]?([a-zA-Z0-9_.]+)['\"]?",
+    ]:
+        match = re.search(pattern, msg)
+        if match:
+            return match.group(1)
     return None
 
 
@@ -111,8 +124,12 @@ def decide_crm_status_after_poll(lead) -> str:
     retry=retry_if_exception_type((httpx.RequestError, CRMAPIError)),
     reraise=True
 )
-async def _push_to_hubspot(payload: dict) -> dict:
-    """Makes the actual HTTP request to HubSpot with tenacity backoff logic."""
+async def _push_to_hubspot(payload: dict, external_id: str | None = None) -> dict:
+    """Makes the actual HTTP request to HubSpot with tenacity backoff logic.
+
+    When ``external_id`` is provided (lead already synced once) the request is a
+    PATCH to the existing contact so we UPDATE instead of creating duplicates.
+    """
     headers = {
         "Authorization": f"Bearer {CRM_API_KEY}",
         "Content-Type": "application/json"
@@ -142,23 +159,33 @@ async def _push_to_hubspot(payload: dict) -> dict:
     async with httpx.AsyncClient() as client:
         logger.info(f"Syncing to CRM: {payload}")
 
-        response = await client.post(CRM_API_URL, json=payload, headers=headers, timeout=10.0)
+        if external_id:
+            url = f"{CRM_API_URL}/{external_id}"
+            method = client.patch
+        else:
+            url = CRM_API_URL
+            method = client.post
+
+        response = await method(url, json=payload, headers=headers, timeout=10.0)
 
         if response.status_code in [429, 500, 502, 503, 504]:
             raise CRMAPIError(f"CRM returned transient error {response.status_code}")
 
-        # P5.2: a 4xx for an unknown custom property is recoverable — drop it and
-        # retry once with the offending property removed.
+        # P5.2: a 4xx for an unknown custom property is recoverable — strip it
+        # and retry in a loop until success or no more parseable rejections.
         if 400 <= response.status_code < 500:
-            rejected = _rejected_property_from_4xx(response)
-            if rejected and rejected in payload["properties"]:
+            logger.warning(f"CRM 400 response body: {response.text}")
+            for _strip_attempt in range(10):
+                rejected = _rejected_property_from_4xx(response)
+                if not rejected or rejected not in payload["properties"]:
+                    break
                 logger.warning(f"CRM rejected property '{rejected}'; retrying without it.")
                 payload["properties"].pop(rejected, None)
-                retry_response = await client.post(CRM_API_URL, json=payload, headers=headers, timeout=10.0)
-                if retry_response.status_code in [429, 500, 502, 503, 504]:
-                    raise CRMAPIError(f"CRM returned transient error {retry_response.status_code}")
-                retry_response.raise_for_status()
-                return retry_response.json()
+                response = await method(url, json=payload, headers=headers, timeout=10.0)
+                if response.status_code in [429, 500, 502, 503, 504]:
+                    raise CRMAPIError(f"CRM returned transient error {response.status_code}")
+                if response.status_code < 400:
+                    return response.json()
 
         response.raise_for_status()
         return response.json()
@@ -192,7 +219,7 @@ async def _sync_lead_to_crm_async(lead_id: int, resync: bool = False):
 
             # Attempt to push to CRM
             try:
-                response_data = await _push_to_hubspot(payload)
+                response_data = await _push_to_hubspot(payload, external_id=lead.external_crm_id)
 
                 external_id = response_data.get("id")
                 if external_id:

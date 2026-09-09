@@ -251,6 +251,7 @@ PH-A.2 ∥ PH-B allowed after PH-C. Everything else serial.
 | Reliability baseline | `docs/BACKEND_RELIABILITY_CHECKLIST.md` |
 | n8n arch | `docs/N8N_INTEGRATION.md`, `docs/N8N_GOOGLE_CREDENTIALS_SETUP.md` |
 | Evidence | `plans/IREIOS_3.0_EVIDENCE_PACK.md` |
+| Access request (blocks live drills) | `docs/HARDENING_ACCESS_REQUEST.md` |
 
 ---
 

@@ -80,6 +80,7 @@
 | **24** | Automations closeout | **Bus hooks + n8n contracts** (no new product scope) | Step 24 exit in `plans/PHASE3_AUTOMATIONS_CLOSEOUT.md` §8 | `[x]` backend; n8n WF-1 still ops |  
 | **24b** | n8n delivery | **Bus→webhook bridge** + Gmail WF recipes | `n8n_bridge` + `plans/N8N_LIVE_WORKFLOWS_PLAN.md` | `[x]` bridge; WF UI pending |  
 | **G4** | Gate | **Automations production-ready** | BA-7 + bridge + n8n WF-1 Gmail smoke | `[~]` bridge done; WF-1 pending Maitri |  
+| **PH** | Hardening | Production Hardening Sprint: live cert of `production/main` (backend Aritro + 100-eval Maitri + joint webhook/n8n) — **blocks P4-QA/REL** | Appendices A+B in `docs/PRODUCTION_HARDENING_SPRINT.md` | Aritro/Maitri | `[ ]` |
 
 **Expansion Task 0.1** (doc freeze) is already done; do not re-open it as a blocking step.
 

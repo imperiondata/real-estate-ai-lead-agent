@@ -18,8 +18,9 @@ High-signal, repo-specific facts an agent would likely miss without help.
 | Ops / maintenance runbook | `docs/MAINTENANCE.md` |
 | Timeouts & timings map | `docs/TIMEOUTS_AND_TIMINGS.md` (all race/TTL/scheduler values + line anchors) |
 | Provision production client | `python add_client.py` (interactive, generates secure keys) |
-| Stress test (126 cases) | `python task3_runner.py` |
+| Stress test (126 cases, local/dev only — never vs live prod) | `python task3_runner.py` |
 | Filter stress test | `python task3_runner.py --category HOT` (`--test-id R01`, `--skip-db`, `--base-url`, `--api-key`) |
+| Live cert (SoT: Imperion `production/main`) | `docs/PRODUCTION_HARDENING_SPRINT.md` |
 | Tenant isolation drill | `python gate_isolation_test.py` |
 | DLQ drill | `python gate_dlq_drill.py` then `python dlq_replay.py` |
 | DB backup / restore | `python db_backup.py` / `python db_restore.py backups/backup_*.sql` |

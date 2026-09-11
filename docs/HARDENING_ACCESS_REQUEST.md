@@ -5,7 +5,7 @@
 | Everything Mayank must provide before live cert drills start | Cert procedures → `docs/PRODUCTION_HARDENING_SPRINT.md` |
 
 **SoT:** `production/main` @ `a0a2a53` (Imperion repo) · **Work branch:** `cert-sprint`
-**Status:** waiting on Mayank — no live load / webhook / eval / DR until this list is answered.
+**Status:** UNBLOCKED 2026-09-11 — Mayank fulfilled (a)–(g). Live drills may start. Secrets stay out of git (password manager only).
 
 ---
 
@@ -60,22 +60,37 @@ Please reply with: (a) GitHub invites, (b) Vercel approvals, (c) Render URL + in
 
 ---
 
-## 3. Ask checklist (tick on reply)
+## 3. Fulfillment (Mayank 2026-09-11 — public values only, no secrets)
 
-- [ ] (a) GitHub write: `Macmill-340` + `maitriishahh`
-- [ ] (b) Vercel approvals: both emails
-- [ ] (c) Render URL + team invite (API, Postgres, logs, snapshot)
-- [ ] (d) n8n live URL + logins, WFs Published
-- [ ] (e) Test-tenant API key + dashboard logins (secure channel)
-- [ ] Flags confirmed on Render (`TEST_MODE=false`, `IS_PRODUCTION=true`, `FOLLOW_UP_TEST_MODE=false`)
-- [ ] Twilio webhook target + replay plan (console read or Mayank-assisted)
-- [ ] Redis confirmed company-hosted
-- [ ] Gemini rate cap for the 100-eval
-- [ ] (f) `/metrics` owner + scrape permission; isolation-test permission (read-only)
-- [ ] (g) Snapshot owner for DR
-- [ ] Maitri live-sender number + 100-eval client id + WF-1 Gmail To set
+| Ask | Result |
+|---|---|
+| (a) GitHub write | Invites sent to `Macmill-340` + `maitriishahh` — **accepted**; push `cert-sprint` |
+| (b) Vercel | Hobby tier = 1 external collab → **Aritro approved**. Maitri uses live URL + Client B login. URL: `https://real-estate-ai-lead-agent-j330jhuc-imperion-s-projects1.vercel.app` |
+| (c) Render | API: `https://real-estate-ai-lead-agent-21nh.onrender.com`. **Free tier = no dashboard snapshots → DR uses manual `pg_dump` / `pg_restore` via external DB URL.** External DB URL still needed (Render invite or secure channel). Notify Mayank before the window. |
+| (d) n8n | Live cloud: `https://imperiondata.app.n8n.cloud`. WF-1…WF-6 imported, authenticated, Published. Logins via password manager. |
+| (e) Test tenant | **Client B** for load + 100-eval. API key: generate from Client B dashboard (self-serve). |
+| Flags | Live: `TEST_MODE=false`, `IS_PRODUCTION=true`, `FOLLOW_UP_TEST_MODE=false` |
+| (f) Metrics/isolation | `/metrics` scrape allowed during load. Read-only `gate_isolation_test.py` vs live allowed. |
+| Twilio replay | Mayank triggers duplicate from Meta/Twilio console — **ping him when PH-C starts** |
+| Redis | Company-hosted — confirmed |
+| (g) Maitri | Cleared to text live number. Client B tenant. Proof = `FollowUpState` stopped. WF-1 Gmail recipient set. Gemini: rate-limited, avoid 429 skew. |
 
-## 4. Blocked until answered
+## 4. Ask checklist (tick on reply)
 
-Live load (PH-A.2) · signed webhooks (PH-C.1) · 100-eval (PH-B) · n8n counts (PH-C.2) · DR (PH-A.3) · git push of `cert-sprint`.
-Allowed now: tenant-log audit (PH-A.1, read-only, no live traffic).
+- [x] (a) GitHub write: `Macmill-340` (accepted) + `maitriishahh` (invite sent)
+- [x] (b) Vercel: Aritro approved; Maitri via live URL + Client B login
+- [~] (c) Render API URL received; **external DB URL + team invite still pending**
+- [x] (d) n8n live URL + logins, WF-1…WF-6 Published
+- [~] (e) Tenant = Client B; **API key self-serve from dashboard (pending)**
+- [x] Flags confirmed on Render (`TEST_MODE=false`, `IS_PRODUCTION=true`, `FOLLOW_UP_TEST_MODE=false`)
+- [x] Twilio replay plan: Mayank-assisted (ping at PH-C)
+- [x] Redis confirmed company-hosted
+- [x] Gemini rate cap guidance for the 100-eval
+- [x] (f) `/metrics` scrape + read-only isolation test allowed
+- [x] (g) DR = manual `pg_dump`/`pg_restore` (no snapshot on Free tier)
+- [x] Maitri live-sender + Client B + WF-1 Gmail To set
+
+## 5. Now unblocked
+
+PH-0 · PH-A.1 · PH-C (ping Mayank for replay) · PH-A.2 ∥ PH-B (Client B) · PH-A.4 · PH-R.
+DR (PH-A.3) waits on: external DB URL + proposed window notice to Mayank + Maitri quiet.

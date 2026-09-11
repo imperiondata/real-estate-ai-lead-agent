@@ -21,7 +21,7 @@
 2. **Serial order:** PH-0 → PH-A.1(audit) → PH-C → (PH-A.2 ∥ PH-B) → PH-A.3 → PH-A.4 → PH-R. PH-C before the 100-eval so duplicates do not contaminate NLP evidence.
 3. **Real Twilio, real signatures.** Live number `+1 (334) 731-7182`. Duplicate = resend the same webhook with a valid `X-Twilio-Signature` (computed with the auth token — that is authentication, not a bypass). **`TEST_MODE=true` is forbidden for cert evidence.**
 4. **Live n8n mandatory.** Execution counts from the n8n UI. Unit mocks (`test_e20_n8n_bridge.py`) are supporting evidence only.
-5. **DR on hosted Render PostgreSQL only.** Render snapshot **first** (protects seeded Client A/B), then backup → failure sim → restore → verify. Maintenance window agreed with Mayank + Maitri; no dashboard/eval traffic during the window. **No local `pg-staging`.**
+5. **DR on hosted Render PostgreSQL only.** Manual `pg_dump` off-box **first** (Free tier: no dashboard snapshots; protects seeded Client A/B), then backup → failure sim → restore → verify. Maintenance window agreed with Mayank + Maitri; no dashboard/eval traffic during the window. **No local `pg-staging`.**
 6. **`task3_runner.py` is not a prod command.** Do not run it against the live deploy (Gemini quota + not the webhook race path). As-is cert: no tree changes for it.
 7. **Tenant isolation never regresses** — `python gate_isolation_test.py` after load and after DR (read-safe checks against prod only with Mayank's OK; never wipe prod traffic tables).
 8. **As-is means as-is.** PH-A.1 is an **audit** of the logs `production/main` already emits. No product code deploy from cert findings unless Mayank explicitly asks after the report.
@@ -78,10 +78,10 @@ PH-A.2 ∥ PH-B allowed after PH-C. Everything else serial.
 ### Task PH-0.1 — Record the live env
 - **Files:** none (evidence only)
 - **Steps:**
-  1. Confirm deploy tracks `production/main` @ `a0a2a53`. Record Render API URL, Vercel URL, Redis host, n8n host, Twilio number `+1 (334) 731-7182`.
+  1. Confirm deploy tracks `production/main` @ `a0a2a53`. Live env (Mayank 2026-09-11): API `https://real-estate-ai-lead-agent-21nh.onrender.com`, Vercel `https://real-estate-ai-lead-agent-j330jhuc-imperion-s-projects1.vercel.app`, n8n `https://imperiondata.app.n8n.cloud`, Twilio `+1 (334) 731-7182`, company Redis. Test tenant = **Client B** (API key self-serve from Client B dashboard).
   2. Record live flags: `TEST_MODE=false` (signature enforced), `IS_PRODUCTION=true`, `FOLLOW_UP_TEST_MODE=false`, `FOLLOWUP_ENGINE=v3`, `FEATURE_WHATSAPP_V3=true`.
   3. Confirm Client A + Client B seeded (isolation-safe read check only).
-  4. `curl https://<render-api>/health` → 200.
+  4. `curl https://real-estate-ai-lead-agent-21nh.onrender.com/health` → 200.
 - **Test:** `/health` 200 on the live host
 - **Done:** Env sheet pasted into Appendix A header
 - **Rollback:** N/A
@@ -181,19 +181,19 @@ PH-A.2 ∥ PH-B allowed after PH-C. Everything else serial.
 
 ## PH-A.3 — Disaster recovery drill (Aritro, maintenance window)
 
-### Task PH-A.3.1 — Snapshot → backup → fail → restore → verify (hosted Render PG)
+### Task PH-A.3.1 — Backup → fail → restore → verify (hosted Render PG, Free tier: manual `pg_dump` / `pg_restore`)
 - **Files (reference):** `docs/BACKUP_RESTORE_DRILL.md` (procedure + 7-table check), `docs/MAINTENANCE.md` §4–5, `db_backup.py`, `db_restore.py`
 - **Steps:**
   1. **Window first:** propose exact time to Mayank; confirm Maitri runs nothing during it. Record the window in Appendix A.
-  2. **Render snapshot** of the hosted PostgreSQL (protects seeded Client A/B). Record snapshot id + time.
-  3. `python db_backup.py` with prod `DATABASE_URL` → off-box copy. Record artifact + size.
+  2. **Manual `pg_dump`** via the external DB URL (Free tier has no dashboard snapshots). Copy the dump off-box; record artifact + size + time. This dump **is** the rollback — keep it until sign-off.
+  3. `python db_backup.py` with prod `DATABASE_URL` as a second artifact (belt-and-suspenders). Record artifact + size.
   4. Failure sim: stop/restart Render web and/or break DB connectivity; record `/health` + chat behavior with timestamps.
-  5. Restore hosted PG from the snapshot (primary) — `db_restore.py` only if the snapshot path is unavailable; record which path was used.
+  5. Restore hosted PG via `pg_restore` / `db_restore.py` from the step-2 dump; record which path was used + log.
   6. Verify: Client A/B rows, 7-table counts (`clients`, `sessions`, `leads`, `messages`, `event_logs`, `follow_up_states`, `dlq_events`), one real WA turn on the live number, isolation check.
   7. Record observed RTO/RPO + off-box backup gap.
 - **Test:** `python gate_isolation_test.py` · `python gate_dlq_drill.py` + `dlq_replay.py` (post-restore, Mayank's OK)
-- **Done:** Appendix A §DR filled (window, snapshot id, backup artifact, kill log, restore log, counts, RTO/RPO)
-- **Rollback:** The snapshot **is** the rollback; keep it until sign-off
+- **Done:** Appendix A §DR filled (window, dump artifact, backup artifact, kill log, restore log, counts, RTO/RPO)
+- **Rollback:** The step-2 `pg_dump` **is** the rollback; keep it until sign-off
 - **Status:** `[ ]`
 
 ---
@@ -286,10 +286,10 @@ Isolation after load: ________ · Artifacts: ________
 | Step | Evidence |
 |---|---|
 | Window (Mayank + Maitri confirmed quiet) | |
-| Render snapshot id + time | |
+| Manual `pg_dump` artifact + size + time (rollback copy) | |
 | `db_backup.py` artifact + size | |
 | Failure sim log (`/health` + chat) | |
-| Restore path (snapshot / `db_restore.py`) + log | |
+| Restore path (`pg_restore` / `db_restore.py`) + log | |
 | Client A/B + 7-table counts | |
 | Post-restore live WA turn + isolation + DLQ | |
 | Observed RTO / RPO + off-box gap | |

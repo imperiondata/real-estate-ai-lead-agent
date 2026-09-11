@@ -66,9 +66,9 @@ Please reply with: (a) GitHub invites, (b) Vercel approvals, (c) Render URL + in
 |---|---|
 | (a) GitHub write | Invites sent to `Macmill-340` + `maitriishahh` — **accepted**; push `cert-sprint` |
 | (b) Vercel | Hobby tier = 1 external collab → **Aritro approved**. Maitri uses live URL + Client B login. URL: `https://real-estate-ai-lead-agent-j330jhuc-imperion-s-projects1.vercel.app` |
-| (c) Render | API: `https://real-estate-ai-lead-agent-21nh.onrender.com`. **Free tier = no dashboard snapshots → DR uses manual `pg_dump` / `pg_restore` via external DB URL.** External DB URL still needed (Render invite or secure channel). Notify Mayank before the window. |
-| (d) n8n | Live cloud: `https://imperiondata.app.n8n.cloud`. WF-1…WF-6 imported, authenticated, Published. Logins via password manager. |
-| (e) Test tenant | **Client B** for load + 100-eval. API key: generate from Client B dashboard (self-serve). |
+| (c) Render | API: `https://real-estate-ai-lead-agent-21nh.onrender.com`. **Free tier = no dashboard snapshots → DR uses manual `pg_dump` / `pg_restore` via external DB URL.** External DB URL still needed: Render Dashboard → Postgres → Connect → External Database URL, or ask Mayank (secure channel). Notify Mayank before the window. |
+| (d) n8n | Live cloud: `https://imperiondata.app.n8n.cloud`. WF-1…WF-6 imported, authenticated, Published. **LOGIN FAILING 2026-09-11 (`incorrect username or password`) — Mayank to reset / resend working owner login (secure channel, never git).** |
+| (e) Test tenant | **Client B** for load + 100-eval. **Correction: no "Generate key" UI exists** (`/settings` = profile/notifications only; keys are seed-time values). **Ask Mayank for Client B's live `api_key` (secure channel).** |
 | Flags | Live: `TEST_MODE=false`, `IS_PRODUCTION=true`, `FOLLOW_UP_TEST_MODE=false` |
 | (f) Metrics/isolation | `/metrics` scrape allowed during load. Read-only `gate_isolation_test.py` vs live allowed. |
 | Twilio replay | Mayank triggers duplicate from Meta/Twilio console — **ping him when PH-C starts** |
@@ -80,8 +80,8 @@ Please reply with: (a) GitHub invites, (b) Vercel approvals, (c) Render URL + in
 - [x] (a) GitHub write: `Macmill-340` (accepted) + `maitriishahh` (invite sent)
 - [x] (b) Vercel: Aritro approved; Maitri via live URL + Client B login
 - [~] (c) Render API URL received; **external DB URL + team invite still pending**
-- [x] (d) n8n live URL + logins, WF-1…WF-6 Published
-- [~] (e) Tenant = Client B; **API key self-serve from dashboard (pending)**
+- [!] (d) n8n URL received but **login fails — reset pending**
+- [!] (e) Tenant = Client B; **live `api_key` pending from Mayank (no dashboard UI)**
 - [x] Flags confirmed on Render (`TEST_MODE=false`, `IS_PRODUCTION=true`, `FOLLOW_UP_TEST_MODE=false`)
 - [x] Twilio replay plan: Mayank-assisted (ping at PH-C)
 - [x] Redis confirmed company-hosted

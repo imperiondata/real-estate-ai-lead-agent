@@ -15,6 +15,20 @@
 
 ---
 
+## 0. Current blockers (2026-09-11 — new sessions read this first)
+
+| # | Blocker | Blocks | Owner to unblock |
+|---|---|---|---|
+| 1 | **n8n login fails** (`incorrect username or password` on `https://imperiondata.app.n8n.cloud`) | PH-C.2 (live exec counts mandatory) | Mayank — reset or send working owner login (secure channel) |
+| 2 | **No Client B `api_key`** — dashboard `/settings` is profile/notifications only; keys are seed-time values, there is no "Generate key" UI | PH-C.1, PH-A.2, PH-B (all live traffic uses Client B) | Mayank — send Client B's live `api_key` (secure channel) |
+| 3 | **No external Postgres URL** (needed for DR `pg_dump`/`pg_restore`) | PH-A.3 only | Mayank or Render invite — see "How to get the Postgres URL" below |
+
+**How to get the Postgres URL:** Render Dashboard → the Postgres service → **Connect → External Database URL** (starts with `postgresql://…@…oregon-postgres.render.com/…`). If you have no Render access, **ask Mayank** (he owns the Render account) to paste it on a secure channel — or grant you a Render team invite so you can copy it yourself. Never commit it to git; export as `DATABASE_URL` only for the drill.
+
+**Runnable now:** PH-0 (`/health` + env sheet) and PH-A.1 (log audit, no live traffic). Everything else waits on 1–2; DR waits on 3 + a calendar window.
+
+---
+
 ## 1. Hard rules
 
 1. **Certify the live deploy as-is.** `production/main` @ `a0a2a53` only. **Do not merge `phase4_tests`. No new AI agents. No Digital Twin expansion** (Piyush final rule).
@@ -38,7 +52,7 @@
 | Load | HTTP 25 / 50 / 100+ vs **live** API; latency + drop rates. Gemini budget: HTTP load, not 100 live LLM blasts |
 | Twilio | Real signatures; deliberate same-webhook resend; duplicate handling verified |
 | n8n | Live workflow + scheduler execution proof required |
-| DR | Hosted Render PG; snapshot first; maintenance window with Mayank + Maitri |
+| DR | Hosted Render PG; manual `pg_dump`/`pg_restore` (Free tier, no snapshots); maintenance window with Mayank + Maitri |
 | Gates | Sprint **blocks** P4-QA/REL |
 | Owners | Aritro Appendix A (security, load, DR, logs) · Maitri Appendix B (100-eval, compliance, stop-on-reply) · joint PH-C |
 
@@ -53,7 +67,7 @@
 | **PH-C** | Joint drill | Signed duplicate / simultaneous / retry webhooks + live n8n single-fire | Matrix §C all PASS | Aritro+Maitri | `[ ]` |
 | **PH-A.2** | Load | 25 / 50 / 100 concurrent vs live: latency + drop rates | Numbers table in Appendix A | Aritro | `[ ]` |
 | **PH-B** | 100-eval | 100 fresh live WhatsApp convos + stop-on-reply / fallback / opt-in | JSON + summary in Appendix B | Maitri | `[ ]` |
-| **PH-A.3** | DR | Snapshot → backup → fail → restore → verify on hosted Render PG | Appendix A §DR | Aritro | `[ ]` |
+| **PH-A.3** | DR | Manual `pg_dump` → fail → `pg_restore` → verify on hosted Render PG | Appendix A §DR | Aritro | `[ ]` |
 | **PH-A.4** | Security | Live secrets / flags / auth / `/metrics` audit | Appendix A §Security | Aritro | `[ ]` |
 | **PH-R** | Reports | Fill Appendices A+B, Mayank sign-off | UNIFIED **PH** → `[x]` | Both | `[ ]` |
 
@@ -68,7 +82,7 @@ PH-A.2 ∥ PH-B allowed after PH-C. Everything else serial.
 | Joint drill PH-C | PH-0 env sheet (live URLs, keys, HEAD) | PH-C |
 | Load PH-A.2 | PH-C (dedupe proven first) + dedicated test tenant | Appendix A load |
 | 100-eval PH-B | PH-C + rate-limit plan (clean corpus on live) | Appendix B |
-| DR PH-A.3 | Maintenance window on calendar + Render snapshot | Appendix A DR |
+| DR PH-A.3 | Maintenance window on calendar + external DB URL + off-box `pg_dump` | Appendix A DR |
 | Reports PH-R | All above + isolation re-run | Gate input |
 
 ---
@@ -78,7 +92,7 @@ PH-A.2 ∥ PH-B allowed after PH-C. Everything else serial.
 ### Task PH-0.1 — Record the live env
 - **Files:** none (evidence only)
 - **Steps:**
-  1. Confirm deploy tracks `production/main` @ `a0a2a53`. Live env (Mayank 2026-09-11): API `https://real-estate-ai-lead-agent-21nh.onrender.com`, Vercel `https://real-estate-ai-lead-agent-j330jhuc-imperion-s-projects1.vercel.app`, n8n `https://imperiondata.app.n8n.cloud`, Twilio `+1 (334) 731-7182`, company Redis. Test tenant = **Client B** (API key self-serve from Client B dashboard).
+  1. Confirm deploy tracks `production/main` @ `a0a2a53`. Live env (Mayank 2026-09-11): API `https://real-estate-ai-lead-agent-21nh.onrender.com`, Vercel `https://real-estate-ai-lead-agent-j330jhuc-imperion-s-projects1.vercel.app`, n8n `https://imperiondata.app.n8n.cloud`, Twilio `+1 (334) 731-7182`, company Redis. Test tenant = **Client B** (`api_key`: ask Mayank — seed-time value, no dashboard "Generate key" UI on this tree).
   2. Record live flags: `TEST_MODE=false` (signature enforced), `IS_PRODUCTION=true`, `FOLLOW_UP_TEST_MODE=false`, `FOLLOWUP_ENGINE=v3`, `FEATURE_WHATSAPP_V3=true`.
   3. Confirm Client A + Client B seeded (isolation-safe read check only).
   4. `curl https://real-estate-ai-lead-agent-21nh.onrender.com/health` → 200.

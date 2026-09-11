@@ -90,7 +90,10 @@ Please reply with: (a) GitHub invites, (b) Vercel approvals, (c) Render URL + in
 - [x] (g) DR = manual `pg_dump`/`pg_restore` (no snapshot on Free tier)
 - [x] Maitri live-sender + Client B + WF-1 Gmail To set
 
-## 5. Now unblocked
+## 5. Run state (2026-09-11)
 
-PH-0 · PH-A.1 · PH-C (ping Mayank for replay) · PH-A.2 ∥ PH-B (Client B) · PH-A.4 · PH-R.
-DR (PH-A.3) waits on: external DB URL + proposed window notice to Mayank + Maitri quiet.
+**Runnable now:** PH-0 (`/health` + env sheet), PH-A.1 (log audit, no live traffic), PH-A.4 partial (repo grep).
+
+**Blocked on Mayank:** PH-C (n8n login reset + Client B `api_key` + Twilio replay ping) → then PH-A.2 ∥ PH-B (Client B key) → PH-A.3 (Render invite or external `DATABASE_URL` + calendar window) → PH-R.
+
+**Note:** `https://real-estate-ai-lead-agent-21nh.onrender.com/dashboard` is the product CRM, not the Render control plane. DB access = https://dashboard.render.com (team invite) or the external `DATABASE_URL` on a secure channel.

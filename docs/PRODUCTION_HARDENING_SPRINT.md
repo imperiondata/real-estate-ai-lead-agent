@@ -25,7 +25,7 @@ All three prior blockers are **resolved** (Mayank 2026-09-11; secrets held off-r
 | 2 | Client B `api_key` (no dashboard "Generate key" UI) | **Resolved** — live key received, Client B for all live traffic |
 | 3 | External Postgres URL for DR | **Resolved** — URL received; Render invites N/A on non-Pro workspaces |
 
-**Run order:** PH-0 → PH-A.1 → PH-C (**ping Mayank** for Twilio replay; n8n UI exec count = 1) → PH-A.2 ∥ PH-B (Client B, rate-limited) → PH-A.4 → PH-R. **PH-A.3 DR last — do not run until you send Mayank a window notice** (he asked to be notified; `DATABASE_URL` = local export only).
+**Done 2026-09-15:** PH-0 (`[x]`, /health 200) + PH-A.1 (`[x]`, 5 set sites / 10 gaps, no patches). **Next:** PH-C — ping Mayank for Twilio replay, then signed duplicates + n8n WF-1 exec count.
 
 ---
 
@@ -62,8 +62,8 @@ All three prior blockers are **resolved** (Mayank 2026-09-11; secrets held off-r
 
 | Step | Unit | Summary | Exit gate | Owner | Status |
 |---:|---|---|---|---|---|
-| **PH-0** | Prep | Record live env (Render URL, flags, Twilio, n8n, HEAD) | Env sheet in Appendix A | Both | `[ ]` |
-| **PH-A.1** | Tenant-log audit | Inventory `tenant_id_ctx` coverage on jobs / APIs / queues | Gap table in Appendix A | Aritro | `[ ]` |
+| **PH-0** | Prep | Record live env (Render URL, flags, Twilio, n8n, HEAD) | Env sheet in Appendix A | Both | `[x]` 2026-09-15 — /health 200, A.0 filled |
+| **PH-A.1** | Tenant-log audit | Inventory `tenant_id_ctx` coverage on jobs / APIs / queues | Gap table in Appendix A | Aritro | `[x]` 2026-09-15 — 5 set sites, 10 gaps, no patches |
 | **PH-C** | Joint drill | Signed duplicate / simultaneous / retry webhooks + live n8n single-fire | Matrix §C all PASS | Aritro+Maitri | `[ ]` |
 | **PH-A.2** | Load | 25 / 50 / 100 concurrent vs live: latency + drop rates | Numbers table in Appendix A | Aritro | `[ ]` |
 | **PH-B** | 100-eval | 100 fresh live WhatsApp convos + stop-on-reply / fallback / opt-in | JSON + summary in Appendix B | Maitri | `[ ]` |
@@ -99,7 +99,7 @@ PH-A.2 ∥ PH-B allowed after PH-C. Everything else serial.
 - **Test:** `/health` 200 on the live host
 - **Done:** Env sheet pasted into Appendix A header
 - **Rollback:** N/A
-- **Status:** `[ ]`
+- **Status:** `[x]` 2026-09-15
 
 ---
 
@@ -116,7 +116,7 @@ PH-A.2 ∥ PH-B allowed after PH-C. Everything else serial.
 - **Test:** N/A (audit)
 - **Done:** Gap table complete with log excerpts
 - **Rollback:** N/A
-- **Status:** `[ ]`
+- **Status:** `[x]` 2026-09-15
 
 ---
 
@@ -273,20 +273,38 @@ PH-A.2 ∥ PH-B allowed after PH-C. Everything else serial.
 
 **HEAD:** `production/main` @ `a0a2a53` · **Live API:** ________ · **Date:** ________ · **DR window:** ________
 
-### A.0 Env sheet (PH-0)
-Render API / Vercel / Redis / n8n host / Twilio `+1 (334) 731-7182` / flags (`TEST_MODE=false`, `IS_PRODUCTION=true`) / `/health`:
+### A.0 Env sheet (PH-0) `[x]` 2026-09-15
 
-### A.1 Tenant-log audit
+| Field | Value |
+|---|---|
+| HEAD | `production/main` @ `a0a2a53` · work branch `cert-sprint` |
+| Live API | `https://real-estate-ai-lead-agent-21nh.onrender.com` |
+| Vercel | `https://real-estate-ai-lead-agent-j330jhuc-imperion-s-projects1.vercel.app` |
+| n8n | `https://imperiondata.app.n8n.cloud` (Trial; WF-6 Fetch Metrics mis-pointed — see PH-C notes) |
+| Twilio | `+1 (334) 731-7182` |
+| Redis | company-hosted (confirmed) |
+| Tenant | Client B (key off-repo) |
+| Flags (Mayank) | `TEST_MODE=false`, `IS_PRODUCTION=true`, `FOLLOW_UP_TEST_MODE=false` |
+| `/health` | **200** in 7.0s (cold start; first 60s attempt timed out, retry OK): `{"status":"healthy","database_postgres":"connected","cache_redis":"connected","provider_twilio":"configured","provider_gemini":"configured","scheduler":"running","uptime_seconds":11}` |
+| `/metrics` | **200**, 4662 bytes, 0.9s (scrape allowed) |
+| Client A/B seeded | Client B dashboard reachable (CRM renders); no wipes performed |
+
+### A.1 Tenant-log audit `[x]` 2026-09-15 (code audit on `production/main`; no live scheduler lines available — no Render log UI; no patches per as-is rule)
 | Job / path | Emits `[Tenant: …]`? | Evidence / gap (file:line) |
 |---|---|---|
-| Request auth | Yes | `auth.py`, `app/api/events.py` |
-| `follow_up` scheduler | Yes | `follow_up.py:388`, `followup_scheduler.py:87` |
-| Escalation loop | Yes | `main.py` escalation |
-| Bus `_dispatch` / CEO / bridge / EE | | |
-| `crm_resync_job` | | |
-| `competitor_monitor` / weekly marketing | | |
-| `expire_stale_approvals` | | |
-| `daily_cleanup` / `nightly_backup` | | |
+| Request auth | Yes | `auth.py:65,88`, `app/api/events.py:62,77` |
+| `follow_up` scheduler | Yes | `follow_up.py:388`, `followup_scheduler.py:87` (via `_tenant_ctx` alias) |
+| Escalation loop | Yes | `main.py:271,298,326` |
+| Middleware default | `Pending` until auth | `main.py:530`; filter reads at `main.py:201` (`SecurePIILogFilter`) |
+| Bus `_dispatch` / CEO `handle_event` | **No** — falls back to `"None"`/`"Pending"` | `app/clients/event_bus_client.py`, `app/orchestrator/ceo_orchestrator.py` — no `set()` |
+| `N8NBridge._handle_message` | **No** | `app/automation_engine/n8n_bridge.py` — no `set()` |
+| `ExecutionEngine.dispatch` | **No** (docstring mentions ctx only) | `app/execution_engine/execution_engine.py:32` |
+| `crm_resync_job` | **No** | `crm_sync.py` — no `set()` |
+| `competitor_monitor` / weekly marketing | **No** | `app/workflows/competitor_monitor.py`, `app/workflows/weekly_marketing_cron.py` — no `set()` |
+| `expire_stale_approvals` | **No** | `app/automation_engine/engine.py:172` — no `set()` |
+| `daily_cleanup` / `nightly_backup` | **No** | `main.py:daily_cleanup_job`, `db_backup.py` — no `set()` |
+
+Finding for Mayank (post-cert decision): 10 job/queue paths log without tenant scope. Recommend `tenant_id_ctx.set()` per unit of work (envelope `tenant_id` on bus/CEO/bridge/EE; per-row `client_id` on resync/expire; `"ops"` on cleanup/backup) — **not** patched in this sprint.
 
 ### A.2 Load — 25 / 50 / 100 concurrent (live)
 | Leg | p50 | p95 | 5xx | Drops | Interim rate | Dup-Sid processed | Verdict |

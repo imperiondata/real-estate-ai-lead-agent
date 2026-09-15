@@ -66,9 +66,9 @@ Please reply with: (a) GitHub invites, (b) Vercel approvals, (c) Render URL + in
 |---|---|
 | (a) GitHub write | Invites sent to `Macmill-340` + `maitriishahh` — **accepted**; push `cert-sprint` |
 | (b) Vercel | Hobby tier = 1 external collab → **Aritro approved**. Maitri uses live URL + Client B login. URL: `https://real-estate-ai-lead-agent-j330jhuc-imperion-s-projects1.vercel.app` |
-| (c) Render | API: `https://real-estate-ai-lead-agent-21nh.onrender.com`. **Free tier = no dashboard snapshots → DR uses manual `pg_dump` / `pg_restore` via external DB URL.** External DB URL still needed: Render Dashboard → Postgres → Connect → External Database URL, or ask Mayank (secure channel). Notify Mayank before the window. |
-| (d) n8n | Live cloud: `https://imperiondata.app.n8n.cloud`. WF-1…WF-6 imported, authenticated, Published. **LOGIN FAILING 2026-09-11 (`incorrect username or password`) — Mayank to reset / resend working owner login (secure channel, never git).** |
-| (e) Test tenant | **Client B** for load + 100-eval. **Correction: no "Generate key" UI exists** (`/settings` = profile/notifications only; keys are seed-time values). **Ask Mayank for Client B's live `api_key` (secure channel).** |
+| (c) Render | API: `https://real-estate-ai-lead-agent-21nh.onrender.com`. **Free tier = no dashboard snapshots → DR uses manual `pg_dump` / `pg_restore` via external DB URL.** External DB URL **received** (held off-repo; Render invites N/A on non-Pro). Notify Mayank before the window. |
+| (d) n8n | Live cloud: `https://imperiondata.app.n8n.cloud`. WF-1…WF-6 imported, authenticated, Published. **Corrected owner login received and verified working (held off-repo, never git).** |
+| (e) Test tenant | **Client B** for load + 100-eval. Live `api_key` **received** (held off-repo). Note: no "Generate key" UI exists (`/settings` = profile/notifications only). |
 | Flags | Live: `TEST_MODE=false`, `IS_PRODUCTION=true`, `FOLLOW_UP_TEST_MODE=false` |
 | (f) Metrics/isolation | `/metrics` scrape allowed during load. Read-only `gate_isolation_test.py` vs live allowed. |
 | Twilio replay | Mayank triggers duplicate from Meta/Twilio console — **ping him when PH-C starts** |
@@ -79,9 +79,9 @@ Please reply with: (a) GitHub invites, (b) Vercel approvals, (c) Render URL + in
 
 - [x] (a) GitHub write: `Macmill-340` (accepted) + `maitriishahh` (invite sent)
 - [x] (b) Vercel: Aritro approved; Maitri via live URL + Client B login
-- [~] (c) Render API URL received; **external DB URL + team invite still pending**
-- [!] (d) n8n URL received but **login fails — reset pending**
-- [!] (e) Tenant = Client B; **live `api_key` pending from Mayank (no dashboard UI)**
+- [x] (c) Render API URL + external DB URL received (off-repo); invites N/A on non-Pro
+- [x] (d) n8n URL + working owner login received (off-repo)
+- [x] (e) Tenant = Client B; live `api_key` received (off-repo)
 - [x] Flags confirmed on Render (`TEST_MODE=false`, `IS_PRODUCTION=true`, `FOLLOW_UP_TEST_MODE=false`)
 - [x] Twilio replay plan: Mayank-assisted (ping at PH-C)
 - [x] Redis confirmed company-hosted
@@ -92,8 +92,8 @@ Please reply with: (a) GitHub invites, (b) Vercel approvals, (c) Render URL + in
 
 ## 5. Run state (2026-09-11)
 
-**Runnable now:** PH-0 (`/health` + env sheet), PH-A.1 (log audit, no live traffic), PH-A.4 partial (repo grep).
+**Run order:** PH-0 (`/health` + env sheet) → PH-A.1 (log audit) → PH-C (**ping Mayank** for Twilio replay; n8n UI exec count = 1) → PH-A.2 ∥ PH-B (Client B, rate-limited) → PH-A.4 → PH-R.
 
-**Blocked on Mayank:** PH-C (n8n login reset + Client B `api_key` + Twilio replay ping) → then PH-A.2 ∥ PH-B (Client B key) → PH-A.3 (Render invite or external `DATABASE_URL` + calendar window) → PH-R.
+**PH-A.3 DR:** credentials exist — **do not run until you send Mayank a window notice** (he asked to be notified; Maitri quiet; `DATABASE_URL` = local export only).
 
-**Note:** `https://real-estate-ai-lead-agent-21nh.onrender.com/dashboard` is the product CRM, not the Render control plane. DB access = https://dashboard.render.com (team invite) or the external `DATABASE_URL` on a secure channel.
+**Note:** `https://real-estate-ai-lead-agent-21nh.onrender.com/dashboard` is the product CRM, not the Render control plane.

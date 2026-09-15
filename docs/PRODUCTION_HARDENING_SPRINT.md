@@ -17,15 +17,15 @@
 
 ## 0. Current blockers (2026-09-11 — new sessions read this first)
 
-| # | Blocker | Blocks | Owner to unblock |
-|---|---|---|---|
-| 1 | **n8n login fails** (`incorrect username or password` on `https://imperiondata.app.n8n.cloud`) | PH-C.2 (live exec counts mandatory) | Mayank — reset or send working owner login (secure channel) |
-| 2 | **No Client B `api_key`** — dashboard `/settings` is profile/notifications only; keys are seed-time values, there is no "Generate key" UI | PH-C.1, PH-A.2, PH-B (all live traffic uses Client B) | Mayank — send Client B's live `api_key` (secure channel) |
-| 3 | **No external Postgres URL** (needed for DR `pg_dump`/`pg_restore`) | PH-A.3 only | Mayank or Render invite — see "How to get the Postgres URL" below |
+All three prior blockers are **resolved** (Mayank 2026-09-11; secrets held off-repo, never in git):
 
-**How to get the Postgres URL:** Render Dashboard → the Postgres service → **Connect → External Database URL** (starts with `postgresql://…@…oregon-postgres.render.com/…`). If you have no Render access, **ask Mayank** (he owns the Render account) to paste it on a secure channel — or grant you a Render team invite so you can copy it yourself. Never commit it to git; export as `DATABASE_URL` only for the drill.
+| # | Was blocked on | Status |
+|---|---|---|
+| 1 | n8n login (`incorrect username or password`) | **Resolved** — corrected owner login works |
+| 2 | Client B `api_key` (no dashboard "Generate key" UI) | **Resolved** — live key received, Client B for all live traffic |
+| 3 | External Postgres URL for DR | **Resolved** — URL received; Render invites N/A on non-Pro workspaces |
 
-**Runnable now:** PH-0 (`/health` + env sheet) and PH-A.1 (log audit, no live traffic). Everything else waits on 1–2; DR waits on 3 + a calendar window.
+**Run order:** PH-0 → PH-A.1 → PH-C (**ping Mayank** for Twilio replay; n8n UI exec count = 1) → PH-A.2 ∥ PH-B (Client B, rate-limited) → PH-A.4 → PH-R. **PH-A.3 DR last — do not run until you send Mayank a window notice** (he asked to be notified; `DATABASE_URL` = local export only).
 
 ---
 

@@ -199,6 +199,7 @@ IS_PRODUCTION=false
 - `GOOGLE_CALENDAR_ID` / `GOOGLE_CALENDAR_CREDENTIALS_JSON` / `GOOGLE_CALENDAR_TIMEZONE` — real Google Calendar for `CalendarExecutor`. Empty = synthetic `visit_id` stub fallback (AE contract unchanged).
 - `BROCHURE_MEDIA_URL` / `FLOORPLAN_MEDIA_URL` — public **HTTPS** media for WhatsApp Approach B. Empty = plain-text brochure/floorplan. Non-HTTPS rejected.
 - HubSpot: `CRM_API_URL` / `CRM_API_KEY` via `crm_sync` `os.getenv` (not Settings). **`CRM_API_KEY` = Private App Token** sent as `Authorization: Bearer …`. Contacts r/w scopes enough (no custom objects). Default demo key = fake UUID in non-prod. Live path also requires `FEATURE_HUBSPOT_LIVE=true`.
+- Cert vs live Render: `LIVE_API_BASE_URL` / `LIVE_CLIENT_B_KEY` / `LIVE_TWILIO_AUTH_TOKEN` / `LIVE_N8N_BASE_URL` / `LIVE_N8N_API_KEY` / `LIVE_DATABASE_URL` (`Settings`, all default empty). Render curls use `LIVE_*`; do not swap local `DATABASE_URL` / `N8N_*` / `TWILIO_*`.
 
 ## IREIOS 4.0 APIs (Backend Wave 1 shipped)
 

@@ -140,6 +140,16 @@ class Settings(BaseSettings):
     # CRM_API_KEY/CRM_API_URL + FEATURE_HUBSPOT_LIVE=true are set at deploy.
     FEATURE_HUBSPOT_LIVE: bool = False
 
+    # Cert / live Render pointers (load_chat_concurrency.py + agent curls).
+    # Local uvicorn still uses DATABASE_URL / N8N_* / TWILIO_* above; these
+    # LIVE_* vars only point at the live Render service. All default empty.
+    LIVE_API_BASE_URL: str = ""
+    LIVE_CLIENT_B_KEY: str = ""
+    LIVE_TWILIO_AUTH_TOKEN: str = ""
+    LIVE_N8N_BASE_URL: str = ""
+    LIVE_N8N_API_KEY: str = ""
+    LIVE_DATABASE_URL: str = ""
+
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8")
 
     @property

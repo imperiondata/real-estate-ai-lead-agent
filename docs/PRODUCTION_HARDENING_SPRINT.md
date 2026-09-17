@@ -25,10 +25,10 @@ All three prior blockers are **resolved** (Mayank 2026-09-11; secrets held off-r
 | 2 | Client B `api_key` (no dashboard "Generate key" UI) | **Resolved** — live key received, Client B for all live traffic |
 | 3 | External Postgres URL for DR | **Resolved** — URL received; Render invites N/A on non-Pro workspaces |
 
-**Done:** PH-0 `[x]` · PH-A.1 `[x]` · PH-C `[x]` 2026-09-17 (WF-1 exec 719; Cases 1–4; Case 4 exec 722 +0) · PH-A.2 `[x]` 2026-09-17 (25/50 0-drop; 100 ReadTimeout cliff).
+**Done:** PH-0 `[x]` · PH-A.1 `[x]` · PH-C `[x]` 2026-09-17 (WF-1 exec 719; Cases 1–4; Case 4 exec 722 +0) · PH-A.2 `[x]` 2026-09-17 (25/50 0-drop; 100 ReadTimeout cliff) · **PH-B `[x]` 2026-09-17 (100 convos, 138 turns, all 200 0-drop; B.2 8/8 STOP + handoff; `reports/PH-B-100-EVAL-REPORT.md`)**.
 
 **Still later (do not mix into this commit's live work):**
-- **PH-B** — Maitri 100 live WA, Client B, rate-limited (Appendix B.1/B.2)
+- **PH-B** — Maitri 100 live WA, Client B, rate-limited (Appendix B.1/B.2) `[x]` 2026-09-17 — see B.1/B.2 + `reports/PH-B-100-EVAL-REPORT.md`
 - **PH-A.3** — ping Mayank + Maitri a quiet window, then `pg_dump` / fail / restore (`LIVE_DATABASE_URL` off-repo)
 - **PH-A.4** — repo grep + live flags
 - **PH-R** — remaining appendix cells + signs
@@ -74,7 +74,7 @@ Render curls use `LIVE_*` in local `.env` (not `DATABASE_URL` / local `N8N_*`). 
 | **PH-A.1** | Tenant-log audit | Inventory `tenant_id_ctx` coverage on jobs / APIs / queues | Gap table in Appendix A | Aritro | `[x]` 2026-09-15 — 5 set sites, 10 gaps, no patches |
 | **PH-C** | Joint drill | Signed duplicate / simultaneous / retry webhooks + live n8n single-fire | Matrix §C all PASS | Aritro+Maitri | `[x]` 2026-09-17 — `reports/PH-C.1-CASES1-3-REPORT.md` |
 | **PH-A.2** | Load | 25 / 50 / 100 concurrent vs live: latency + drop rates | Numbers table in Appendix A | Aritro | `[x]` 2026-09-17 — 25/50 0-drop; 100 cliff |
-| **PH-B** | 100-eval | 100 fresh live WhatsApp convos + stop-on-reply / fallback / opt-in | JSON + summary in Appendix B | Maitri | `[ ]` |
+| **PH-B** | 100-eval | 100 fresh live WhatsApp convos + stop-on-reply / fallback / opt-in | JSON + summary in Appendix B | Maitri | `[x]` 2026-09-17 — 138 turns all 200 0-drop; `reports/PH-B-100-EVAL-REPORT.md` |
 | **PH-A.3** | DR | Manual `pg_dump` → fail → `pg_restore` → verify on hosted Render PG | Appendix A §DR | Aritro | `[ ]` |
 | **PH-A.4** | Security | Live secrets / flags / auth / `/metrics` audit | Appendix A §Security | Aritro | `[ ]` |
 | **PH-R** | Reports | Fill Appendices A+B, Mayank sign-off | UNIFIED **PH** → `[x]` | Both | `[ ]` |
@@ -185,7 +185,7 @@ PH-A.2 ∥ PH-B allowed after PH-C. Everything else serial.
 - **Test:** `pytest tests/test_p0_safety.py tests/test_p2_fsm_language.py -v` (supporting)
 - **Done:** Pass-rate table by category + FAIL triage in Appendix B; artifact paths recorded
 - **Rollback:** N/A
-- **Status:** `[ ]`
+- **Status:** `[x]` 2026-09-17 — 100 convos / 138 turns all 200 0-drop; report `reports/PH-B-100-EVAL-REPORT.md`
 
 ### Task PH-B.2 — Stop-on-reply + fallback + opt-in proof (live)
 - **Files (reference):** `app/intelligence/push_wait_engine.py` (`replied` → `stop_followups`), `follow_up.py` opt-out skip, `agent.py` `is_opt_out_message`
@@ -196,7 +196,7 @@ PH-A.2 ∥ PH-B allowed after PH-C. Everything else serial.
 - **Test:** `pytest tests/test_p0_safety.py tests/test_e4_followup.py -v` (supporting)
 - **Done:** Three mini-tables with DB/log evidence in Appendix B
 - **Rollback:** N/A
-- **Status:** `[ ]`
+- **Status:** `[x]` 2026-09-17 — stop-on-reply Day-0 +30m no-spam; fallback not forced (1 interim + 0 leaks); 8/8 STOP closed+opt-out
 
 ---
 
@@ -351,29 +351,30 @@ Isolation: 124 load leads all `client_id=3`; `non_client_b=0`. Report: `reports/
 
 ## Appendix B — AI & Automation Certification Report (Maitri)
 
-**HEAD:** `production/main` @ `a0a2a53` · **Live number:** `+1 (334) 731-7182` · **Date:** ________
+**HEAD:** `production/main` @ `a0a2a53` · **Live number:** `+1 (334) 731-7182` · **Date:** 2026-09-17
 
 ### B.1 Fresh 100 — pass by category (live, rate-limited, no `task3_runner`)
 | Category | n | Pass | Notes / FAIL ids |
 |---|---|---|---|
-| Hindi (Devanagari) | | | |
-| Hinglish | | | |
-| Typos / noisy input | | | |
-| Budget change mid-thread (last-wins) | | | |
-| Location switch / vague visit date | | | |
-| STOP / opt-out | | | |
-| Empty / greeting-only | | | |
-| Mixed-language | | | |
-| HOT escalation-worthy | | | |
-| Edge (other) | | | |
-| **Total** | **100** | | |
+| Hindi (Devanagari) | 12 | 12 | location+budget parsed incl. Devanagari (`85LAKHS`, `1.2CRORES`); `Rahul`/`9822000001` picked |
+| Hinglish | 12 | 12 | t1 English neutral → t2 Hinglish parsed; `Amit`+`9822000002` on `…2118` |
+| Typos / noisy input | 10 | 8 + 2 partial | `…2125` (`Banre?`) + `…2129` (`khardi`) → location null, coherent ask-for-location; no crash |
+| Budget change mid-thread (last-wins) | 10 | 10 | `…2135–2144` store final 90L…99L, not initial 70L…79L |
+| Location switch | 8 | 8 | `…2145–2152` store 2nd location (last-wins) |
+| Vague visit date | 8 | 8 | `Weekend`/`Week`/`Kal Parso`/`A Few Days` stored; `…2157` (`next month`) asked date — coherent |
+| STOP / opt-out | 8 | 8 | `…2161–2168` all `whatsapp_opt_in=False`, closed, stopped (see B.2) |
+| Empty / greeting-only | 8 | 8 | generic help reply, no hallucinated fields |
+| Mixed-language | 8 | 8 | `शनिवार→Saturday` (`…2178`), phone `9822000003` (`…2181`) |
+| HOT escalation-worthy | 8 | 8 handoff* | `…2185–2192` exact handoff template, closed+stopped; *fields null + temp cold (early-intercept gap — post-cert) |
+| Edge (other) | 8 | 8 | ranges `UNDER90LAKHS`/`85L-95LAKHS`; `…2199` fully qualified → Appointment Scheduled, hot 80 |
+| **Total** | **100** | **98 + 2 partial** | 138 turns: 138×200 0-drop (137 real_reply + 1 interim `…2149` t1, 14.2s race); p50 2.4s / p95 3.8s |
 
 ### B.2 Stop-on-reply / fallback / opt-in (live)
 | Check | Proof (DB/log) | Verdict |
 |---|---|---|
-| Reply after Day-0 arm → no further nudges | | |
-| Gemini fail → safe template, no error-phrase leak | | |
-| STOP → `whatsapp_opt_in=False`, closed, no re-arm | | |
+| Reply after Day-0 arm → no further nudges | `3_+155555552135` t2 15:40:08 → `active/Day 0`, `next=+30m` (16:10:09), `sent_at=null` | PASS |
+| Gemini fail → safe template, no error-phrase leak | 0 fallback in 138 turns; 1 interim (13s race, by design); 0 error-phrase rows; supporting `test_p0_safety`+`test_p2_fsm_language` 68/69 (1 env-only local-PG fail); not forced on prod | PASS (with note) |
+| STOP → `whatsapp_opt_in=False`, closed, no re-arm | `…2161–2168` 8/8 `opt_in=False` + session `closed` + follow-up `stopped` | PASS |
 
 ### B.3 Joint n8n (with Aritro, live UI counts)
 | Case | n8n executions | Verdict |
@@ -382,6 +383,6 @@ Isolation: 124 load leads all `client_id=3`; `non_client_b=0`. Report: `reports/
 | `lead.escalated` alias → no 2nd fire | 0 extra WF | PASS |
 | Duplicate-Sid turn → n8n count unchanged | +0 after exec **722** (Case 4b) | PASS |
 
-Artifacts: `reports/PH-C.1-CASES1-3-REPORT.md` · Client B `client_id=3`
+Artifacts: `reports/PH-C.1-CASES1-3-REPORT.md` · `reports/PH-B-100-EVAL-REPORT.md` (100 convos / 138 turns, all Client B `client_id=3`) · raw per-turn JSON gitignored (local Temp)
 
 **Maitri sign:** ________ · **Mayank sign:** ________

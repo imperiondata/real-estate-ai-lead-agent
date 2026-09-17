@@ -126,12 +126,17 @@ class Settings(BaseSettings):
     # Wave D.4: WhatsApp brochure/floor plan media URL (public HTTPS). Empty = text fallback.
     BROCHURE_MEDIA_URL: str = ""
     FLOORPLAN_MEDIA_URL: str = ""
-    #HubSpot CRM
-    CRM_API_KEY: str=""
-    # IREIOS 4.0 feature flags
-    FEATURE_GRAPH_VIZ: bool
-    FEATURE_TWIN_LIVE: bool
-    FEATURE_HUBSPOT_LIVE: bool
+    CRM_API_KEY: str = ""
+    FEATURE_GRAPH_VIZ: bool = False
+    FEATURE_TWIN_LIVE: bool = False
+    FEATURE_HUBSPOT_LIVE: bool = False
+
+    LIVE_API_BASE_URL: str = ""
+    LIVE_CLIENT_B_KEY: str = ""
+    LIVE_TWILIO_AUTH_TOKEN: str = ""
+    LIVE_N8N_BASE_URL: str = ""
+    LIVE_N8N_API_KEY: str = ""
+    LIVE_DATABASE_URL: str = ""
 
     # Google Calendar (real CalendarExecutor) — empty = stub visit_id fallback
     GOOGLE_CALENDAR_ID: str = ""

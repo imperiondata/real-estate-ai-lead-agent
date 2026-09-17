@@ -21,6 +21,7 @@ High-signal, repo-specific facts an agent would likely miss without help.
 | Stress test (126 cases, local/dev only — never vs live prod) | `python task3_runner.py` |
 | Filter stress test | `python task3_runner.py --category HOT` (`--test-id R01`, `--skip-db`, `--base-url`, `--api-key`) |
 | Live cert (SoT: Imperion `production/main`) | `docs/PRODUCTION_HARDENING_SPRINT.md` |
+| Live load vs Render | `python load_chat_concurrency.py --leg 25` (`LIVE_API_BASE_URL` + `LIVE_CLIENT_B_KEY` in `.env`; do not swap local `DATABASE_URL`) |
 | Tenant isolation drill | `python gate_isolation_test.py` |
 | DLQ drill | `python gate_dlq_drill.py` then `python dlq_replay.py` |
 | DB backup / restore | `python db_backup.py` / `python db_restore.py backups/backup_*.sql` |

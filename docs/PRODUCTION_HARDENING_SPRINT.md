@@ -25,7 +25,15 @@ All three prior blockers are **resolved** (Mayank 2026-09-11; secrets held off-r
 | 2 | Client B `api_key` (no dashboard "Generate key" UI) | **Resolved** — live key received, Client B for all live traffic |
 | 3 | External Postgres URL for DR | **Resolved** — URL received; Render invites N/A on non-Pro workspaces |
 
-**Done 2026-09-15:** PH-0 (`[x]`, /health 200) + PH-A.1 (`[x]`, 5 set sites / 10 gaps, no patches). **Next:** PH-C — ping Mayank for Twilio replay, then signed duplicates + n8n WF-1 exec count.
+**Done:** PH-0 `[x]` · PH-A.1 `[x]` · PH-C `[x]` 2026-09-17 (WF-1 exec 719; Cases 1–4; Case 4 exec 722 +0) · PH-A.2 `[x]` 2026-09-17 (25/50 0-drop; 100 ReadTimeout cliff).
+
+**Still later (do not mix into this commit's live work):**
+- **PH-B** — Maitri 100 live WA, Client B, rate-limited (Appendix B.1/B.2)
+- **PH-A.3** — ping Mayank + Maitri a quiet window, then `pg_dump` / fail / restore (`LIVE_DATABASE_URL` off-repo)
+- **PH-A.4** — repo grep + live flags
+- **PH-R** — remaining appendix cells + signs
+
+Render curls use `LIVE_*` in local `.env` (not `DATABASE_URL` / local `N8N_*`). No docker/uvicorn for live cert.
 
 ---
 
@@ -64,8 +72,8 @@ All three prior blockers are **resolved** (Mayank 2026-09-11; secrets held off-r
 |---:|---|---|---|---|---|
 | **PH-0** | Prep | Record live env (Render URL, flags, Twilio, n8n, HEAD) | Env sheet in Appendix A | Both | `[x]` 2026-09-15 — /health 200, A.0 filled |
 | **PH-A.1** | Tenant-log audit | Inventory `tenant_id_ctx` coverage on jobs / APIs / queues | Gap table in Appendix A | Aritro | `[x]` 2026-09-15 — 5 set sites, 10 gaps, no patches |
-| **PH-C** | Joint drill | Signed duplicate / simultaneous / retry webhooks + live n8n single-fire | Matrix §C all PASS | Aritro+Maitri | `[ ]` |
-| **PH-A.2** | Load | 25 / 50 / 100 concurrent vs live: latency + drop rates | Numbers table in Appendix A | Aritro | `[ ]` |
+| **PH-C** | Joint drill | Signed duplicate / simultaneous / retry webhooks + live n8n single-fire | Matrix §C all PASS | Aritro+Maitri | `[x]` 2026-09-17 — `reports/PH-C.1-CASES1-3-REPORT.md` |
+| **PH-A.2** | Load | 25 / 50 / 100 concurrent vs live: latency + drop rates | Numbers table in Appendix A | Aritro | `[x]` 2026-09-17 — 25/50 0-drop; 100 cliff |
 | **PH-B** | 100-eval | 100 fresh live WhatsApp convos + stop-on-reply / fallback / opt-in | JSON + summary in Appendix B | Maitri | `[ ]` |
 | **PH-A.3** | DR | Manual `pg_dump` → fail → `pg_restore` → verify on hosted Render PG | Appendix A §DR | Aritro | `[ ]` |
 | **PH-A.4** | Security | Live secrets / flags / auth / `/metrics` audit | Appendix A §Security | Aritro | `[ ]` |
@@ -133,7 +141,7 @@ PH-A.2 ∥ PH-B allowed after PH-C. Everything else serial.
 - **Test:** `pytest tests/test_p3_concurrency.py -v` (supporting) + `python gate_isolation_test.py` (read-safe)
 - **Done:** Case table with counts in both appendices
 - **Rollback:** N/A (proof; use a dedicated test tenant, not Client A prod traffic)
-- **Status:** `[ ]`
+- **Status:** `[x]` 2026-09-17 — Cases 1–4 PASS (`reports/PH-C.1-CASES1-3-REPORT.md`)
 
 ### Task PH-C.2 — Live n8n single-fire proof
 - **Files (reference):** `app/automation_engine/n8n_bridge.py` (`DEFAULT_WEBHOOK_MAP`, catalog `lead.hot` only — never alias `lead.escalated` alongside), `app/events/lead_hot.py`, `docs/N8N_INTEGRATION.md`, `tests/test_e20_n8n_bridge.py` (supporting only)
@@ -145,7 +153,7 @@ PH-A.2 ∥ PH-B allowed after PH-C. Everything else serial.
 - **Test:** `python -m pytest tests/test_e20_n8n_bridge.py -q` (supporting)
 - **Done:** n8n UI execution counts pasted into both appendices; double-fire = FAIL, stop drills, report to Mayank
 - **Rollback:** `N8N_BRIDGE_ENABLED=false` to isolate if it blocks
-- **Status:** `[ ]`
+- **Status:** `[x]` 2026-09-17 — WF-1 exec 719; Case 4 exec 722 then +0
 
 ---
 
@@ -154,14 +162,13 @@ PH-A.2 ∥ PH-B allowed after PH-C. Everything else serial.
 ### Task PH-A.2.1 — Concurrency vs live API
 - **Files (reference):** `docs/TIMEOUTS_AND_TIMINGS.md` (13s race, 22s LLM cap), `wa_sse_smoke.py` (turn baselines)
 - **Steps:**
-  1. Harness posts Twilio-shaped requests to the **live** API (signed webhook and/or `/api/v1/chat` with a dedicated test-tenant key — never Client A prod traffic). Unique `MessageSid` per request; N sessions for "concurrent chats"; reuse a Sid subset for drop-vs-dedupe.
-  2. Run 25 → 50 → 100+ concurrent. Per leg record: HTTP code, wall ms, TwiML vs interim vs empty, 5xx count, drop count, duplicate-process count (same Sid processed twice = defect).
-  3. Capture p50/p95, 5xx rate, interim rate, `/metrics` (latency histogram, DLQ depth, scheduler health).
-  4. Re-run read-safe `gate_isolation_test.py` after the 100 leg.
-- **Test:** `python gate_isolation_test.py` · `python gate_dlq_drill.py` + `dlq_replay.py` (careful on live — Mayank's OK)
-- **Done:** Appendix A load table (draft pass: 25 → p95 < 13s, drop 0%; 50 → p95 < 15s, 5xx < 1%; 100 → document cliff + zero duplicate-Sid processing; tune with Mayank)
+  1. `python load_chat_concurrency.py --leg 25|50|100` against `LIVE_API_BASE_URL` + `LIVE_CLIENT_B_KEY` (local `.env`; never swap `DATABASE_URL`). Neutral `/api/v1/chat` (no human-agent phrase).
+  2. Warm `/health` first (Render Free sleep). Legs 25 → 50 → 100 concurrent.
+  3. Record p50/p95, 5xx, drops. Isolation = live SQL `client_id=3` only — **do not** run `gate_isolation_test.py` vs prod (it posts to localhost and writes a lead).
+- **Test:** live SQL isolation (0 rows with load session + `client_id <> 3`)
+- **Done:** Appendix A.2 filled
 - **Rollback:** N/A; stop legs if live users impacted
-- **Status:** `[ ]`
+- **Status:** `[x]` 2026-09-17 — 25/50 all 200 0-drop; 100 ReadTimeout cliff (49/100 persisted)
 
 ---
 
@@ -306,13 +313,16 @@ PH-A.2 ∥ PH-B allowed after PH-C. Everything else serial.
 
 Finding for Mayank (post-cert decision): 10 job/queue paths log without tenant scope. Recommend `tenant_id_ctx.set()` per unit of work (envelope `tenant_id` on bus/CEO/bridge/EE; per-row `client_id` on resync/expire; `"ops"` on cleanup/backup) — **not** patched in this sprint.
 
-### A.2 Load — 25 / 50 / 100 concurrent (live)
-| Leg | p50 | p95 | 5xx | Drops | Interim rate | Dup-Sid processed | Verdict |
-|---|---|---|---|---|---|---|---|
-| 25 | | | | | | 0 required | |
-| 50 | | | | | | 0 required | |
-| 100+ | | | | | (document cliff) | 0 required | |
-Isolation after load: ________ · Artifacts: ________
+### A.2 Load — 25 / 50 / 100 concurrent (live) `[x]` 2026-09-17
+Target: `POST /api/v1/chat` Client B (`LIVE_*`). Warm `/health` 200 (uptime 785s).
+
+| Leg | p50 | p95 | 5xx | Drops | HTTP 200 | Verdict |
+|---|---|---|---|---|---|---|
+| 25 | 15.0s | 15.0s | 0 | 0 | 25/25 | PASS 0-drop; p95 above draft 13s (live Gemini) |
+| 50 | 22.3s | 23.2s | 0 | 0 | 50/50 | PASS 0-drop; p95 above draft 15s |
+| 100 | 60.4s | 60.4s | 0 | 100 | 0/100 | CLIFF — client `ReadTimeout` 60s; 49/100 leads still persisted |
+
+Isolation: 124 load leads all `client_id=3`; `non_client_b=0`. Artifacts local `reports/load_leg_*.json` (gitignored). Harness: `load_chat_concurrency.py`.
 
 ### A.3 Disaster recovery (hosted Render PG)
 | Step | Evidence |
@@ -368,10 +378,10 @@ Isolation after load: ________ · Artifacts: ________
 ### B.3 Joint n8n (with Aritro, live UI counts)
 | Case | n8n executions | Verdict |
 |---|---|---|
-| Single `lead.hot` → WF-1 | 1 required | |
-| `lead.escalated` alias → no 2nd fire | 0 required | |
-| Duplicate-Sid turn → n8n count unchanged | +0 required | |
+| Single `lead.hot` → WF-1 | 1 — exec **719** Success 2026-09-17 | PASS |
+| `lead.escalated` alias → no 2nd fire | 0 extra WF | PASS |
+| Duplicate-Sid turn → n8n count unchanged | +0 after exec **722** (Case 4b) | PASS |
 
-Artifacts (JSON + summary): ________ · FAIL triage (file:line): ________
+Artifacts: `reports/PH-C.1-CASES1-3-REPORT.md` · Client B `client_id=3`
 
 **Maitri sign:** ________ · **Mayank sign:** ________

@@ -322,7 +322,7 @@ Target: `POST /api/v1/chat` Client B (`LIVE_*`). Warm `/health` 200 (uptime 785s
 | 50 | 22.3s | 23.2s | 0 | 0 | 50/50 | PASS 0-drop; p95 above draft 15s |
 | 100 | 60.4s | 60.4s | 0 | 100 | 0/100 | CLIFF — client `ReadTimeout` 60s; 49/100 leads still persisted |
 
-Isolation: 124 load leads all `client_id=3`; `non_client_b=0`. Artifacts local `reports/load_leg_*.json` (gitignored). Harness: `load_chat_concurrency.py`.
+Isolation: 124 load leads all `client_id=3`; `non_client_b=0`. Report: `reports/PH-A.2-LOAD-REPORT.md`. Raw JSON gitignored. Harness: `load_chat_concurrency.py`.
 
 ### A.3 Disaster recovery (hosted Render PG)
 | Step | Evidence |

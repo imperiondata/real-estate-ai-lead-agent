@@ -137,6 +137,8 @@ class Settings(BaseSettings):
     LIVE_N8N_BASE_URL: str = ""
     LIVE_N8N_API_KEY: str = ""
     LIVE_DATABASE_URL: str = ""
+    LIVE_FRONTEND_URL: str = ""
+    LIVE_ADMIN_API_KEY: str = ""
 
     # Google Calendar (real CalendarExecutor) — empty = stub visit_id fallback
     GOOGLE_CALENDAR_ID: str = ""

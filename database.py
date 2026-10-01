@@ -11,8 +11,12 @@ if settings.DATABASE_URL.startswith("sqlite"):
         connect_args={"check_same_thread": False}
     )
 else:
+    db_url = settings.DATABASE_URL
+    if db_url.startswith("postgresql://"):
+        db_url = db_url.replace("postgresql://", "postgresql+psycopg2://", 1)
+        
     engine = create_engine(
-        settings.DATABASE_URL, 
+        db_url, 
         pool_size=20,
         max_overflow=40,
         pool_timeout=30,

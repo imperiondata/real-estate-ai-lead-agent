@@ -42,8 +42,8 @@ Not a cert `[x]`. Sync with Aritro before the n8n check is coded. He runs the cr
 
 | Owner | Task |
 |---|---|
-| Aritro | Tenant context on async jobs. `client_id` scope on Postgres API queries. Tenant scope on vector / knowledge-base retrieval. |
-| Maitri | n8n ingestion webhooks must reject a missing or invalid `tenant_id` before Gmail or Sheets. Proofs: one rejected payload, one accepted row. |
+| Aritro | Tenant context, Postgres `client_id` audit, and tagged-RAG filter are **coded on `cert-sprint` @ `bcf0f24`**, not on Render. See Appendix A.1. |
+| Maitri | n8n IF before Gmail (WF-1) and Sheets (WF-4). Accept `^Client_[0-9]+$`. A rejected payload can be proved before the stub. The accepted Sheet1 row cannot, until the stub works. |
 
 Known bug, report only, do not fix in this pass: dashboard priority cards keep the first 3 hot leads after claim (`frontend/src/app/(dashboard)/dashboard/page.tsx:127-129`). Claim sets `conversion_status` but the widget does not drop claimed rows.
 
@@ -55,7 +55,7 @@ Known bug, report only, do not fix in this pass: dashboard priority cards keep t
 - Claim widget. Report only. Do not fix.
 - WF-6. Leave unpublished (15-minute cron).
 - Do not import `n8n_workflows/*.json` (would revert the live Append node and CRM links).
-- Do not deploy `cert-sprint`. Render runs `production/main`.
+- Deploy is an open leftover, not a ban. Tenant helper, CRM-link fix, and handoff backfill are on `cert-sprint` @ `bcf0f24` (416 passed, 4 skipped). They are not on Render until Mayank merges that branch to `production/main`. Do not deploy from this session unasked.
 
 **Still later (do not mix into this commit's live work):**
 - **PH-B** — Maitri 100 live WA, Client B, rate-limited (Appendix B.1/B.2) `[x]` 2026-09-17 — see B.1/B.2 + `reports/PH-B-100-EVAL-REPORT.md`
@@ -328,7 +328,7 @@ PH-A.2 ∥ PH-B allowed after PH-C. Everything else serial.
 | `/metrics` | **200**, 4662 bytes, 0.9s (scrape allowed) |
 | Client A/B seeded | Client B dashboard reachable (CRM renders); no wipes performed |
 
-### A.1 Tenant-log audit `[x]` 2026-09-15 (code audit on `production/main`; no live scheduler lines available — no Render log UI; no patches per as-is rule)
+### A.1 Tenant-log audit `[x]` 2026-09-15 audit; 10 gaps patched on `cert-sprint` @ `bcf0f24` (not on Render yet)
 | Job / path | Emits `[Tenant: …]`? | Evidence / gap (file:line) |
 |---|---|---|
 | Request auth | Yes | `auth.py:65,88`, `app/api/events.py:62,77` |

@@ -32,7 +32,7 @@ Prior blockers are **resolved** (Mayank 2026-09-11; secrets held off-repo, never
 | # | Blocker | Status |
 |---|---|---|
 | 4 | n8n Cloud trial | **Resolved** — workspace upgraded and active. WF-1..5 published. WF-6 stays **unpublished** on purpose (15-minute cron). Do not publish it for these proofs. |
-| 5 | WF-4 sheet-row proof | **Open** — 2026-10-01 wrong-key stub returned **500**, not 403. Positive stub not fired. Mayank confirmed Render has no `ADMIN_API_KEY`. `API_AUTH_KEY` does not guard the stub. Do not send the demo client key. Local `LIVE_ADMIN_API_KEY` does not change Render. |
+| 5 | WF-4 sheet-row proof | **Open** — 2026-10-01 wrong-key stub returned **500**, not 403. Positive stub not fired. Mayank confirmed Render has no `ADMIN_API_KEY`. `API_AUTH_KEY` does not guard the stub. Do not send the demo client key. Local `LIVE_ADMIN_API_KEY` does not change Render. Manual-pin gate proofs exist (WF-4 execs 856/857/858) — they prove the gate + Sheets append, not the bus → bridge path, which still waits on the stub. |
 
 Cloud UI already done (not in repo JSON): WF-1/2/3 CRM links → verified Vercel base; WF-4 native Append node published; six payload expressions corrected (`$json.payload.name` and the same for phone/location/budget/property_type/visit_date; top-level `timestamp`/`tenant_id`/`entity_id` left as bracket keys). Row not proven.
 
@@ -43,7 +43,7 @@ Not a cert `[x]`. Sync with Aritro before the n8n check is coded. He runs the cr
 | Owner | Task |
 |---|---|
 | Aritro | Tenant context, Postgres `client_id` audit, and tagged-RAG filter are **coded on `cert-sprint` @ `bcf0f24`**, not on Render. See Appendix A.1. |
-| Maitri | n8n IF before Gmail (WF-1) and Sheets (WF-4). Accept `^Client_[0-9]+$`. A rejected payload can be proved before the stub. The accepted Sheet1 row cannot, until the stub works. |
+| Maitri | n8n Tenant Gate **done 2026-10-01** on WF-1..WF-5 (cloud UI, `^Client_[0-9]+$`, false → Stop and Error; WF-2 gate renamed to `Tenant Gate`). Manual-pin proofs on WF-4: reject exec **856** (Error), accept exec **857**, full accept exec **858** (Sheet1 row appended). The bridge-driven Sheet1 row still waits on the stub (see row 5). |
 
 Known bug, report only, do not fix in this pass: dashboard priority cards keep the first 3 hot leads after claim (`frontend/src/app/(dashboard)/dashboard/page.tsx:127-129`). Claim sets `conversion_status` but the widget does not drop claimed rows.
 

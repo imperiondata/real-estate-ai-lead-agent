@@ -847,6 +847,7 @@ async def process_chat(session_id: str, user_message: str, db: DBSession, client
     # -----------------------------------
     handoff_phrases = ["human", "agent", "real person", "call me", "speak to someone", "customer service"]
     if any(phrase in msg_clean for phrase in handoff_phrases):
+        backfill_missing_lead_fields(lead, user_message or msg_clean)
         # P1.5: assign before notify so hot alert can reach a real agent
         previous_agent = lead.assigned_agent
         assigned = ensure_lead_assignment(

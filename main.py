@@ -504,7 +504,7 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=[
         "http://localhost:3000",
-        os.getenv("FRONTEND_URL", "https://real-estate-ai-lead-agent-5q20tzn22.vercel.app")
+        os.getenv("FRONTEND_URL", "https://real-estate-ai-lead-agent-j330jhguc-imperion-s-projects1.vercel.app")
     ],
     allow_credentials=True,
     allow_methods=["*"],

@@ -20,7 +20,7 @@ from typing import Any, Optional
 
 import redis.asyncio as aioredis
 
-from config import settings
+from config import settings, use_tenant
 
 logger = logging.getLogger("n8n_bridge")
 
@@ -191,9 +191,18 @@ class N8NBridge:
 
     async def _handle_message(self, msg_id: str, fields: dict) -> None:
         assert self._redis is not None
+        tenant = "None"
         try:
-            envelope = json.loads(fields.get("data", "{}"))
+            parsed = json.loads(fields.get("data", "{}"))
+            if isinstance(parsed, dict):
+                tenant = parsed.get("tenant_id") or "None"
         except (ValueError, TypeError):
+            parsed = None
+        with use_tenant(str(tenant)):
+            await self._handle_message_scoped(msg_id, fields, parsed)
+
+    async def _handle_message_scoped(self, msg_id: str, fields: dict, envelope) -> None:
+        if not isinstance(envelope, dict):
             logger.error("n8n bridge bad envelope json msg=%s; acking", msg_id)
             await self._redis.xack(self.stream, self.group, msg_id)
             return

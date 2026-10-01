@@ -16,6 +16,7 @@ import logging
 from typing import Any, Awaitable, Callable, Optional
 
 from app.clients.event_bus_client import EventBusClient, event_bus
+from config import use_tenant
 from app.orchestrator.agent_registry import AgentRegistry, AgentRecord, agent_registry
 
 logger = logging.getLogger("ceo")
@@ -68,6 +69,11 @@ class CEOOrchestrator:
         await self.handle_event(envelope)
 
     async def handle_event(self, event: dict) -> None:
+        tenant = (event or {}).get("tenant_id") or "None"
+        with use_tenant(str(tenant)):
+            await self._handle_event_scoped(event)
+
+    async def _handle_event_scoped(self, event: dict) -> None:
         """Resolve subscribers for ``event["event_type"]`` and invoke them.
 
         - active agents are invoked (and health-recorded)

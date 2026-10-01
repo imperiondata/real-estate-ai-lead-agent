@@ -186,6 +186,16 @@ if not settings.GEMINI_API_KEY:
 if not settings.CLIENT_KEY_A:
     _cfg_logger.warning("CLIENT_KEY_A is not set — /leads and /analytics will reject all requests.")
 
+from contextlib import contextmanager
 from contextvars import ContextVar
 request_id_ctx = ContextVar("request_id", default="SYS")
 tenant_id_ctx = ContextVar("tenant_id", default="None")
+
+
+@contextmanager
+def use_tenant(value: str):
+    token = tenant_id_ctx.set(str(value) if value else "None")
+    try:
+        yield
+    finally:
+        tenant_id_ctx.reset(token)

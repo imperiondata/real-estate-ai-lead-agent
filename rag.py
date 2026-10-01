@@ -72,7 +72,16 @@ def _build_rag_index():
 # Build in background so we don't block Uvicorn startup and hit Render's port timeout
 threading.Thread(target=_build_rag_index, daemon=True).start()
 
-def retrieve(query: str, k: int = 1):
+def _chunk_visible(item, client_id) -> bool:
+    if client_id is None or not isinstance(item, dict):
+        return True
+    item_client = item.get("client_id")
+    if item_client in (None, ""):
+        return True
+    return str(item_client) == str(client_id)
+
+
+def retrieve(query: str, k: int = 1, client_id=None):
     # Wait up to 5 seconds if index is still building (prevents empty results on early requests)
     if not RAG_AVAILABLE:
         _index_ready_event.wait(timeout=5.0)
@@ -83,6 +92,15 @@ def retrieve(query: str, k: int = 1):
     # Use cached embedding — avoids network call for repeated/similar queries
     q_emb = np.array([get_query_embedding_cached(query)], dtype=np.float32)
     D, I = index.search(q_emb, k)
-    results = [data[i] for i in I[0]]
-    score = float(D[0][0])
+    results = []
+    score = 0.0
+    for rank, i in enumerate(I[0]):
+        if int(i) < 0:
+            continue
+        item = data[int(i)]
+        if not _chunk_visible(item, client_id):
+            continue
+        if not results:
+            score = float(D[0][rank])
+        results.append(item)
     return results, score

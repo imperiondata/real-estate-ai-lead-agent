@@ -1089,7 +1089,7 @@ async def process_chat(session_id: str, user_message: str, db: DBSession, client
             rag_query = f"{lead.location} {user_message}" if (lead and lead.location) else user_message
             # Offload synchronous RAG/FAISS to thread to prevent blocking FastAPI event loop
             context_items, score = await asyncio.wait_for(
-                asyncio.to_thread(retrieve, rag_query),
+                asyncio.to_thread(retrieve, rag_query, 1, lead.client_id if lead else None),
                 timeout=float(getattr(settings, "RAG_TIMEOUT_SECONDS", 2.0)),
             )
             rag_time = round((time.time() - rag_start) * 1000)

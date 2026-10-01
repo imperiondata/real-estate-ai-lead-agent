@@ -15,7 +15,7 @@
 
 ---
 
-## 0. Current blockers (2026-09-24 — new sessions read this first)
+## 0. Current blockers (2026-10-01 — new sessions read this first)
 
 Prior blockers are **resolved** (Mayank 2026-09-11; secrets held off-repo, never in git):
 
@@ -27,14 +27,35 @@ Prior blockers are **resolved** (Mayank 2026-09-11; secrets held off-repo, never
 
 **Done:** PH-0 `[x]` · PH-A.1 `[x]` · PH-C `[x]` 2026-09-17 (WF-1 exec 719; Cases 1–4; Case 4 exec 722 +0) · PH-A.2 `[x]` 2026-09-17 (25/50 0-drop; 100 ReadTimeout cliff) · **PH-B `[x]` 2026-09-17 (100 convos, 138 turns, all 200 0-drop; B.2 8/8 STOP + handoff; `reports/PH-B-100-EVAL-REPORT.md`)**.
 
-**As of 2026-09-24 (no task flipped `[x]`):**
+**As of 2026-10-01 (no task flipped `[x]`):**
 
 | # | Blocker | Status |
 |---|---|---|
-| 4 | n8n Cloud trial over (banner on WF-4: "Upgrade now to keep automating") | **Open** — no new executions until Mayank upgrades. Canvas/history still viewable. |
-| 5 | WF-4 sheet-row proof | **Open** — blocked on (4) plus live `ADMIN_API_KEY` for `POST /api/v1/events/stub`. Do not fire the stub before the upgrade. |
+| 4 | n8n Cloud trial | **Resolved** — workspace upgraded and active. WF-1..5 published. WF-6 stays **unpublished** on purpose (15-minute cron). Do not publish it for these proofs. |
+| 5 | WF-4 sheet-row proof | **Open** — 2026-10-01 wrong-key stub returned **500**, not 403. Positive stub not fired. Mayank confirmed Render has no `ADMIN_API_KEY`. `API_AUTH_KEY` does not guard the stub. Do not send the demo client key. Local `LIVE_ADMIN_API_KEY` does not change Render. |
 
-Cloud UI already done (not in repo JSON): WF-1/2/3 CRM links → verified Vercel base; WF-6 unpublished (Fetch Metrics was `host.docker.internal`); WF-4 native Append node published by Mayank; six payload expressions corrected in the Append node (`$json.payload.name` and the same for phone/location/budget/property_type/visit_date; top-level `timestamp`/`tenant_id`/`entity_id` left as bracket keys). Row not proven — trial over, no execution.
+Cloud UI already done (not in repo JSON): WF-1/2/3 CRM links → verified Vercel base; WF-4 native Append node published; six payload expressions corrected (`$json.payload.name` and the same for phone/location/budget/property_type/visit_date; top-level `timestamp`/`tenant_id`/`entity_id` left as bracket keys). Row not proven.
+
+### Oct 2 directive (Mayank 2026-10-01, due 2026-10-02 EOD)
+
+Not a cert `[x]`. Sync with Aritro before the n8n check is coded. He runs the cross-tenant API test after both confirm production is live.
+
+| Owner | Task |
+|---|---|
+| Aritro | Tenant context on async jobs. `client_id` scope on Postgres API queries. Tenant scope on vector / knowledge-base retrieval. |
+| Maitri | n8n ingestion webhooks must reject a missing or invalid `tenant_id` before Gmail or Sheets. Proofs: one rejected payload, one accepted row. |
+
+Known bug, report only, do not fix in this pass: dashboard priority cards keep the first 3 hot leads after claim (`frontend/src/app/(dashboard)/dashboard/page.tsx:127-129`). Claim sets `conversion_status` but the widget does not drop claimed rows.
+
+**Later — do not start in a new session until the blocker clears:**
+
+- WF-4 positive stub. Blocked until Render has `ADMIN_API_KEY` (not `API_AUTH_KEY`), the service is restarted, and a wrong `X-Admin-Token` returns 403. Then one `lead.qualified` stub. No sheet exec id yet.
+- PH-A.3 DR. Last. Dump via `LIVE_DATABASE_URL`. Do not overwrite `DATABASE_URL`.
+- PH-R signs and Aritro checkboxes. After cert and the Oct 2 task. Do not flip `[x]` early.
+- Claim widget. Report only. Do not fix.
+- WF-6. Leave unpublished (15-minute cron).
+- Do not import `n8n_workflows/*.json` (would revert the live Append node and CRM links).
+- Do not deploy `cert-sprint`. Render runs `production/main`.
 
 **Still later (do not mix into this commit's live work):**
 - **PH-B** — Maitri 100 live WA, Client B, rate-limited (Appendix B.1/B.2) `[x]` 2026-09-17 — see B.1/B.2 + `reports/PH-B-100-EVAL-REPORT.md`
@@ -303,6 +324,7 @@ PH-A.2 ∥ PH-B allowed after PH-C. Everything else serial.
 | Flags (Mayank) | `TEST_MODE=false`, `IS_PRODUCTION=true`, `FOLLOW_UP_TEST_MODE=false` |
 | `/health` | **200** in 7.0s (cold start; first 60s attempt timed out, retry OK): `{"status":"healthy","database_postgres":"connected","cache_redis":"connected","provider_twilio":"configured","provider_gemini":"configured","scheduler":"running","uptime_seconds":11}` |
 | `/health` recheck | **2026-09-24** HTTP 200, same healthy body, `uptime_seconds` 12 (cold start). Does not replace the 2026-09-15 row. Does not prove WF-4 or a backend URL deploy. |
+| `/health` recheck | **2026-10-01** HTTP 200, same healthy body, `uptime_seconds` 12986. Does not prove WF-4. |
 | `/metrics` | **200**, 4662 bytes, 0.9s (scrape allowed) |
 | Client A/B seeded | Client B dashboard reachable (CRM renders); no wipes performed |
 
@@ -313,15 +335,19 @@ PH-A.2 ∥ PH-B allowed after PH-C. Everything else serial.
 | `follow_up` scheduler | Yes | `follow_up.py:388`, `followup_scheduler.py:87` (via `_tenant_ctx` alias) |
 | Escalation loop | Yes | `main.py:271,298,326` |
 | Middleware default | `Pending` until auth | `main.py:530`; filter reads at `main.py:201` (`SecurePIILogFilter`) |
-| Bus `_dispatch` / CEO `handle_event` | **No** — falls back to `"None"`/`"Pending"` | `app/clients/event_bus_client.py`, `app/orchestrator/ceo_orchestrator.py` — no `set()` |
-| `N8NBridge._handle_message` | **No** | `app/automation_engine/n8n_bridge.py` — no `set()` |
-| `ExecutionEngine.dispatch` | **No** (docstring mentions ctx only) | `app/execution_engine/execution_engine.py:32` |
-| `crm_resync_job` | **No** | `crm_sync.py` — no `set()` |
-| `competitor_monitor` / weekly marketing | **No** | `app/workflows/competitor_monitor.py`, `app/workflows/weekly_marketing_cron.py` — no `set()` |
-| `expire_stale_approvals` | **No** | `app/automation_engine/engine.py:172` — no `set()` |
-| `daily_cleanup` / `nightly_backup` | **No** | `main.py:daily_cleanup_job`, `db_backup.py` — no `set()` |
+| Bus `_dispatch` / CEO `handle_event` | **Yes** — `use_tenant` from envelope `tenant_id`, reset in `finally` | `event_bus_client.py` `_dispatch`, `ceo_orchestrator.py` `handle_event` |
+| `N8NBridge._handle_message` | **Yes** | `n8n_bridge.py` — set before scoped handler, including ack paths |
+| `ExecutionEngine.dispatch` | **Yes** | `execution_engine.py` `dispatch` — `action_request["tenant_id"]` |
+| `crm_resync_job` | **Yes** — per lead | `crm_sync.py` `Client_{lead.client_id}` |
+| `competitor_monitor` / weekly marketing | **Yes** — per client | `competitor_monitor.py`, `weekly_marketing_cron.py` |
+| `expire_stale_approvals` | **Yes** — per row | `engine.py` `Client_{row.client_id}` |
+| `daily_cleanup` / `nightly_backup` | **Yes** — `"ops"` | `main.py` `daily_cleanup_job`, `db_backup.py` `backup_postgres` |
 
-Finding for Mayank (post-cert decision): 10 job/queue paths log without tenant scope. Recommend `tenant_id_ctx.set()` per unit of work (envelope `tenant_id` on bus/CEO/bridge/EE; per-row `client_id` on resync/expire; `"ops"` on cleanup/backup) — **not** patched in this sprint.
+`follow_up.py:388` already sets `Client_{state.client_id}` and still does not reset. Left as-is.
+
+**Postgres API audit (2026-10-01):** client dashboard routes, including ROI (`main.py:1330`, `1360`, `1388`, `1413`), already filter `client_id`. No new client-facing filter added. Exceptions left in place: `app/api/lifecycle.py:104` (admin token, lead by id), `main.py:1241` (Twilio status callback by `MessageSid`), `daily_cleanup_job` (ops delete of rows older than 90 days). Internal PK lookups (`notification_service.py`, `crm_sync.py`, `crm_executor.py`) are not client APIs.
+
+**Vector retrieval:** `data/faq.json` has no `client_id` (shared catalog). `rag.retrieve` drops a hit only when the chunk has `client_id` and it does not match the caller. Untagged FAQ rows stay visible. `agent.py` passes `lead.client_id`.
 
 ### A.2 Load — 25 / 50 / 100 concurrent (live) `[x]` 2026-09-17
 Target: `POST /api/v1/chat` Client B (`LIVE_*`). Warm `/health` 200 (uptime 785s).
@@ -347,15 +373,15 @@ Isolation: 124 load leads all `client_id=3`; `non_client_b=0`. Report: `reports/
 | Observed RTO / RPO + off-box gap | |
 
 ### A.4 Security / secrets (live)
-Repo pass 2026-09-24 only. Task stays `[ ]`. Not a live Render probe. Aritro sign stays blank.
+Repo pass 2026-09-24 plus live probes 2026-10-01. Task stays `[ ]`. Aritro sign stays blank.
 
 | Check | Result |
 |---|---|
 | No secrets / demo keys in git; `.env*` ignored; `frontend/src` clean | Partial. `.gitignore` ignores `.env` and `frontend/.env`. Demo key in docs (`AGENTS.md`) is an example, not a live secret. **Not clean:** `frontend/src/app/(command-center)/sales-copilot/page.tsx:28` and `dashboard-mvp/page.tsx:23` hardcode `secret-client-key-123`. Not patched (as-is). |
-| API-key / JWT / Admin-key layers live; ROI admin-only | Code present, not live-proved. API key `auth.py:69` (`X-API-Key` / `api_key`). JWT `auth.py:47` Bearer. Admin header in code is `X-Admin-Token` (`app/api/events.py:41`, stub/lifecycle/graph), not `X-Admin-Key`. No `X-Admin-Key` string in `*.py`. ROI/pipeline (`main.py:1324`, `1354`) use `get_current_client` and filter `client_id` — not the global admin path `AGENTS.md` describes. Gap for Aritro. |
-| Twilio sig enforced (`TEST_MODE=false`); drill flags off | Not re-checked on Render this pass. Prior statement only: A.0 flags row (Mayank 2026-09-15). Code bypass is `main.py:1130` when `TEST_MODE`. |
-| `/metrics` firewall note + owner | Public in code (`main.py:583`, no auth). A.0 2026-09-15 scrape HTTP 200. No firewall evidence in repo. Owner: Mayank. |
-| Boot rejects default `ADMIN_API_KEY` | Code only. `main.py:183-186` and `app/api/events.py:84-87` raise if missing or equal to `real-estate-super-secret-key`. Not a live boot test. |
+| API-key / JWT / Admin-key layers live; ROI admin-only | 2026-10-01 live: `POST /api/v1/chat` no key → **401** `Missing X-API-Key`. `GET /api/v1/leads` no JWT → **401** `Not authenticated`. Admin mismatch not proved: wrong `X-Admin-Token` on `POST /api/v1/events/stub` → **500** `Internal Server Error` (plain text), not 403. Code still has no `X-Admin-Key`. ROI/pipeline (`main.py:1324`, `1354`) are client-scoped JWT. Gap for Aritro. |
+| Twilio sig enforced (`TEST_MODE=false`); drill flags off | Not re-read on the Render dashboard this pass. Prior statement only: A.0 flags row (Mayank 2026-09-15). Code bypass is `main.py:1130` when `TEST_MODE`. |
+| `/metrics` firewall note + owner | 2026-10-01 `GET /metrics` **200**, 23243 bytes, no auth. Public in code (`main.py:583`). No firewall evidence in repo. Owner: Mayank. |
+| Boot rejects default `ADMIN_API_KEY` | Code only: `main.py:183-186` and `app/api/events.py:84-87` raise `RuntimeError` if missing or equal to `real-estate-super-secret-key`. That unhandled raise matches the stub **500** (check runs before the 403 compare). Not a live boot-log read. Positive stub not fired. |
 
 **Aritro sign:** ________
 

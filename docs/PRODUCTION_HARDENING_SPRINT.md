@@ -32,9 +32,9 @@ Prior blockers are **resolved** (Mayank 2026-09-11; secrets held off-repo, never
 | # | Blocker | Status |
 |---|---|---|
 | 4 | n8n Cloud trial | **Resolved** — workspace upgraded and active. WF-1..5 published. WF-6 stays **unpublished** on purpose (15-minute cron). Do not publish it for these proofs. |
-| 5 | WF-4 sheet-row proof | **Open** — 2026-10-01 wrong-key stub returned **500**, not 403. Positive stub not fired. Mayank confirmed Render has no `ADMIN_API_KEY`. `API_AUTH_KEY` does not guard the stub. Do not send the demo client key. Local `LIVE_ADMIN_API_KEY` does not change Render. Manual-pin gate proofs exist (WF-4 execs 856/857/858) — they prove the gate + Sheets append, not the bus → bridge path, which still waits on the stub. |
+| 5 | WF-4 sheet-row proof | **n8n proven, Sheet1 is Mayank** — 2026-10-02 wrong token **403**. One `lead.qualified` stub **200**, `event_id` `1d9ff9f8-7a69-434d-b98e-97adcc40aef0`, `entity_id` `sheet-test-live-20261002`, `tenant_id` `Client_3`. WF-4 exec **859** Success (Oct 2, 23:15:20, 5.458s). Pin proofs 856/857/858 stay separate. Sheet1 row is Mayank's check. Do not fire a second stub. |
 
-Cloud UI already done (not in repo JSON): WF-1/2/3 CRM links → verified Vercel base; WF-4 native Append node published; six payload expressions corrected (`$json.payload.name` and the same for phone/location/budget/property_type/visit_date; top-level `timestamp`/`tenant_id`/`entity_id` left as bracket keys). Row not proven.
+Cloud UI already done (not in repo JSON): WF-1/2/3 CRM links → verified Vercel base; WF-4 native Append node published; six payload expressions corrected (`$json.payload.name` and the same for phone/location/budget/property_type/visit_date; top-level `timestamp`/`tenant_id`/`entity_id` left as bracket keys). Live Sheet1 row is Mayank's check (exec 859). Pin append was already proven by exec 858.
 
 ### Oct 2 directive (Mayank 2026-10-01, due 2026-10-02 EOD)
 
@@ -43,13 +43,13 @@ Not a cert `[x]`. Sync with Aritro before the n8n check is coded. He runs the cr
 | Owner | Task |
 |---|---|
 | Aritro | Tenant context, Postgres `client_id` audit, and tagged-RAG filter are **coded on `cert-sprint` @ `bcf0f24`**, not on Render. See Appendix A.1. |
-| Maitri | n8n Tenant Gate **done 2026-10-01** on WF-1..WF-5 (cloud UI, `^Client_[0-9]+$`, false → Stop and Error; WF-2 gate renamed to `Tenant Gate`). Manual-pin proofs on WF-4: reject exec **856** (Error), accept exec **857**, full accept exec **858** (Sheet1 row appended). The bridge-driven Sheet1 row still waits on the stub (see row 5). |
+| Maitri | n8n Tenant Gate **done 2026-10-01** on WF-1..WF-5 (cloud UI, `^Client_[0-9]+$`, false → Stop and Error; WF-2 gate renamed to `Tenant Gate`). Manual-pin proofs on WF-4: reject exec **856** (Error), accept exec **857**, full accept exec **858** (Sheet1 row appended). Live stub path is exec **859** Success (row 5). Sheet1 for that run is Mayank's check. |
 
 Known bug, report only, do not fix in this pass: dashboard priority cards keep the first 3 hot leads after claim (`frontend/src/app/(dashboard)/dashboard/page.tsx:127-129`). Claim sets `conversion_status` but the widget does not drop claimed rows.
 
 **Later — do not start in a new session until the blocker clears:**
 
-- WF-4 positive stub. Blocked until Render has `ADMIN_API_KEY` (not `API_AUTH_KEY`), the service is restarted, and a wrong `X-Admin-Token` returns 403. Then one `lead.qualified` stub. No sheet exec id yet.
+- WF-4 live stub is done (row 5): HTTP 200, exec **859** Success. Sheet1 row for `Live Stub Test` is Mayank's check. Do not fire a second stub.
 - PH-A.3 DR. Last. Dump via `LIVE_DATABASE_URL`. Do not overwrite `DATABASE_URL`.
 - PH-R signs and Aritro checkboxes. After cert and the Oct 2 task. Do not flip `[x]` early.
 - Claim widget. Report only. Do not fix.
@@ -378,10 +378,10 @@ Repo pass 2026-09-24 plus live probes 2026-10-01. Task stays `[ ]`. Aritro sign 
 | Check | Result |
 |---|---|
 | No secrets / demo keys in git; `.env*` ignored; `frontend/src` clean | Partial. `.gitignore` ignores `.env` and `frontend/.env`. Demo key in docs (`AGENTS.md`) is an example, not a live secret. **Not clean:** `frontend/src/app/(command-center)/sales-copilot/page.tsx:28` and `dashboard-mvp/page.tsx:23` hardcode `secret-client-key-123`. Not patched (as-is). |
-| API-key / JWT / Admin-key layers live; ROI admin-only | 2026-10-01 live: `POST /api/v1/chat` no key → **401** `Missing X-API-Key`. `GET /api/v1/leads` no JWT → **401** `Not authenticated`. Admin mismatch not proved: wrong `X-Admin-Token` on `POST /api/v1/events/stub` → **500** `Internal Server Error` (plain text), not 403. Code still has no `X-Admin-Key`. ROI/pipeline (`main.py:1324`, `1354`) are client-scoped JWT. Gap for Aritro. |
+| API-key / JWT / Admin-key layers live; ROI admin-only | 2026-10-01: chat no key **401**, leads no JWT **401**. 2026-10-02: wrong `X-Admin-Token` on `POST /api/v1/events/stub` → **403** `Invalid or missing Admin API Key`. Code still has no `X-Admin-Key`. ROI/pipeline (`main.py:1324`, `1354`) are client-scoped JWT. |
 | Twilio sig enforced (`TEST_MODE=false`); drill flags off | Not re-read on the Render dashboard this pass. Prior statement only: A.0 flags row (Mayank 2026-09-15). Code bypass is `main.py:1130` when `TEST_MODE`. |
 | `/metrics` firewall note + owner | 2026-10-01 `GET /metrics` **200**, 23243 bytes, no auth. Public in code (`main.py:583`). No firewall evidence in repo. Owner: Mayank. |
-| Boot rejects default `ADMIN_API_KEY` | Code only: `main.py:183-186` and `app/api/events.py:84-87` raise `RuntimeError` if missing or equal to `real-estate-super-secret-key`. That unhandled raise matches the stub **500** (check runs before the 403 compare). Not a live boot-log read. Positive stub not fired. |
+| Boot rejects default `ADMIN_API_KEY` | Code: `main.py:183-186` and `app/api/events.py:84-87` raise if missing or equal to `real-estate-super-secret-key`. 2026-10-01 **500** matched a missing Render var. 2026-10-02 after Mayank set `ADMIN_API_KEY` and restarted: wrong token **403**, real token **200**. Not a boot-log read. |
 
 **Aritro sign:** ________
 

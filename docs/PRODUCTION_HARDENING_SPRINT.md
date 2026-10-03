@@ -42,7 +42,7 @@ Not a cert `[x]`. Sync with Aritro before the n8n check is coded. He runs the cr
 
 | Owner | Task |
 |---|---|
-| Aritro | Tenant context, Postgres `client_id` audit, and tagged-RAG filter are **coded on `cert-sprint` @ `bcf0f24`**, not on Render. See Appendix A.1. |
+| Aritro | Tenant context, Postgres `client_id` audit, and tagged-RAG filter are **coded on `cert-sprint` @ `bcf0f24`**. Mayank reported 2026-10-03 that this branch was merged to `main` and Render built it. SHA not re-read here. See Appendix A.1. |
 | Maitri | n8n Tenant Gate **done 2026-10-01** on WF-1..WF-5 (cloud UI, `^Client_[0-9]+$`, false → Stop and Error; WF-2 gate renamed to `Tenant Gate`). Manual-pin proofs on WF-4: reject exec **856** (Error), accept exec **857**, full accept exec **858** (Sheet1 row appended). Live stub path is exec **859** Success (row 5). Sheet1 for that run is Mayank's check. |
 
 Known bug, report only, do not fix in this pass: dashboard priority cards keep the first 3 hot leads after claim (`frontend/src/app/(dashboard)/dashboard/page.tsx:127-129`). Claim sets `conversion_status` but the widget does not drop claimed rows.
@@ -50,16 +50,16 @@ Known bug, report only, do not fix in this pass: dashboard priority cards keep t
 **Later — do not start in a new session until the blocker clears:**
 
 - WF-4 live stub is done (row 5): HTTP 200, exec **859** Success. Sheet1 row for `Live Stub Test` is Mayank's check. Do not fire a second stub.
-- PH-A.3 DR. Last. Dump via `LIVE_DATABASE_URL`. Do not overwrite `DATABASE_URL`.
+- PH-A.3 DR done 2026-10-03. Appendix A.3. Do not re-run. Dump stays off-repo until sign-off.
 - PH-R signs and Aritro checkboxes. After cert and the Oct 2 task. Do not flip `[x]` early.
 - Claim widget. Report only. Do not fix.
 - WF-6. Leave unpublished (15-minute cron).
 - Do not import `n8n_workflows/*.json` (would revert the live Append node and CRM links).
-- Deploy is an open leftover, not a ban. Tenant helper, CRM-link fix, and handoff backfill are on `cert-sprint` @ `bcf0f24` (416 passed, 4 skipped). They are not on Render until Mayank merges that branch to `production/main`. Do not deploy from this session unasked.
+- Deploy: Mayank reported 2026-10-03, before this DR window, that `cert-sprint` was merged to `main` and Render built the new image. This session did not re-read that git SHA.
 
 **Still later (do not mix into this commit's live work):**
 - **PH-B** — Maitri 100 live WA, Client B, rate-limited (Appendix B.1/B.2) `[x]` 2026-09-17 — see B.1/B.2 + `reports/PH-B-100-EVAL-REPORT.md`
-- **PH-A.3** — ping Mayank + Maitri a quiet window, then `pg_dump` / fail / restore (`LIVE_DATABASE_URL` off-repo)
+- **PH-A.3** — `[x]` 2026-10-03. Appendix A.3. Do not re-run.
 - **PH-A.4** — repo grep + live flags
 - **PH-R** — remaining appendix cells + signs
 
@@ -105,7 +105,7 @@ Render curls use `LIVE_*` in local `.env` (not `DATABASE_URL` / local `N8N_*`). 
 | **PH-C** | Joint drill | Signed duplicate / simultaneous / retry webhooks + live n8n single-fire | Matrix §C all PASS | Aritro+Maitri | `[x]` 2026-09-17 — `reports/PH-C.1-CASES1-3-REPORT.md` |
 | **PH-A.2** | Load | 25 / 50 / 100 concurrent vs live: latency + drop rates | Numbers table in Appendix A | Aritro | `[x]` 2026-09-17 — 25/50 0-drop; 100 cliff |
 | **PH-B** | 100-eval | 100 fresh live WhatsApp convos + stop-on-reply / fallback / opt-in | JSON + summary in Appendix B | Maitri | `[x]` 2026-09-17 — 138 turns all 200 0-drop; `reports/PH-B-100-EVAL-REPORT.md` |
-| **PH-A.3** | DR | Manual `pg_dump` → fail → `pg_restore` → verify on hosted Render PG | Appendix A §DR | Aritro | `[ ]` |
+| **PH-A.3** | DR | Manual `pg_dump` → fail → `pg_restore` → verify on hosted Render PG | Appendix A §DR | Aritro | `[x]` 2026-10-03 — counts matched; post-resume chat 200 |
 | **PH-A.4** | Security | Live secrets / flags / auth / `/metrics` audit | Appendix A §Security | Aritro | `[ ]` |
 | **PH-R** | Reports | Fill Appendices A+B, Mayank sign-off | UNIFIED **PH** → `[x]` | Both | `[ ]` |
 
@@ -245,7 +245,7 @@ PH-A.2 ∥ PH-B allowed after PH-C. Everything else serial.
 - **Test:** `python gate_isolation_test.py` · `python gate_dlq_drill.py` + `dlq_replay.py` (post-restore, Mayank's OK)
 - **Done:** Appendix A §DR filled (window, dump artifact, backup artifact, kill log, restore log, counts, RTO/RPO)
 - **Rollback:** The step-2 `pg_dump` **is** the rollback; keep it until sign-off
-- **Status:** `[ ]`
+- **Status:** `[x]` 2026-10-03
 
 ---
 
@@ -308,7 +308,7 @@ PH-A.2 ∥ PH-B allowed after PH-C. Everything else serial.
 
 ## Appendix A — Backend Production Certification Report (Aritro)
 
-**HEAD:** `production/main` @ `a0a2a53` · **Live API:** ________ · **Date:** ________ · **DR window:** ________
+**HEAD at cert start:** `production/main` @ `a0a2a53` · **Live API:** `https://real-estate-ai-lead-agent-21nh.onrender.com` · **DR window:** 2026-10-03 13:16Z–13:30Z
 
 ### A.0 Env sheet (PH-0) `[x]` 2026-09-15
 
@@ -325,10 +325,11 @@ PH-A.2 ∥ PH-B allowed after PH-C. Everything else serial.
 | `/health` | **200** in 7.0s (cold start; first 60s attempt timed out, retry OK): `{"status":"healthy","database_postgres":"connected","cache_redis":"connected","provider_twilio":"configured","provider_gemini":"configured","scheduler":"running","uptime_seconds":11}` |
 | `/health` recheck | **2026-09-24** HTTP 200, same healthy body, `uptime_seconds` 12 (cold start). Does not replace the 2026-09-15 row. Does not prove WF-4 or a backend URL deploy. |
 | `/health` recheck | **2026-10-01** HTTP 200, same healthy body, `uptime_seconds` 12986. Does not prove WF-4. |
+| `/health` recheck | **2026-10-03** 13:30:51Z HTTP 200 after DR resume, postgres connected, scheduler running. One Client B chat 200, `client_id` 3. |
 | `/metrics` | **200**, 4662 bytes, 0.9s (scrape allowed) |
 | Client A/B seeded | Client B dashboard reachable (CRM renders); no wipes performed |
 
-### A.1 Tenant-log audit `[x]` 2026-09-15 audit; 10 gaps patched on `cert-sprint` @ `bcf0f24` (not on Render yet)
+### A.1 Tenant-log audit `[x]` 2026-09-15 audit; 10 gaps patched on `cert-sprint` @ `bcf0f24` (Mayank reported the merge live 2026-10-03; SHA not re-read)
 | Job / path | Emits `[Tenant: …]`? | Evidence / gap (file:line) |
 |---|---|---|
 | Request auth | Yes | `auth.py:65,88`, `app/api/events.py:62,77` |
@@ -360,17 +361,17 @@ Target: `POST /api/v1/chat` Client B (`LIVE_*`). Warm `/health` 200 (uptime 785s
 
 Isolation: 124 load leads all `client_id=3`; `non_client_b=0`. Report: `reports/PH-A.2-LOAD-REPORT.md`. Raw JSON gitignored. Harness: `load_chat_concurrency.py`.
 
-### A.3 Disaster recovery (hosted Render PG)
+### A.3 Disaster recovery (hosted Render PG) `[x]` 2026-10-03
 | Step | Evidence |
 |---|---|
-| Window (Mayank + Maitri confirmed quiet) | |
-| Manual `pg_dump` artifact + size + time (rollback copy) | |
-| `db_backup.py` artifact + size | |
-| Failure sim log (`/health` + chat) | |
-| Restore path (`pg_restore` / `db_restore.py`) + log | |
-| Client A/B + 7-table counts | |
-| Post-restore live WA turn + isolation + DLQ | |
-| Observed RTO / RPO + off-box gap | |
+| Window (Mayank + Maitri confirmed quiet) | Mayank 2026-10-03: queue cleared, web service suspended on request, resumed only after the count match. Database was not suspended. |
+| Manual `pg_dump` artifact + size + time (rollback copy) | `backup_20261003_131629_a.sql`, 948128 bytes, 13:16:29Z. Off-repo `dr_dumps/`. Contains `CREATE TABLE` for `clients`. Not in git. |
+| `db_backup.py` artifact + size | Not used. That script reads `DATABASE_URL`. Second copy is `backup_20261003_131629_b.sql`, same size, same flags (`--no-owner --no-privileges --clean`) against `LIVE_DATABASE_URL`. |
+| Failure sim log (`/health` + chat) | Web service suspended. 13:19:28Z `GET /health` **503**. 13:19:30Z `POST /api/v1/chat` **503**. |
+| Restore path (`pg_restore` / `db_restore.py`) + log | `psql -f backup_20261003_131629_a.sql` on `LIVE_DATABASE_URL`. Start 13:19:33Z. Exit 0. `db_restore.py` not used. |
+| Client A/B + 7-table counts | Before dump and after restore: clients 3, sessions 235, leads 235, messages 880, event_logs 663, follow_up_states 235, dlq_events 1057. Client ids 1, 2, 3. |
+| Post-restore live WA turn + isolation + DLQ | No WhatsApp turn. No `gate_isolation_test.py` (it writes to localhost). No `dlq_replay.py`. Agreed check: 13:30:51Z `GET /health` **200** in 1.0s, postgres connected. 13:30:52Z one `POST /api/v1/chat` **200** in 1.1s, `client_id` 3, session `dr-restore-20261003`. That chat is after the count match, so it is not in the 235. |
+| Observed RTO / RPO + off-box gap | Restore exit 0 on the first try; counts matched before resume. Service RTO: confirmed down 13:19:28Z, health 200 at 13:30:51Z after Mayank resumed. RPO: dump 13:16:29Z to confirmed down 13:19:28Z. Writes in that gap would have been replaced by the dump. Off-box copies stay until sign-off. |
 
 ### A.4 Security / secrets (live)
 Repo pass 2026-09-24 plus live probes 2026-10-01. Task stays `[ ]`. Aritro sign stays blank.

@@ -187,6 +187,10 @@ N8N_BRIDGE_GROUP=ireios-n8n
 
 n8n expressions: `{{ $json.payload.name }}`, `{{ $json.event_type }}`, `{{ $json.tenant_id }}`.
 
+### Tenant gate (Mayank 2026-10-01, due 2026-10-02)
+
+The bus sends `tenant_id` like `Client_1` (`event_bus_client.build_envelope`). Accept pattern for Maitri's cloud IF: `^Client_[0-9]+$`. WF-1..WF-5 Flatten copies `body.tenant_id || root.tenant_id || ''` and still continues, so an empty tenant reaches Gmail or Sheets. The Oct 2 gate is an IF before the side-effect node on WF-1 and WF-4: missing or non-matching `tenant_id` stops the branch. Cloud UI only. Do not change the localhost CRM links in `n8n_workflows/*.json`. Do not import those files over the live workflows.
+
 ## Canonical payloads
 
 ### `lead.hot` (WF-1)

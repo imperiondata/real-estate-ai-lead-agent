@@ -126,6 +126,20 @@ class Settings(BaseSettings):
     # Wave D.4: WhatsApp brochure/floor plan media URL (public HTTPS). Empty = text fallback.
     BROCHURE_MEDIA_URL: str = ""
     FLOORPLAN_MEDIA_URL: str = ""
+    CRM_API_KEY: str = ""
+    FEATURE_GRAPH_VIZ: bool = False
+    FEATURE_TWIN_LIVE: bool = False
+    FEATURE_HUBSPOT_LIVE: bool = False
+
+    LIVE_API_BASE_URL: str = ""
+    LIVE_CLIENT_B_KEY: str = ""
+    LIVE_TWILIO_AUTH_TOKEN: str = ""
+    LIVE_N8N_BASE_URL: str = ""
+    LIVE_N8N_API_KEY: str = ""
+    LIVE_DATABASE_URL: str = ""
+    LIVE_FRONTEND_URL: str = ""
+    LIVE_ADMIN_API_KEY: str = ""
+
     # Google Calendar (real CalendarExecutor) — empty = stub visit_id fallback
     GOOGLE_CALENDAR_ID: str = ""
     GOOGLE_CALENDAR_CREDENTIALS_JSON: str = ""
@@ -172,6 +186,16 @@ if not settings.GEMINI_API_KEY:
 if not settings.CLIENT_KEY_A:
     _cfg_logger.warning("CLIENT_KEY_A is not set — /leads and /analytics will reject all requests.")
 
+from contextlib import contextmanager
 from contextvars import ContextVar
 request_id_ctx = ContextVar("request_id", default="SYS")
 tenant_id_ctx = ContextVar("tenant_id", default="None")
+
+
+@contextmanager
+def use_tenant(value: str):
+    token = tenant_id_ctx.set(str(value) if value else "None")
+    try:
+        yield
+    finally:
+        tenant_id_ctx.reset(token)

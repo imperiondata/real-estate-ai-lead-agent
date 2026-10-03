@@ -11,6 +11,11 @@ from models import Lead, NotificationLog, Agent
 logger = logging.getLogger("notification_service")
 
 
+def _crm_lead_url(lead_id) -> str:
+    base = os.getenv("FRONTEND_URL", "http://localhost:3000").rstrip("/")
+    return f"{base}/crm?lead_id={lead_id}"
+
+
 def terminal_status_after_failed_delivery_alert(current_status: str) -> str:
     """P0.6: after ops is notified of a failed delivery, stop re-selecting the row."""
     if current_status == "failed":
@@ -35,7 +40,7 @@ def send_fallback_email(agent_email: str, agent_name: str, lead: Lead, reason: s
         msg['From'] = smtp_user
         msg['To'] = agent_email
 
-        dashboard_link = f"http://localhost:3000/crm?lead_id={lead.id}"
+        dashboard_link = _crm_lead_url(lead.id)
         body = f"""
 Hello {agent_name},
 
@@ -297,7 +302,7 @@ async def trigger_hot_lead_notification(
                         f"*{lead.name or 'Unknown'}* now requires priority attention.\n\n"
                         f"*Updated Reason:* {reason}\n"
                         f"*Next Action:* Please contact immediately.\n\n"
-                        f"View Lead: http://localhost:3000/crm?lead_id={lead.id}"
+                        f"View Lead: {_crm_lead_url(lead.id)}"
                     )
                     await _send_alert_whatsapp(upgrade_body, recipient, lead, reason)
                 existing_log.reason = reason
@@ -326,7 +331,7 @@ async def trigger_hot_lead_notification(
             agent_name = recipient["name"]
 
             # 3. FORMAT THE MESSAGE
-            dashboard_link = f"http://localhost:3000/crm?lead_id={lead.id}"
+            dashboard_link = _crm_lead_url(lead.id)
             message_body = (
                 f"🚨 *Hot Lead Alert*\n\n"
                 f"*{lead.name or 'Unknown'}* is looking to {lead.intent or 'explore'} a "

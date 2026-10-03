@@ -35,7 +35,7 @@ from app.agents.qualification import process_chat
 from app.agents.whatsapp_agent import whatsapp_agent_v3
 from app.knowledge_graph.neo4j_kg import knowledge_graph
 from app.memory.conversation_memory import conversation_memory
-from config import settings, tenant_id_ctx, request_id_ctx
+from config import settings, tenant_id_ctx, request_id_ctx, use_tenant
 
 
 def _select_chat_fn():
@@ -229,6 +229,11 @@ from db_backup import backup_postgres
 
 # --- Background Scheduler for Follow-Up System & Maintenance ---
 def daily_cleanup_job():
+    with use_tenant("ops"):
+        return _daily_cleanup_job()
+
+
+def _daily_cleanup_job():
     logger.info("Running daily maintenance cleanup...")
     db = SessionLocal()  # Create a dedicated standard DB session
     try:
@@ -504,7 +509,7 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=[
         "http://localhost:3000",
-        os.getenv("FRONTEND_URL", "https://real-estate-ai-lead-agent-5q20tzn22.vercel.app")
+        os.getenv("FRONTEND_URL", "https://real-estate-ai-lead-agent-j330jhguc-imperion-s-projects1.vercel.app")
     ],
     allow_credentials=True,
     allow_methods=["*"],

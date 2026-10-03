@@ -161,6 +161,8 @@ verify_creds.py
 verify_links.py
 update_cred_ids.py
 
+reports/load_leg_*.json
+
 # n8n temp artifacts
 temp_*.json
 temp_*.sqlite*

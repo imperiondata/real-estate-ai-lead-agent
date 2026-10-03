@@ -22,7 +22,7 @@ from typing import Any, Awaitable, Callable, Optional
 
 import redis.asyncio as aioredis
 
-from config import settings
+from config import settings, use_tenant
 
 logger = logging.getLogger("event_bus")
 
@@ -247,22 +247,24 @@ class EventBusClient:
             self._running = False
 
     async def _dispatch(self, envelope: dict) -> None:
-        event_type = envelope.get("event_type")
-        handlers: list[Handler] = list(self._handlers.get(event_type, [])) + list(self._wildcards)
-        if not handlers:
-            return
-        results = await asyncio.gather(
-            *(self._safe_call(h, envelope) for h in handlers),
-            return_exceptions=True,
-        )
-        for handler, res in zip(handlers, results):
-            if isinstance(res, Exception):
-                logger.error(
-                    "handler %s failed on event_type=%s: %s",
-                    getattr(handler, "__name__", handler),
-                    event_type,
-                    res,
-                )
+        tenant = (envelope or {}).get("tenant_id") or "None"
+        with use_tenant(str(tenant)):
+            event_type = envelope.get("event_type")
+            handlers: list[Handler] = list(self._handlers.get(event_type, [])) + list(self._wildcards)
+            if not handlers:
+                return
+            results = await asyncio.gather(
+                *(self._safe_call(h, envelope) for h in handlers),
+                return_exceptions=True,
+            )
+            for handler, res in zip(handlers, results):
+                if isinstance(res, Exception):
+                    logger.error(
+                        "handler %s failed on event_type=%s: %s",
+                        getattr(handler, "__name__", handler),
+                        event_type,
+                        res,
+                    )
 
     @staticmethod
     async def _safe_call(handler: Handler, envelope: dict):

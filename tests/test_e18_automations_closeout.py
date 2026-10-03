@@ -241,6 +241,26 @@ def test_agent_handoff_source_publishes_human_handoff():
     assert "HUMAN HANDOFF" in src
 
 
+def test_handoff_backfills_fields_before_snapshot():
+    """Handoff returns before the later backfill, so the intercept must fill first."""
+    import agent as agent_mod
+
+    src = inspect.getsource(agent_mod.process_chat)
+    handoff = src.split("HUMAN HANDOFF INTERCEPT", 1)[1].split("handoff_reply", 1)[0]
+    assert handoff.index("backfill_missing_lead_fields") < handoff.index("_snap = SimpleNamespace")
+    lead = SimpleNamespace(
+        name=None, phone=None, budget=None, location=None,
+        property_type=None, intent=None, visit_date=None,
+    )
+    filled = agent_mod.backfill_missing_lead_fields(
+        lead, "looking for 2bhk in baner budget 90 lakhs please connect me to a human agent"
+    )
+    assert "location" in filled
+    assert "budget" in filled
+    assert lead.location == "Baner"
+    assert lead.budget is not None
+
+
 # --------------------------------------------------------------------------- #
 # BA-2 — chat_context on turn events
 # --------------------------------------------------------------------------- #

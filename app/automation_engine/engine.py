@@ -20,7 +20,7 @@ from typing import Any, Optional
 from app.clients.event_bus_client import event_bus
 from app.automation_engine.hitl import request_approval
 from app.execution_engine.execution_engine import execution_engine
-from config import settings
+from config import settings, use_tenant
 from models import ApprovalRequest
 
 logger = logging.getLogger("automation_engine")
@@ -187,9 +187,10 @@ def expire_stale_approvals(max_age_hours: int = 24) -> int:
             ApprovalRequest.created_at < cutoff,
         ).all()
         for row in rows:
-            row.status = "expired"
-            row.resolved_at = datetime.now(timezone.utc)
-            expired += 1
+            with use_tenant(f"Client_{row.client_id}"):
+                row.status = "expired"
+                row.resolved_at = datetime.now(timezone.utc)
+                expired += 1
         if expired:
             db.commit()
     if expired:

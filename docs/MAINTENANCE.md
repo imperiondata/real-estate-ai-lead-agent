@@ -381,6 +381,7 @@ python dlq_replay.py
 python task3_runner.py
 python task3_runner.py --category HOT
 ```
+> **Production rule:** never run `task3_runner.py` against the live deploy. Live cert runs from `docs/PRODUCTION_HARDENING_SPRINT.md` (signed webhooks + fresh live convos, dedicated test tenant).
 
 | Suite | Prefix |
 |-------|--------|

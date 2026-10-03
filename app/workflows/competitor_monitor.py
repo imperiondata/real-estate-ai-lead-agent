@@ -19,7 +19,7 @@ import redis.asyncio as aioredis
 
 from app.clients.event_bus_client import EventBusClient
 from app.services.prediction_service import competitor_signals
-from config import settings
+from config import settings, use_tenant
 from database import SessionLocal
 from datetime import datetime, timezone
 
@@ -136,10 +136,11 @@ def competitor_monitor_job() -> None:
     try:
         clients = db.query(Client).filter(Client.is_active.is_(True)).all()
         for client in clients:
-            try:
-                envelopes.extend(_scan_client(db, client))
-            except Exception as e:  # noqa: BLE001 - isolate per client
-                logger.warning("competitor scan failed for client %s: %s", client.id, e)
+            with use_tenant(f"Client_{client.id}"):
+                try:
+                    envelopes.extend(_scan_client(db, client))
+                except Exception as e:  # noqa: BLE001 - isolate per client
+                    logger.warning("competitor scan failed for client %s: %s", client.id, e)
     finally:
         db.close()
     if envelopes:

@@ -24,7 +24,8 @@ High-signal, repo-specific facts an agent would likely miss without help.
 | Live load vs Render | `python load_chat_concurrency.py --leg 25` (`LIVE_API_BASE_URL` + `LIVE_CLIENT_B_KEY` in `.env`). Live curls and the future stub read `LIVE_*` only. Never assign them over `DATABASE_URL`, `N8N_*`, `TWILIO_*`, `ADMIN_API_KEY`, `FRONTEND_URL`, or `NEXT_PUBLIC_API_URL`. |
 | Tenant isolation drill | `python gate_isolation_test.py` |
 | DLQ drill | `python gate_dlq_drill.py` then `python dlq_replay.py` |
-| DB backup / restore | `python db_backup.py` / `python db_restore.py backups/backup_*.sql` |
+| DB backup / restore (local only) | `python db_backup.py` / `python db_restore.py backups/backup_*.sql` |
+| Live DR vs Render | `python live_dr.py counts` then `dump` / `restore --confirm LIVE` (`LIVE_DATABASE_URL` only; dumps outside the repo). Do not assign it over `DATABASE_URL`. |
 | Frontend lint | `cd frontend && npm run lint` (ESLint, no TypeScript check) |
 | Phase 3 concurrency tests | `pytest tests/test_p3_concurrency.py -v` (dependency-free source-inspection suite) |
 

@@ -127,17 +127,19 @@ and `event_logs`, restored cleanly with zero data loss.
 
 ## 5. Render Production Notes
 
-On Render, `pg_dump` and `psql` are available in the shell. Set `DATABASE_URL` to the
-Render PostgreSQL internal URL. The same scripts work without modification.
+Do not set `DATABASE_URL` to the Render URL. `db_backup.py` and `db_restore.py` read that variable and are for the local database only.
 
-Render's managed database also maintains its own daily snapshots accessible from the
-Render dashboard under **Database → Backups**. The `db_backup.py` script is an
-additional application-level layer, not a replacement for the Render-managed backup.
+Live dump and restore:
 
-**Known limitation:** backup storage is local disk, so application-level backups are
-lost on redeploy. Render's managed PostgreSQL backup remains the primary safety net.
-Shipping `db_backup.py` output to an S3 bucket after each successful dump is the
-recommended post-pilot next step.
+```powershell
+python live_dr.py counts
+python live_dr.py dump
+python live_dr.py restore --dump ..\dr_dumps\backup_YYYYMMDD_HHMMSS_a.sql --confirm LIVE
+```
+
+`live_dr.py` reads `LIVE_DATABASE_URL` only. It refuses `localhost`. It does not print the URL. Dumps are written outside the repo. Restore does nothing unless `--confirm LIVE` is passed. Suspend the web service only, after the dump passes, and before restore. Do not suspend the database.
+
+Free tier has no dashboard snapshots. The off-box dump is the rollback. A web-service redeploy does not delete it. Keep it until sign-off.
 
 ---
 

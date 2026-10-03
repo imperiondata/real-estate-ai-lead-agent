@@ -187,6 +187,8 @@ N8N_BRIDGE_GROUP=ireios-n8n
 
 n8n expressions: `{{ $json.payload.name }}`, `{{ $json.event_type }}`, `{{ $json.tenant_id }}`.
 
+The bus sends `tenant_id` like `Client_1` (`event_bus_client.build_envelope`). Accept pattern for the cloud IF: `^Client_[0-9]+$`. Missing or non-matching `tenant_id` must stop before Gmail or Sheets. Cloud UI only. Do not import `n8n_workflows/*.json` over the live workflows.
+
 ## Canonical payloads
 
 ### `lead.hot` (WF-1)

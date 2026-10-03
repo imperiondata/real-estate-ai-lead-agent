@@ -16,7 +16,7 @@ import logging
 
 import redis.asyncio as aioredis
 
-from config import settings
+from config import settings, use_tenant
 from database import SessionLocal
 from models import Client
 
@@ -47,14 +47,15 @@ def weekly_marketing_cron_job() -> None:
     try:
         clients = db.query(Client).filter(Client.is_active.is_(True)).all()
         for client in clients:
-            envelopes.append({
-                "event_id": f"weekly_report_{client.id}",
-                "event_type": WEEKLY_MARKETING_CRON_EVENT,
-                "tenant_id": f"Client_{client.id}",
-                "entity_id": "marketing",
-                "source": "weekly_marketing_cron",
-                "payload": {"source": "scheduler"},
-            })
+            with use_tenant(f"Client_{client.id}"):
+                envelopes.append({
+                    "event_id": f"weekly_report_{client.id}",
+                    "event_type": WEEKLY_MARKETING_CRON_EVENT,
+                    "tenant_id": f"Client_{client.id}",
+                    "entity_id": "marketing",
+                    "source": "weekly_marketing_cron",
+                    "payload": {"source": "scheduler"},
+                })
         if not envelopes:
             logger.debug("weekly_marketing_cron: no active clients; skip")
             return

@@ -15,7 +15,7 @@ export const metadata: Metadata = {
   },
   description:
     "Revenue OS by Imperion Data Systems. The AI-powered lead intelligence platform built for modern real estate agencies. Capture, score, and convert WhatsApp leads in real time.",
-  metadataBase: new URL("https://real-estate-ai-lead-agent-5q20tzn22.vercel.app"),
+  metadataBase: new URL("https://real-estate-ai-lead-agent-j330jhguc-imperion-s-projects1.vercel.app"),
   openGraph: {
     title: "Revenue OS | AI Real Estate Lead Intelligence",
     description:

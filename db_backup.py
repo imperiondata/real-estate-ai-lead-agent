@@ -3,7 +3,7 @@ import os
 import subprocess
 from datetime import datetime
 
-from config import settings
+from config import settings, use_tenant
 
 logger = logging.getLogger("db_backup")
 logging.basicConfig(level=logging.INFO)
@@ -13,6 +13,11 @@ def backup_postgres():
     Executes a pg_dump against the configured DATABASE_URL and securely
     stores the backup artifact in the backups/ directory.
     """
+    with use_tenant("ops"):
+        return _backup_postgres()
+
+
+def _backup_postgres():
     db_url = settings.DATABASE_URL
     if not db_url or not db_url.startswith("postgres"):
         logger.error("DATABASE_URL is not configured for PostgreSQL. Aborting backup.")

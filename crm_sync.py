@@ -6,7 +6,7 @@ import re
 import httpx
 from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception_type
 
-from config import settings
+from config import settings, use_tenant
 from database import SessionLocal
 from metrics import BACKGROUND_FAILURE_COUNT, INTEGRATION_FAILURES, SCHEDULER_JOB_DURATION
 from models import Lead, DLQEvent
@@ -295,8 +295,9 @@ def crm_resync_job():
                 Lead.crm_resync_pending == True,  # noqa: E712
             ).all()
             for lead in pending:
-                logger.info(f"P5.1 CRM re-sync for lead {lead.id} (client {lead.client_id}).")
-                sync_lead_to_crm(lead.id, resync=True)
+                with use_tenant(f"Client_{lead.client_id}"):
+                    logger.info(f"P5.1 CRM re-sync for lead {lead.id} (client {lead.client_id}).")
+                    sync_lead_to_crm(lead.id, resync=True)
     except Exception as e:
         logger.error(f"CRM re-sync job failed: {e}")
     finally:

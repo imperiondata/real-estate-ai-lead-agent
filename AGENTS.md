@@ -24,7 +24,8 @@ High-signal, repo-specific facts an agent would likely miss without help.
 | Filter stress test | `python task3_runner.py --category HOT` (`--test-id R01`, `--skip-db`, `--base-url`, `--api-key`) |
 | Tenant isolation drill | `python gate_isolation_test.py` |
 | DLQ drill | `python gate_dlq_drill.py` then `python dlq_replay.py` |
-| DB backup / restore | `python db_backup.py` / `python db_restore.py backups/backup_*.sql` |
+| DB backup / restore (local only) | `python db_backup.py` / `python db_restore.py backups/backup_*.sql` |
+| Live DR vs Render | `python live_dr.py counts` then `dump` / `restore --confirm LIVE` (`LIVE_DATABASE_URL` only; dumps outside the repo). Do not assign it over `DATABASE_URL`. |
 | Frontend lint | `cd frontend && npm run lint` (ESLint, no TypeScript check) |
 | Phase 3 concurrency tests | `pytest tests/test_p3_concurrency.py -v` (dependency-free source-inspection suite) |
 

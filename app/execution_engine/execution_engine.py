@@ -18,6 +18,7 @@ import logging
 from typing import Any, Callable, Optional
 
 from app.clients.event_bus_client import event_bus
+from config import use_tenant
 from app.execution_engine.base_executor import BaseExecutor
 from database import SessionLocal
 from models import DLQEvent
@@ -72,6 +73,11 @@ class ExecutionEngine:
     # Dispatch
     # ------------------------------------------------------------------ #
     async def dispatch(self, action_request: dict) -> dict:
+        tenant = (action_request or {}).get("tenant_id") or "None"
+        with use_tenant(str(tenant)):
+            return await self._dispatch_scoped(action_request)
+
+    async def _dispatch_scoped(self, action_request: dict) -> dict:
         action_type = (action_request or {}).get("action_type")
         executor = self._executors.get(action_type)
         if executor is None:

@@ -96,12 +96,26 @@ Full lists: `.env.example`, `AGENTS.md` → Config / Expansion env vars.
 
 ### Backup / restore
 
+Local only. These read `DATABASE_URL`. Do not point that variable at Render.
+
 ```powershell
 python db_backup.py
 python db_restore.py backups\backup_YYYYMMDD_HHMMSS.sql
 ```
 
-- Run backup before migrations, bulk seeds, or deploys.
+Live Render drill. Reads `LIVE_DATABASE_URL` only. Dumps go to `../dr_dumps` (or `DR_DUMP_DIR`), never inside the repo. Restore will not run without `--confirm LIVE`.
+
+```powershell
+python live_dr.py counts
+python live_dr.py dump
+python live_dr.py probe-down
+python live_dr.py restore --dump ..\dr_dumps\backup_YYYYMMDD_HHMMSS_a.sql --confirm LIVE
+python live_dr.py probe-up
+```
+
+Suspend the web service only, after `dump` passes, and before `restore`. Do not suspend the database. Do not run `gate_isolation_test.py`, `dlq_replay.py`, or `task3_runner.py` against Render.
+
+- Run a local backup before migrations, bulk seeds, or deploys.
 - Nightly backup job is scheduled in-app (2am) when scheduler is up — still keep off-box copies in prod.
 
 ### Migrations
@@ -616,7 +630,8 @@ Structured logs use `request_id` / `tenant_id` contextvars when set.
 | `project_leads_to_neo4j.py` | PG → Neo4j backfill anytime |
 | `add_client.py` | Production client provisioning |
 | `migrate_db.py` | SQL additive migrations |
-| `db_backup.py` / `db_restore.py` | DB snapshots |
+| `db_backup.py` / `db_restore.py` | Local DB snapshots (`DATABASE_URL` only) |
+| `live_dr.py` | Live Render dump / restore (`LIVE_DATABASE_URL` only) |
 | `gate_isolation_test.py` | Tenant isolation |
 | `gate_dlq_drill.py` / `dlq_replay.py` | DLQ path |
 | `task3_runner.py` | Live conversation matrix |
@@ -655,3 +670,5 @@ Structured logs use `request_id` / `tenant_id` contextvars when set.
 - Do not use Neo4j Browser as the production observability UI for full graphs.
 - Do not run `FOLLOW_UP_DLQ_TEST` or `TEST_MODE` in production.
 - Do not install from an outdated lock after editing `requirements.txt` without regenerating the lock.
+- Do not point `DATABASE_URL` at Render. Live dump and restore go through `live_dr.py`.
+- Do not run `gate_isolation_test.py`, `dlq_replay.py`, or `task3_runner.py` against Render.

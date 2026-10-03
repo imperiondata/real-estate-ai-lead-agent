@@ -149,6 +149,8 @@ class Settings(BaseSettings):
     LIVE_N8N_BASE_URL: str = ""
     LIVE_N8N_API_KEY: str = ""
     LIVE_DATABASE_URL: str = ""
+    LIVE_FRONTEND_URL: str = ""
+    LIVE_ADMIN_API_KEY: str = ""
 
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8")
 
@@ -191,6 +193,16 @@ if not settings.GEMINI_API_KEY:
 if not settings.CLIENT_KEY_A:
     _cfg_logger.warning("CLIENT_KEY_A is not set — /leads and /analytics will reject all requests.")
 
+from contextlib import contextmanager
 from contextvars import ContextVar
 request_id_ctx = ContextVar("request_id", default="SYS")
 tenant_id_ctx = ContextVar("tenant_id", default="None")
+
+
+@contextmanager
+def use_tenant(value: str):
+    token = tenant_id_ctx.set(str(value) if value else "None")
+    try:
+        yield
+    finally:
+        tenant_id_ctx.reset(token)

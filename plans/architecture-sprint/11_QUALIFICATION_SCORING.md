@@ -53,6 +53,7 @@ Written to `leads`:
 
 | Column | Meaning |
 |---|---|
+| `score` | integer 0–100, equals `conversion_probability` (clamped, no separate weights). Written to `v2.leads.score`. See `02_ERD.md` |
 | `temperature` | `hot`, `warm`, or `cold` |
 | `conversion_probability` | integer |
 | `engagement_score` | integer |
@@ -64,7 +65,9 @@ Written to `leads`:
 
 The real-estate seed uses 75 for that threshold. That is today's rule, stored on the profile.
 
-After a successful score the engine publishes `lead.scored`. If the profile hot rule matches, it also publishes `lead.hot`. See `06_EVENTS.md`.
+`score` is a stored copy for sorting and display, not a second computation.
+
+After a successful score the `conversation.updated` subscriber publishes `lead.scored`. If the profile hot rule matches, it also publishes `lead.hot`. The scorer engine itself does not publish. See `06_EVENTS.md`.
 
 ### Hot rule
 

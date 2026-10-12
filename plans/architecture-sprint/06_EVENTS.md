@@ -76,7 +76,7 @@ Current consumers that subscribe to a renamed event move to the new name. They d
 | Runtime, when the inbound message is stored | `message.received` |
 | Runtime, after the reply is stored | `conversation.updated`, `lead.created`, `lead.qualified`, `ai.action.executed` |
 | Lead patch | `lead.updated` |
-| Scorer | `lead.scored`, `lead.hot` |
+| `conversation.updated` subscriber (calls `score_lead`) | `lead.scored`, `lead.hot` |
 | Assignment | `lead.assigned` |
 | Follow-up job | `followup.scheduled`, `followup.executed` |
 | Execution engine | `message.sent`, `appointment.scheduled`, `integration.failed` |

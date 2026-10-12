@@ -19,6 +19,7 @@ One tenant, one profile. A published version is immutable. A second industry is 
   "tool_allowlist": [],
   "pipeline_stages": [],
   "workflows": {},
+  "product_data": {},
   "kpis": [],
   "knowledge_namespace": "tenant"
 }
@@ -41,6 +42,7 @@ One tenant, one profile. A published version is immutable. A second industry is 
 | `tool_allowlist` | Ids from `10_MEMORY_KNOWLEDGE_TOOLS.md` | Tool source |
 | `pipeline_stages` | `key`, `label`, `position` | A check constraint on `leads` |
 | `workflows` | Follow-up gaps, quiet hours, keyword lists | A new scheduler job |
+| `product_data` | Price and inventory lists for `get_product_information` and `budget_band` | Secrets, SQL, tenant ids |
 | `kpis` | Names and which event counts them | A second analytics database |
 | `knowledge_namespace` | Always `tenant` | A path the model can edit |
 
@@ -105,6 +107,7 @@ Worked example. Values match the live gate and the live stage list. They are dat
     "quiet_hours": { "start": "22:00", "end": "08:00", "tz": "Asia/Kolkata" },
     "competitor_keywords": []
   },
+  "product_data": {},
   "kpis": ["leads", "qualified", "appointments", "hot"],
   "knowledge_namespace": "tenant"
 }

@@ -31,8 +31,7 @@ Atomic implementation tasks for expanding the current codebase into Phase 3.0.
 ```text
 python gate_isolation_test.py
 python gate_dlq_drill.py
-# When API is up and configured:
-# python task3_runner.py
+# task3_runner.py is deferred. Do not run until explicit approval.
 ```
 
 **Status legend for tracking:** `[ ]` pending · `[~]` in progress · `[x]` done · `[-]` skipped
@@ -460,8 +459,8 @@ python gate_dlq_drill.py
 - **Steps:**  
   1. When `FEATURE_WHATSAPP_V3=true`: CEO routes `whatsapp.received` / `chat.received` to WhatsAppAgent; return reply for TwiML (agent must expose reply text — either return from `process_event` or store on context/result channel).  
   2. **Design note:** WhatsApp webhook needs reply string within 15s. Implement `WhatsAppAgent.process_event` to return `analysis["reply_text"]` (extend BaseAgent return value) **or** use a response buffer keyed by correlation_id. Prefer **return reply_text from process_event** for WA/chat.  
-- **Test:** Flag true + task3_runner (subset then full).  
-- **Done:** task3 green on v3.  
+- **Test:** Flag true + pytest. `task3_runner.py` is deferred until explicit approval.  
+- **Done:** pytest green on v3.  
 - **Status:** `[ ]`
 
 ### Task 5.8 — Default flag + keep legacy fallback
@@ -470,7 +469,7 @@ python gate_dlq_drill.py
 - **Status:** `[ ]`
 
 ### Task 5.9 — Phase 5 exit gate
-- **Commands:** `python task3_runner.py`, `python gate_isolation_test.py`  
+- **Commands:** `python -m pytest tests -q`, `python gate_isolation_test.py`. Do not run `task3_runner.py` until explicit approval.  
 - **Status:** `[ ]`
 
 ---
@@ -700,7 +699,7 @@ python gate_dlq_drill.py
 ```text
 python gate_isolation_test.py
 python gate_dlq_drill.py
-python task3_runner.py
+# task3_runner.py deferred — do not run until explicit approval
 # health + graph health + SSE smoke
 ```
 
@@ -741,7 +740,7 @@ Used by `UNIFIED_EXECUTION_ORDER.md` Gate **G2**. Mark complete only when **all*
 
 - [x] `python gate_isolation_test.py` — PASS (under v3)
 - [x] `python gate_dlq_drill.py` — OK (pending DLQ events written)
-- [ ] `python task3_runner.py` — requires live uvicorn; not run in CI (deps intact)
+- [ ] `task3_runner.py` — deferred. Do not run until explicit approval.
 - [x] App `/health` ok
 - [x] Graph health + SSE smoke ok
 

@@ -12,7 +12,7 @@ Implemented in `app/api/events.py`, mounted at `/api/v1/events`.
 | | |
 |--|--|
 | **Route** | `GET /api/v1/events/stream` |
-| **Auth** | `?api_key=` **or** `X-API-Key` **or** HttpOnly `jwt` cookie (same login as dashboard) |
+| **Auth** | `X-API-Key` **or** HttpOnly `jwt` cookie. `?api_key=` is 401 |
 | **Transport** | `text/event-stream` |
 | **Filter** | Only envelopes where `tenant_id == Client_<authed_client.id>` |
 | **Heartbeat** | `: ping` comment every 15s |
@@ -21,7 +21,7 @@ Implemented in `app/api/events.py`, mounted at `/api/v1/events`.
 ### Smoke
 
 ```powershell
-curl -N "http://localhost:8000/api/v1/events/stream?api_key=secret-client-key-123"
+curl -N -H "X-API-Key: secret-client-key-123" "http://localhost:8000/api/v1/events/stream"
 
 python publish_stub_event.py --event-type lead.created --tenant-id Client_1 --payload "{\"name\":\"demo\"}"
 ```

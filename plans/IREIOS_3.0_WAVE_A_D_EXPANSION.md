@@ -869,7 +869,7 @@ python -m pytest tests/ -q
 ### 4.5 Task D.5 — Evidence + G3
 
 - Fill `IREIOS_3.0_EVIDENCE_PACK.md` Wave A–D section (include brochure Approach B smoke)
-- Run `task3_runner.py` when Gemini quota allows (non-blocking if quota)
+- `task3_runner.py` is deferred. Do not run until explicit approval.
 - Progress report update optional
 - **Status:** `[ ]`
 

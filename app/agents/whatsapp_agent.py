@@ -209,7 +209,9 @@ class WhatsAppAgent:
 
     def _upsert_lead_snapshot(self, lead: Optional[Lead], client_id: int) -> None:
         """Best-effort Neo4j Lead upsert from current ORM fields (never raises)."""
-        if not lead or not getattr(lead, "id", None):
+        if not client_id or not lead or not getattr(lead, "id", None):
+            return
+        if str(getattr(lead, "client_id", "")) != str(client_id):
             return
         try:
             from app.knowledge_graph.neo4j_kg import knowledge_graph
@@ -239,7 +241,9 @@ class WhatsAppAgent:
 
     def _graph_extra_context(self, lead: Optional[Lead], client_id: int) -> str:
         """BD-5: sync Neo4j context for the LLM (never raises). Prefer async wrapper."""
-        if not lead or not getattr(lead, "id", None):
+        if not client_id or not lead or not getattr(lead, "id", None):
+            return ""
+        if str(getattr(lead, "client_id", "")) != str(client_id):
             return ""
         try:
             from app.clients.graph_client import format_graph_context_for_llm, graph_client
@@ -356,14 +360,19 @@ class WhatsAppAgent:
         session_id: str,
         user_message: str,
         db: DBSession,
-        client_id: int = 1,
+        client_id: int | None = None,
         is_background: bool = False,
         dispatch_via_ae: bool = False,
     ) -> str:
+        if not client_id:
+            logger.warning("WhatsAppAgent.process_chat refused: missing client_id session=%s", session_id)
+            return ""
         # Shared qualification core (app.agents.qualification → agent.process_chat).
         from app.agents.qualification import process_chat as qualify_chat
 
-        lead_pre = db.query(Lead).filter(Lead.session_id == session_id).first()
+        lead_pre = db.query(Lead).filter(
+            Lead.session_id == session_id, Lead.client_id == client_id
+        ).first()
         extra = await self._graph_extra_context_soft(lead_pre, client_id)
 
         reply = await qualify_chat(
@@ -375,7 +384,9 @@ class WhatsAppAgent:
             extra_context=extra or None,
         )
 
-        lead = db.query(Lead).filter(Lead.session_id == session_id).first()
+        lead = db.query(Lead).filter(
+            Lead.session_id == session_id, Lead.client_id == client_id
+        ).first()
         if not lead:
             return reply
 

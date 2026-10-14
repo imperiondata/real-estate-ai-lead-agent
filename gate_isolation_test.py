@@ -3,8 +3,9 @@ import os
 import uuid
 
 import httpx
+from auth import find_client_by_api_key
 from database import SessionLocal
-from models import Client, Lead
+from models import Lead
 
 
 async def test_isolation():
@@ -18,8 +19,8 @@ async def test_isolation():
     # Resolve client ids from the API keys (leads endpoint requires JWT; we
     # verify isolation at the data layer, which is the strongest assertion).
     with SessionLocal() as db:
-        ca = db.query(Client).filter(Client.api_key == KEY_A).first()
-        cb = db.query(Client).filter(Client.api_key == KEY_B).first()
+        ca = find_client_by_api_key(db, KEY_A)
+        cb = find_client_by_api_key(db, KEY_B)
     if not ca or not cb:
         raise SystemExit("Could not resolve both clients from the provided keys.")
     id_a, id_b = ca.id, cb.id

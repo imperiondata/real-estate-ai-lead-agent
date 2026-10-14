@@ -282,8 +282,11 @@ def validate_extracted_name(name: str) -> bool:
 
 # 2. Lightweight Guardrail & Tracking Helpers
 async def log_event_async(session_id: str, action_type: str, latency_ms: int = 0, agent_type: str = "AI",
-                          client_id: int = 1):
+                          client_id: int | None = None):
     """Highly asynchronous background tracking so core response latency remains 0ms."""
+    if not client_id:
+        logger.warning("log_event_async refused: missing client_id session=%s action=%s", session_id, action_type)
+        return
     from database import SessionLocal
     # We must use a fresh DB session for the background task
     db = SessionLocal()
@@ -594,7 +597,7 @@ INTENT-BASED BEHAVIOR:
 
 
 # 3. Stateful Memory Function
-async def process_chat(session_id: str, user_message: str, db: DBSession, client_id: int = 1,
+async def process_chat(session_id: str, user_message: str, db: DBSession, client_id: int | None = None,
                        is_background: bool = False, extra_context: str | None = None) -> str:
     """
     Main orchestrator for user input. Fetches memory, injects context to the LLM,
@@ -603,13 +606,29 @@ async def process_chat(session_id: str, user_message: str, db: DBSession, client
     start_time = time.time()
     final_text = ""
 
-    # Ensure session and lead exist in the database exactly once to prevent redundant queries
+    if not client_id:
+        logger.warning("process_chat refused: missing client_id session=%s", session_id)
+        return ""
+
+    from models import FollowUpState
+
+    def _owned(row) -> bool:
+        if row is None:
+            return True
+        return str(getattr(row, "client_id", "")) == str(client_id)
+
+    # Resolve tenant before any write. A row owned by another client is not attached.
     session = db.query(Session).filter(Session.id == session_id).first()
+    lead = db.query(Lead).filter(Lead.session_id == session_id).first()
+    f_state = db.query(FollowUpState).filter(FollowUpState.session_id == session_id).first()
+    if not (_owned(session) and _owned(lead) and _owned(f_state)):
+        logger.warning("process_chat refused: tenant mismatch session=%s", session_id)
+        return ""
+
     if not session:
         session = Session(id=session_id, client_id=client_id)
         db.add(session)
 
-    lead = db.query(Lead).filter(Lead.session_id == session_id).first()
     if not lead:
         # Interactive chat/WA defaults to opted-in; explicit STOP sets False (P0.5).
         lead = Lead(session_id=session_id, client_id=client_id, whatsapp_opt_in=True)
@@ -638,8 +657,6 @@ async def process_chat(session_id: str, user_message: str, db: DBSession, client
 
     db.commit()
 
-    from models import FollowUpState
-    f_state = db.query(FollowUpState).filter(FollowUpState.session_id == session_id).first()
     if not f_state:
         f_state = FollowUpState(session_id=session_id, client_id=client_id)
         db.add(f_state)
@@ -1089,7 +1106,7 @@ async def process_chat(session_id: str, user_message: str, db: DBSession, client
             rag_query = f"{lead.location} {user_message}" if (lead and lead.location) else user_message
             # Offload synchronous RAG/FAISS to thread to prevent blocking FastAPI event loop
             context_items, score = await asyncio.wait_for(
-                asyncio.to_thread(retrieve, rag_query, 1, lead.client_id if lead else None),
+                asyncio.to_thread(retrieve, rag_query, 1, client_id),
                 timeout=float(getattr(settings, "RAG_TIMEOUT_SECONDS", 2.0)),
             )
             rag_time = round((time.time() - rag_start) * 1000)

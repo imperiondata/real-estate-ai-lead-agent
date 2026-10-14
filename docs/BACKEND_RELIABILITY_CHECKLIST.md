@@ -37,7 +37,7 @@ Three auth layers are in place:
 
 | Layer | Mechanism | Used on |
 |-------|-----------|---------|
-| API Key (ingestion) | `X-API-Key` header or `?api_key=` query param | `/api/v1/whatsapp`, `/api/v1/ingest`, `/api/v1/chat`, `/api/v1/webhook/meta`, `/api/v1/webhook/portals`, `/api/v1/incoming_sms` |
+| API Key (ingestion) | `X-API-Key` header only. `?api_key=` is rejected | `/api/v1/whatsapp`, `/api/v1/ingest`, `/api/v1/chat`, `/api/v1/webhook/meta`, `/api/v1/webhook/portals`, `/api/v1/incoming_sms` |
 | JWT Bearer (dashboard) | `Authorization: Bearer <token>` via OAuth2 | `/api/v1/analytics`, `/api/v1/leads`, `/api/v1/leads/export`, `/api/v1/leads/{id}/stage`, `/api/v1/settings` (GET + PATCH) |
 | Admin API Key | `X-Admin-Key` header | `/api/v1/reports/pipeline`, `/api/v1/roi/*` |
 

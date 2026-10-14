@@ -257,7 +257,10 @@ def test_graph_api_routes():
         assert "available" in body  # True when local Neo4j is up; False when not
         # context: 401 without key, 404 for a non-owned/unknown lead
         assert tc.get("/api/v1/graph/leads/999999/context").status_code == 401
-        r = tc.get("/api/v1/graph/leads/999999/context?api_key=e11_key")
+        r = tc.get(
+            "/api/v1/graph/leads/999999/context",
+            headers={"X-API-Key": "e11_key"},
+        )
         assert r.status_code == 404
 
 

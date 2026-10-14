@@ -83,9 +83,10 @@ By default, the seed script populates agents with fake emails (like `sneha@reven
 
 ### 3.4 Configure the Twilio Sandbox Webhook
 1. Go to your **Twilio Console** -> **Messaging** -> **Try it out** -> **Send a WhatsApp message** [1.1].
-2. Under **"When a message comes in"**, update the URL to your *current* live Ngrok forwarding address, appending your seeded client API key [1.1]:
+2. Under **"When a message comes in"**, update the URL to your *current* live Ngrok forwarding address. Send the seeded key as `X-API-Key`, not in the URL [1.1]:
    ```text
-   https://your-active-ngrok-url.ngrok-free.app/api/v1/whatsapp?api_key=secret-client-key-123
+   https://your-active-ngrok-url.ngrok-free.app/api/v1/whatsapp
+   Header: X-API-Key: secret-client-key-123
    ```
 3. Set the method to **HTTP POST** and click **Save** [1.1].
 

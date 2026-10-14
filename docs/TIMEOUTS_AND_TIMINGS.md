@@ -15,7 +15,7 @@ Use this when debugging latency, interim WhatsApp messages, scheduler behavior, 
 |--------|--------|
 | Env-tunable (no code deploy if already wired) | `config.py` `Settings` + `.env` / `.env.example` |
 | Code constant | Search symbol below; update constant + this doc + any tests asserting the value |
-| Scheduler cadence | `main.py` lifespan `scheduler.add_job(...)` |
+| Scheduler cadence | `main.py` `scheduler.add_job(...)` plus lease seconds in `app/scheduler_lease.py` |
 
 **Invariant (WhatsApp):**  
 `WHATSAPP_WEBHOOK_TIMEOUT` < Twilio HTTP limit (~15s).  
@@ -156,7 +156,7 @@ SMS does **not** use the WA race/interim pattern; it awaits `process_unified_lea
 | HubSpot HTTP | **10.0s** | per request | `crm_sync.py` ~135, ~147 |
 | Tenacity | **5** attempts, wait exp min **2s** max **30s** | permanent fail → DLQ | `crm_sync.py` ~109–110 |
 | Poll sleep | **0.5s** | between create-status polls | `crm_sync.py` ~177 |
-| Resync job | every **5 min** | scheduler | `main.py` ~369 |
+| Resync job | every **5 min** | scheduler | `main.py` `crm_resync` |
 
 ---
 
@@ -241,7 +241,22 @@ SMS does **not** use the WA race/interim pattern; it awaits `process_unified_lea
 
 ---
 
-## 15. Related docs
+## 15. Scheduler leases (REL02)
+
+One replica wins each tick. Key `scheduler_lease:{job_id}` via `SET NX EX`. Not deleted after the job. Redis down skips the job. A dedicated worker is still later.
+
+| Job id | Lease | Cadence |
+|---|---|---|
+| `follow_up_checker` | 50s | 1 min |
+| `escalation_checker` | 50s | 1 min |
+| `crm_resync` | 240s | 5 min |
+| `expire_approvals` | 840s | 15 min |
+| `competitor_monitor` | 3600s | 01:00 |
+| `nightly_backup` | 3600s | 02:00 |
+| `nightly_cleanup` | 3600s | 03:00 |
+| `weekly_marketing_report` | 3600s | Mon 08:00 |
+
+## 16. Related docs
 
 | Doc | What it covers |
 |-----|----------------|

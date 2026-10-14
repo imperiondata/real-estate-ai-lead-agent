@@ -124,7 +124,7 @@ Suspend the web service only, after `dump` passes, and before `restore`. Do not 
 python migrate_db.py
 ```
 
-Idempotent-ish additive SQL. After pull: migrate → restart uvicorn.
+One transaction. Any statement failure rolls back and the process exits 1. It never prints `DATABASE_URL`. Re-run is safe because every statement is `IF NOT EXISTS`. This is not the V2 migration. A version table is later. After pull: migrate → restart uvicorn.
 
 ### Useful cleanup (dev)
 
@@ -138,6 +138,23 @@ Idempotent-ish additive SQL. After pull: migrate → restart uvicorn.
 ### Multi-tenant rule
 
 Every query on client data **must** filter `client_id`. Session ids are scoped `{client_id}_…` at the webhook boundary.
+
+Missing `client_id` is fail-closed: RAG `retrieve` returns empty and does not search; graph reads return empty and do not query. Untagged chunks are hidden. `data/faq.json` is the platform catalog and is stamped `shared` at index build, visible only to a known tenant. Chat and event logging do not default `client_id` to `1`. A session or lead owned by another tenant is not attached. Postgres RLS and `agency_id` are not in this pass. Do not follow the older fail-open note in `docs/PRODUCTION_HARDENING_SPRINT.md` (historical).
+
+### Later — SEC04 leftovers (not this pass)
+
+- Existing Render `clients.api_key` rows may still be plaintext. Lookup accepts SHA-256 first, then plaintext. Do not rewrite those rows, and do not run a hash backfill, until a later window. Dual-read keeps current keys working. New `add_client.py` rows are hashed.
+- Command-center `EventSource` still sends `?api_key=`. That is now 401. Switch it to the `jwt` cookie. Do not put the key back in the query string.
+- `session_id` may still embed the WhatsApp number. Masking it would break routing. Leave it until a later id scheme.
+- `name` stays on `lead.hot` / `session.completed` because live n8n WF-1/WF-4 bind it. Phone is dropped. Phone-like text in `chat_context` and negotiation `message` is masked.
+
+### Bus publish DLQ (REL01)
+
+Failed bus publishes from lead-hot and negotiation write `dlq_events.target_endpoint = event_bus`. Replay does not republish them. A full outbox is later. See `docs/DLQ_REPLAY_PROCESS.md`.
+
+### Scheduler lease (REL02)
+
+Each APScheduler job acquires `scheduler_lease:{job_id}` with `SET NX EX` before it runs. The key is not deleted; the TTL blocks a second replica for that tick. If Redis is down or `REDIS_URL` is empty, the job is skipped. Do not point a second API process at the same Redis without this lease. A dedicated worker process is still later. Lease seconds: follow-up and escalation 50, CRM resync 240, expire approvals 840, nightly and weekly jobs 3600.
 
 ### 4.1 Soft / hard wipes (canonical — current schema)
 
@@ -236,7 +253,7 @@ New WA traffic **upserts** into Neo4j; it does **not** remove old dummy nodes le
 
 ```powershell
 # Terminal A — tenant-filtered live stream (seed.py key for client 1)
-curl -N "http://localhost:8000/api/v1/events/stream?api_key=secret-client-key-123"
+curl -N -H "X-API-Key: secret-client-key-123" "http://localhost:8000/api/v1/events/stream"
 
 # Terminal B — publish without WhatsApp/LLM
 python publish_stub_event.py --event-type lead.created --tenant-id Client_1 --payload "{\"name\":\"demo\"}"
@@ -244,7 +261,7 @@ python publish_stub_event.py --event-type lead.created --tenant-id Client_1 --pa
 
 | Route | Auth | Notes |
 |-------|------|--------|
-| `GET /api/v1/events/stream` | `?api_key=` / `X-API-Key` **or** `jwt` cookie | `: ping` every 15s; `503` if bus down |
+| `GET /api/v1/events/stream` | `X-API-Key` **or** `jwt` cookie. `?api_key=` is 401 | `: ping` every 15s; `503` if bus down |
 | `GET /api/v1/events/leads/{id}/timeline` | same | From `event_logs`; 404 cross-tenant |
 | `POST /api/v1/events/stub` | `X-Admin-Token` = `ADMIN_API_KEY` | Returns `event_id` |
 
@@ -391,11 +408,20 @@ python -m pytest tests/ -q
 python gate_isolation_test.py
 python gate_dlq_drill.py
 python dlq_replay.py
-# Live conversation stress (server up + Gemini quota):
-python task3_runner.py
-python task3_runner.py --category HOT
 ```
-> **Production rule:** never run `task3_runner.py` against the live deploy. Live cert runs from `docs/PRODUCTION_HARDENING_SPRINT.md` (signed webhooks + fresh live convos, dedicated test tenant).
+
+Do not run `task3_runner.py` until explicit approval. It is not the TST01 suite. Never run it against Render.
+
+### TST01 — business outcomes (pytest, not the 115-case runner)
+
+| Outcome | Test |
+|---|---|
+| Qualification gate, terminal state, rearm | `tests/test_p0_safety.py` |
+| Sticky routing and assignment | `tests/test_p1_assignment.py` |
+| Minimum match score | `tests/test_p6_structure.py` |
+| Sales-AI assignment | `tests/test_e6_sales_agent.py` |
+| RAG / graph tenant | `tests/test_rag_tenant_fail_closed.py`, `tests/test_tenant_scope.py` |
+| DLQ tenant | `tests/test_dlq_replay_tenant.py` |
 
 | Suite | Prefix |
 |-------|--------|
@@ -476,7 +502,7 @@ Structured logs use `request_id` / `tenant_id` contextvars when set.
 | Wrong tenant data | isolation gate; missing `client_id` filter |
 | Double messages | webhook MessageSid / Redis locks (P3) |
 | Follow-ups stuck | `FollowUpState`, quiet hours, `FOLLOWUP_ENGINE`, send_retry backoff |
-| Gemini 429 | quota; pause `task3_runner`; backoff |
+| Gemini 429 | quota; backoff. Do not start `task3_runner.py`. |
 
 ---
 
@@ -503,13 +529,13 @@ Structured logs use `request_id` / `tenant_id` contextvars when set.
 | `seed_dummy_leads.py` | Bulk full leads + Neo4j project (`dummy_seed`) |
 | `project_leads_to_neo4j.py` | PG → Neo4j backfill anytime |
 | `add_client.py` | Production client provisioning |
-| `migrate_db.py` | SQL additive migrations |
+| `migrate_db.py` | One-transaction additive SQL. Exit 1 and roll back on any failure. Does not print `DATABASE_URL`. |
 | `db_backup.py` / `db_restore.py` | Local DB snapshots (`DATABASE_URL` only) |
 | `live_dr.py` | Live Render dump / restore (`LIVE_DATABASE_URL` only) |
 | `load_chat_concurrency.py` | Live load vs Render (`LIVE_API_BASE_URL` + `LIVE_CLIENT_B_KEY`) |
 | `gate_isolation_test.py` | Tenant isolation |
 | `gate_dlq_drill.py` / `dlq_replay.py` | DLQ path |
-| `task3_runner.py` | Live conversation matrix |
+| `task3_runner.py` | Deferred. Do not run until explicit approval. |
 | `publish_stub_event.py` | Bus/SSE demo events |
 | `ireios_evidence.py` | Architecture evidence dump |
 | `dlq_replay.py` | Replay pending DLQ |

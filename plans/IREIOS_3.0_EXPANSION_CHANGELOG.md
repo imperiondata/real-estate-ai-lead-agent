@@ -21,7 +21,7 @@ The `e` prefix guarantees the two suites never collide and can be collected/run 
 2. Add/expand the matching `tests/test_eN_*.py`.
 3. Append/update this file (status table row + entry).
 4. Flip the matching Step row (and Gate G2 at the end) in `UNIFIED_EXECUTION_ORDER.md`.
-5. Keep the standing bug-fix regression guards green: `gate_isolation_test.py`, `gate_dlq_drill.py` + `dlq_replay.py`, and `task3_runner.py` when Gemini quota allows.
+5. Keep the standing bug-fix regression guards green: `python -m pytest tests -q`, `gate_isolation_test.py`, `gate_dlq_drill.py` + `dlq_replay.py`. Do not run `task3_runner.py` until explicit approval.
 
 ---
 
@@ -333,7 +333,7 @@ The `e` prefix guarantees the two suites never collide and can be collected/run 
 - **10.1 (`app/agents/placeholders.py`):** registers Layer-2 names (pricing, negotiation, inventory, legal, finance, onboarding, retention) as `status=placeholder` with a log-only no-op. CEO already skips placeholders (Task 1.4), so they appear in `list_agents()` but never execute. Wired into `main.py` lifespan.
 - **10.4 (`ireios_evidence.py`):** prints the IREIOS 3.0 evidence summary (event-bus backend = redis_streams, KG availability, feature flags, registered agents, runtime path) and can dump the OpenAPI spec. Supports the G2 evidence checklist.
 - **10.2 / 10.3 — deferred with reason (allowed by the plan's "explicitly `[-]` with reason" clause):** The legacy `agent.py` qualification pipeline and `crm_sync.py` / `follow_up.py` remain importable because the v3 wrappers (`whatsapp_agent`, `sales_agent`, `followup_scheduler`) deliberately reuse their proven helpers rather than fork them. Fully deleting/moving them is a high-risk refactor that the program gates against; it is scheduled for a dedicated decommission window (post-MVP) with its own task3 + isolation + DLQ verification, as the plan's Task 10.2/10.3 "Test" step requires. The runtime path for **new** work (follow-ups, CRM, notifications, brochure/floorplan, sales AI) already flows `Event → CEO → Agent/Workflow → AE → EE → Event`; only the chat qualification core still delegates to `agent.process_chat` inside `whatsapp_agent` (single shared module, not a forked dead path).
-- **10.5:** gate commands run green — `python gate_isolation_test.py`, `python gate_dlq_drill.py`, `/health`. `task3_runner.py` requires the live server (run separately). See G2 evidence block.
+- **10.5:** gate commands run green — `python gate_isolation_test.py`, `python gate_dlq_drill.py`, `/health`. `task3_runner.py` was not part of this gate. Do not run it until explicit approval. See G2 evidence block.
 - **Tests (`tests/test_e10_phase10.py`, 2):** placeholder registration + CEO skip, evidence pack builds.
 - **Regression:** full suite `python -m pytest tests/` → **235 passed, 4 skipped** (233 + 2). No regressions.
 - **Step 19 flipped to `[x]`** — Phase 10 complete (10.1/10.4/10.5 done; 10.2/10.3 `[-]` deferred with reason).
@@ -346,7 +346,7 @@ The `e` prefix guarantees the two suites never collide and can be collected/run 
 - Event Bus = **Redis Streams** in production path (Phase 1). Runtime path for new work = `Event → CEO → Agent/Workflow → AE → EE → Event`.
 - SSE/API contracts shipped Phase 1b; Phase 9 (backend) completed.
 - Suite green: **235 passed, 4 skipped**.
-- Gate drills: `gate_isolation_test.py` ✓, `gate_dlq_drill.py` ✓, `/health` ✓ (evidence captured below). `task3_runner.py` requires a running server — run with `uvicorn main:app` up.
+- Gate drills: `gate_isolation_test.py` ✓, `gate_dlq_drill.py` ✓, `/health` ✓ (evidence captured below). `task3_runner.py` was not run. Do not run it until explicit approval.
 
 ---
 

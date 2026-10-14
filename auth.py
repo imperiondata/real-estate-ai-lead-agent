@@ -1,3 +1,4 @@
+import hashlib
 import os
 from datetime import datetime, timedelta, timezone
 
@@ -5,7 +6,7 @@ import bcrypt
 import jwt
 from dotenv import load_dotenv
 from fastapi import Depends, HTTPException, status, Security
-from fastapi.security import OAuth2PasswordBearer, APIKeyHeader, APIKeyQuery
+from fastapi.security import OAuth2PasswordBearer, APIKeyHeader
 from sqlalchemy.orm import Session
 
 import models
@@ -23,7 +24,6 @@ ACCESS_TOKEN_EXPIRE_MINUTES = 60 * 24 * 7  # 7 Days for dashboard
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/v1/auth/login")
 api_key_header = APIKeyHeader(name="X-API-Key", auto_error=False)
-api_key_query = APIKeyQuery(name="api_key", auto_error=False)
 
 # Passwords
 def verify_password(plain_password: str, hashed_password: str) -> bool:
@@ -65,21 +65,41 @@ def get_current_client(token: str = Depends(oauth2_scheme), db: Session = Depend
     tenant_id_ctx.set(f"Client_{client.id}")
     return client
 
-# Dependency for Ingestion/Webhooks (API Key)
+def hash_api_key(api_key: str) -> str:
+    return hashlib.sha256(api_key.encode("utf-8")).hexdigest()
+
+
+def find_client_by_api_key(db: Session, api_key: str):
+    """Match a SHA-256 hash first, then a legacy plaintext row. Does not rewrite the row."""
+    if not api_key:
+        return None
+    digest = hash_api_key(api_key)
+    client = (
+        db.query(models.Client)
+        .filter(models.Client.api_key == digest, models.Client.is_active.is_(True))
+        .first()
+    )
+    if client:
+        return client
+    return (
+        db.query(models.Client)
+        .filter(models.Client.api_key == api_key, models.Client.is_active.is_(True))
+        .first()
+    )
+
+
 def get_client_by_api_key(
     api_key_h: str = Security(api_key_header),
-    api_key_q: str = Security(api_key_query),
     db: Session = Depends(get_db)
 ):
-    api_key = api_key_h or api_key_q
-    if not api_key:
+    if not api_key_h:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Missing X-API-Key header or api_key query parameter",
+            detail="Missing X-API-Key header",
         )
 
-    client = db.query(models.Client).filter(models.Client.api_key == api_key).first()
-    if not client or not client.is_active:
+    client = find_client_by_api_key(db, api_key_h)
+    if not client:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid or revoked API Key",

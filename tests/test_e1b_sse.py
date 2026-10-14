@@ -191,7 +191,8 @@ def test_timeline_returns_envelopes_and_isolates_tenant():
             async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
                 # own lead -> 200 with envelope-shaped events
                 r1 = await client.get(
-                    f"/api/v1/events/leads/{lead1.id}/timeline?api_key=secret-client-key-123"
+                    f"/api/v1/events/leads/{lead1.id}/timeline",
+                    headers={"X-API-Key": "secret-client-key-123"},
                 )
                 assert r1.status_code == 200
                 body = r1.json()
@@ -201,7 +202,8 @@ def test_timeline_returns_envelopes_and_isolates_tenant():
                 assert body["events"][0]["source"] == "event_log"
                 # other tenant's lead -> 404 (isolation)
                 r2 = await client.get(
-                    f"/api/v1/events/leads/{lead2.id}/timeline?api_key=secret-client-key-123"
+                    f"/api/v1/events/leads/{lead2.id}/timeline",
+                    headers={"X-API-Key": "secret-client-key-123"},
                 )
                 assert r2.status_code == 404
         finally:

@@ -49,6 +49,7 @@ def _build_rag_index():
         faq_path = os.path.join(os.path.dirname(__file__), "data", "faq.json")
         with open(faq_path, "r", encoding="utf-8") as f:
             data = json.load(f)
+        _mark_platform_faq(data)
 
         texts = [
             f"{item['location']} {item['type']} property {item['details']} {item['description']}"
@@ -72,16 +73,33 @@ def _build_rag_index():
 # Build in background so we don't block Uvicorn startup and hit Render's port timeout
 threading.Thread(target=_build_rag_index, daemon=True).start()
 
+def _has_client_id(client_id) -> bool:
+    return client_id not in (None, "")
+
+
+def _mark_platform_faq(items) -> None:
+    """faq.json is the platform catalog. Stamp untagged rows shared so a known tenant can read them."""
+    for item in items or []:
+        if isinstance(item, dict) and item.get("client_id") in (None, ""):
+            item["shared"] = True
+
+
 def _chunk_visible(item, client_id) -> bool:
-    if client_id is None or not isinstance(item, dict):
-        return True
+    if not _has_client_id(client_id) or not isinstance(item, dict):
+        return False
     item_client = item.get("client_id")
-    if item_client in (None, ""):
+    if item.get("shared") is True and item_client in (None, ""):
         return True
+    if item_client in (None, ""):
+        return False
     return str(item_client) == str(client_id)
 
 
 def retrieve(query: str, k: int = 1, client_id=None):
+    if not _has_client_id(client_id):
+        _logger.warning("RAG retrieve refused: missing client_id")
+        return [], 0.0
+
     # Wait up to 5 seconds if index is still building (prevents empty results on early requests)
     if not RAG_AVAILABLE:
         _index_ready_event.wait(timeout=5.0)
@@ -89,9 +107,14 @@ def retrieve(query: str, k: int = 1, client_id=None):
     if not RAG_AVAILABLE or index is None:
         _logger.warning("RAG index is still building or failed, returning empty context.")
         return [], 0.0
+    n = len(data) if data else 0
+    if n == 0:
+        return [], 0.0
+    # Wider than k so a foreign rank-1 hit cannot hide a visible chunk.
+    window = min(n, max(int(k) * 5, 20))
     # Use cached embedding — avoids network call for repeated/similar queries
     q_emb = np.array([get_query_embedding_cached(query)], dtype=np.float32)
-    D, I = index.search(q_emb, k)
+    D, I = index.search(q_emb, window)
     results = []
     score = 0.0
     for rank, i in enumerate(I[0]):
@@ -103,4 +126,6 @@ def retrieve(query: str, k: int = 1, client_id=None):
         if not results:
             score = float(D[0][rank])
         results.append(item)
+        if len(results) >= k:
+            break
     return results, score

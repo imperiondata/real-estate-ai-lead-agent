@@ -15,7 +15,8 @@
 ```
 WhatsApp message
       ↓
-POST /api/v1/whatsapp?api_key=CLIENT_KEY_A
+POST /api/v1/whatsapp
+Header: X-API-Key: CLIENT_KEY_A
       ↓
 Auth → get_client_by_api_key() → resolves client_id
       ↓
@@ -248,10 +249,11 @@ curl -UseBasicParsing http://localhost:8000/health
 3. Go to **Twilio Console → Messaging → Try it out → Send a WhatsApp message**
 4. Under **"When a message comes in"**, paste:
    ```
-   https://abc123.ngrok-free.app/api/v1/whatsapp?api_key=YOUR_CLIENT_KEY_A
+   https://abc123.ngrok-free.app/api/v1/whatsapp
    ```
-   Replace `abc123.ngrok-free.app` with your current ngrok URL  
-   Replace `YOUR_CLIENT_KEY_A` with the key from `seed.py`
+   Header: `X-API-Key: YOUR_CLIENT_KEY_A`  
+   Replace `abc123.ngrok-free.app` with your current ngrok URL.  
+   `?api_key=` is rejected. The Twilio sandbox console cannot set headers; production already sends `X-API-Key`.
 5. Set method to **HTTP POST**
 6. Click **Save**
 7. Send any message to `+14155238886` to test
@@ -352,7 +354,7 @@ After API start with Neo4j up: `GET http://localhost:8000/api/v1/graph/health` �
 
 ```powershell
 # Terminal A — live stream (seed client key from seed.py)
-curl.exe -N "http://localhost:8000/api/v1/events/stream?api_key=secret-client-key-123"
+curl.exe -N -H "X-API-Key: secret-client-key-123" "http://localhost:8000/api/v1/events/stream"
 
 # Terminal B — inject a demo event (no WhatsApp/LLM required)
 python publish_stub_event.py --event-type lead.created --tenant-id Client_1 --payload "{\"name\":\"demo\"}"
@@ -431,7 +433,8 @@ uvicorn main:app --host 0.0.0.0 --port 8000 --reload
 > **ngrok URL changes on every restart** (free plan). After restarting, get the new URL from
 > `http://localhost:4040` and update your Twilio sandbox webhook:
 > ```
-> https://<new-url>.ngrok-free.app/api/v1/whatsapp?api_key=<CLIENT_KEY_A>
+> https://<new-url>.ngrok-free.app/api/v1/whatsapp
+> Header: X-API-Key: <CLIENT_KEY_A>
 > ```
 
 ---
@@ -658,7 +661,8 @@ See `docs/BACKUP_RESTORE_DRILL.md` for post-restore verification.
 5. After deploy, verify: `GET https://your-service.onrender.com/health`
 6. Update Twilio webhook:
    ```
-   https://your-service.onrender.com/api/v1/whatsapp?api_key=YOUR_CLIENT_KEY_A
+   https://your-service.onrender.com/api/v1/whatsapp
+   Header: X-API-Key: YOUR_CLIENT_KEY_A
    ```
 7. For the frontend, set `NEXT_PUBLIC_API_URL=https://your-service.onrender.com` in the Render frontend environment variables
 

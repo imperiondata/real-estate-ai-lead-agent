@@ -4,7 +4,7 @@ import secrets
 import string
 
 import models
-from auth import get_password_hash
+from auth import get_password_hash, hash_api_key
 from database import SessionLocal
 
 
@@ -59,7 +59,7 @@ def create_client(company_name: str = None, email: str = None):
         existing = db.query(models.Client).filter_by(email=email).first()
         if existing:
             print(f"\n❌ FAILED: Client '{email}' already exists!")
-            print(f"Existing API Key: {existing.api_key}")
+            print("Stored API key is not reprinted.")
             return
 
         # Insert new Tenant
@@ -67,7 +67,7 @@ def create_client(company_name: str = None, email: str = None):
             company_name=company_name,
             email=email,
             hashed_password=hashed_password,
-            api_key=api_key
+            api_key=hash_api_key(api_key)
         )
         db.add(new_client)
         db.commit()
@@ -95,10 +95,10 @@ def create_client(company_name: str = None, email: str = None):
         print(f"  Company Name   : {new_client.company_name}")
         print(f"  Login Email    : {new_client.email}")
         print(f"  Login Password : {raw_password}    <-- SHARE SECURELY ONCE")
-        print(f"  Twilio API Key : {new_client.api_key}")
+        print(f"  Twilio API Key : {api_key}    <-- SHARE SECURELY ONCE")
         print("-" * 50)
-        print("  Twilio Webhook URL Setup:")
-        print(f"  https://<your-domain>/api/v1/whatsapp?api_key={new_client.api_key}")
+        print("  Twilio webhook: bare URL https://<your-domain>/api/v1/whatsapp")
+        print("  Send header X-API-Key. Query ?api_key= is rejected.")
         print("=" * 50 + "\n")
 
     except Exception as e:

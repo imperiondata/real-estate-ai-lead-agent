@@ -359,7 +359,7 @@ Frontend (Mayank): replace `MockSSEService`, `simulateSSEStream`, mock graph/for
 | SSE + envelope stubs | curl stream + auth tenant | 1b |
 | Executor TEST_MODE | unit | 3 |
 | Follow-up transitions | integration | 4 |
-| Conversation suite | `python task3_runner.py` | 5+ |
+| Conversation suite | deferred. Do not run `task3_runner.py` until explicit approval. Use pytest. | 5+ |
 | Tenant isolation | `python gate_isolation_test.py` | every phase touching data |
 | DLQ | `python gate_dlq_drill.py` + `dlq_replay.py` | 2–3+ |
 | Graph | schema + query integration | 7 |

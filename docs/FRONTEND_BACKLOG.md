@@ -40,7 +40,7 @@ Backend depth log: `plans/IREIOS_3.0_WAVE_A_D_CHANGELOG.md`.
 | Lead timeline API | **Partial `[~]`** | `a10aa68` — `sales-copilot/page.tsx` fetches `/api/v1/events/leads/1/timeline` (hardcoded lead `1` + api_key) |
 | Delete / stop using `MockSSEService` | **Open** | Class still in `frontend/src/lib/api/mockService.ts`; not used by dashboard-mvp anymore but file remains |
 | Forecast widgets → real predictions API | **Open** | `dashboard-mvp` still seeds KPIs/forecast from `mockForecastData` |
-| JWT cookie auth for SSE (not hard-coded api_key) | **Open** | Dev uses `secret-client-key-123` query param |
+| JWT cookie auth for SSE (not hard-coded api_key) | **Open** | `?api_key=` is now 401. Command-center `EventSource` must use the `jwt` cookie. |
 | Approvals UI | **Open** | Backend ready; no FE list/approve flow confirmed |
 | Sales AI button | **Open** | Backend `POST /api/v1/leads/{id}/sales-ai` ready |
 | Graph panel | **Open** | Optional |

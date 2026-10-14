@@ -61,7 +61,10 @@ def test_timeline_envelope_contract():
         r = client.get(f"/api/v1/events/leads/{lid}/timeline")
         assert r.status_code == 401
         # envelope shape with api key
-        r = client.get(f"/api/v1/events/leads/{lid}/timeline?api_key=e9_test_key")
+        r = client.get(
+            f"/api/v1/events/leads/{lid}/timeline",
+            headers={"X-API-Key": "e9_test_key"},
+        )
         assert r.status_code == 200
         body = r.json()
         assert body["lead_id"] == lid
@@ -90,5 +93,8 @@ def test_timeline_isolation():
     finally:
         db.close()
     with TestClient(app) as client:
-        r = client.get(f"/api/v1/events/leads/{lid}/timeline?api_key=e9_test_key2")
+        r = client.get(
+            f"/api/v1/events/leads/{lid}/timeline",
+            headers={"X-API-Key": "e9_test_key2"},
+        )
         assert r.status_code == 404  # lead belongs to client 1, not client 2

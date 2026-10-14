@@ -70,6 +70,16 @@ async def publish_negotiation_started(
     if not await _debounce_allow(client_id, lead_id):
         return False
 
+    from app.events.redact import mask_phones
+
+    body = {
+        "lead_id": lead_id,
+        "session_id": session_id,
+        "trigger": trigger,
+        "message": mask_phones(message)[:200],
+        "budget": budget,
+        "budget_alignment_status": budget_alignment_status,
+    }
     try:
         from app.clients.event_bus_client import event_bus
 
@@ -80,17 +90,13 @@ async def publish_negotiation_started(
             "lead.negotiation.started",
             f"Client_{client_id}",
             str(lead_id),
-            {
-                "lead_id": lead_id,
-                "session_id": session_id,
-                "trigger": trigger,
-                "message": message[:200],
-                "budget": budget,
-                "budget_alignment_status": budget_alignment_status,
-            },
+            body,
             source=source,
         )
         return True
     except Exception as e:
         logger.warning("negotiation publish failed: client=%s lead=%s err=%s", client_id, lead_id, e)
+        from app.events.publish_dlq import record_publish_failure
+
+        record_publish_failure("lead.negotiation.started", client_id, lead_id, body, source, e)
         return False

@@ -54,7 +54,9 @@ class GraphClient:
         return bool(getattr(self._kg, "available", False))
 
     def get_lead_context(self, lead_id: int, client_id: int, limit: int = 5) -> dict:
-        """Return graph context for a lead, or `{}` when down."""
+        """Return graph context for a lead, or `{}` when down or tenant is missing."""
+        if client_id in (None, ""):
+            return {}
         if not self.available:
             return {}
         try:

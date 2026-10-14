@@ -30,7 +30,7 @@ Detail: `plans/IREIOS_3.0_WAVE_A_D_CHANGELOG.md` · plan: `plans/IREIOS_3.0_WAVE
 - [x] Brochure HTTPS media — jsDelivr `docs/demo/*.pdf` GET 200 `application/pdf`; resolve_tool_media_url OK (2026-07-23)
 - [x] Neo4j — `/api/v1/graph/health` available + schema v1
 - [x] D.2 memory auto-write + B.7 create_task (2026-07-23)
-- [ ] `task3_runner.py` live stress when Gemini quota allows
+- [ ] `task3_runner.py` — deferred. Do not run until explicit approval.
 - [ ] Dual-path module delete 10.2/10.3 — **deferred**
 - [x] n8n workflow automations (WF-1–WF-6 shipped + active)
 
@@ -48,7 +48,7 @@ Detail: `plans/IREIOS_3.0_WAVE_A_D_CHANGELOG.md` · plan: `plans/IREIOS_3.0_WAVE
 ## Quality gates
 - [x] `tests/test_e12_bus_wiring.py`, `tests/test_e13_bd_closeout.py`
 - [x] Expansion + bug unit suites (run before release)
-- [ ] `python task3_runner.py` when Gemini quota allows (live server)
+- [ ] `task3_runner.py` — deferred. Do not run until explicit approval.
 - [x] `gate_isolation_test.py` / `gate_dlq_drill.py` (run before deploy)
 
 ## Manual smoke

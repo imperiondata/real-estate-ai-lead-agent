@@ -338,7 +338,7 @@ Living record of **post-G2 depth fill** (Waves A–D). Parallel to `IREIOS_3.0_E
 | **FE MockSSE** | `[ ]` | `docs/FRONTEND_BACKLOG.md` | **Yes** — Mayank |
 | **D.2 memory** | `[x]` | shipped 2026-07-23 | — |
 | **B.7 create_task** | `[x]` | shipped 2026-07-23 | — |
-| **task3_runner evidence** | `[ ]` | optional when Gemini quota OK | **Yes** |
+| **task3_runner evidence** | `[-]` | deferred. Do not run until explicit approval | **No** |
 | **Dual-path 10.2/10.3 delete** | `[-]` | stay deferred | **Yes** (do not mark done) |
 | **n8n workflows / GCal-in-n8n** | `[ ]` | later (ops) | **Yes** |
 

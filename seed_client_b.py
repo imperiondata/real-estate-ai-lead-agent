@@ -1,7 +1,7 @@
 import secrets
 import string
 import models
-from auth import get_password_hash
+from auth import get_password_hash, hash_api_key
 from database import SessionLocal, engine
 
 def seed_client_b():
@@ -20,7 +20,7 @@ def seed_client_b():
         existing = db.query(models.Client).filter_by(email=email).first()
         if existing:
             print(f"[*] Client '{email}' already exists!")
-            print(f"[*] API Key: {existing.api_key}")
+            print("[*] Stored API key is not reprinted.")
             return
 
         alphabet = string.ascii_letters + string.digits
@@ -32,7 +32,7 @@ def seed_client_b():
             company_name=company_name,
             email=email,
             hashed_password=hashed_password,
-            api_key=api_key
+            api_key=hash_api_key(api_key)
         )
         db.add(new_client)
         db.flush()
@@ -51,7 +51,7 @@ def seed_client_b():
         print(f"  Company Name   : {new_client.company_name}")
         print(f"  Login Email    : {new_client.email}")
         print(f"  Login Password : {raw_password}")
-        print(f"  Twilio API Key : {new_client.api_key}")
+        print(f"  Twilio API Key : {api_key}    <-- SHARE SECURELY ONCE")
         print("=" * 50 + "\n")
 
     except Exception as e:

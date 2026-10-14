@@ -61,39 +61,51 @@ async def handler(envelope: dict) -> None:
                 "source": "negotiation_agent",
             })
             # Fan-out to n8n WF-3 (approval.requested) without pausing the chat path.
+            approval_body = {
+                "approval_id": None,
+                "action_type": "negotiation.counter",
+                "entity_id": str(lead_id),
+                "name": lead.name or "",
+                "parameters_summary": {
+                    "budget": budget_raw,
+                    "lead_id": lead_id,
+                    "trigger": "budget_misaligned",
+                },
+                "approve_path": f"/api/v1/leads/{lead_id}",
+                "reject_path": f"/api/v1/leads/{lead_id}",
+            }
             try:
                 await event_bus.publish(
                     "approval.requested",
                     f"Client_{client_id}",
                     str(lead_id),
-                    {
-                        "approval_id": None,
-                        "action_type": "negotiation.counter",
-                        "entity_id": str(lead_id),
-                        "name": lead.name or "",
-                        "parameters_summary": {
-                            "budget": budget_raw,
-                            "lead_id": lead_id,
-                            "trigger": "budget_misaligned",
-                        },
-                        "approve_path": f"/api/v1/leads/{lead_id}",
-                        "reject_path": f"/api/v1/leads/{lead_id}",
-                    },
+                    approval_body,
                     source="negotiation_agent",
                 )
             except Exception as e:  # noqa: BLE001
                 logger.debug("negotiation approval.requested publish skipped: %s", e)
+                from app.events.publish_dlq import record_publish_failure
+
+                record_publish_failure(
+                    "approval.requested", client_id, lead_id, approval_body, "negotiation_agent", e
+                )
         if event_type == "lead.negotiation.counter":
+            counter_body = {"lead_id": lead_id, "counter": payload.get("counter", {})}
             try:
                 await event_bus.publish(
                     "negotiation.counter.sent",
                     f"Client_{client_id}",
                     str(lead_id),
-                    {"lead_id": lead_id, "counter": payload.get("counter", {})},
+                    counter_body,
                     source="negotiation_agent",
                 )
             except Exception as e:
                 logger.warning("negotiation counter publish failed: %s", e)
+                from app.events.publish_dlq import record_publish_failure
+
+                record_publish_failure(
+                    "negotiation.counter.sent", client_id, lead_id, counter_body, "negotiation_agent", e
+                )
     finally:
         db.close()
 

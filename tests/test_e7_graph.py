@@ -242,6 +242,7 @@ def test_whatsapp_agent_post_turn_snapshot_includes_location(monkeypatch):
     agent = WhatsAppAgent()
     lead = SimpleNamespace(
         id=11,
+        client_id=1,
         name="Maitri",
         location="Baner",
         property_type="2BHK",

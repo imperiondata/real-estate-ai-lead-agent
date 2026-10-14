@@ -19,15 +19,14 @@ import asyncio
 import json
 import logging
 import os
-from typing import Optional
 
 import jwt as jwt_lib
-from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 
 from app.clients.event_bus_client import event_bus
-from auth import SECRET_KEY, ALGORITHM, get_current_client
+from auth import SECRET_KEY, ALGORITHM, find_client_by_api_key, get_current_client
 from config import tenant_id_ctx
 from database import get_db
 from models import Client, EventLog, Lead, Session as SessionModel
@@ -42,22 +41,15 @@ ADMIN_API_KEY_NAME = "X-Admin-Token"
 
 
 # --------------------------------------------------------------------------- #
-# Auth: api_key query/header (webhook-style) OR jwt HttpOnly cookie (frontend)
+# Auth: X-API-Key header OR jwt HttpOnly cookie. Query ?api_key= is ignored.
 # --------------------------------------------------------------------------- #
 async def get_events_client(
     request: Request,
-    api_key: Optional[str] = Query(default=None),
     db: Session = Depends(get_db),
 ) -> Client:
-    # 1) API key (header X-API-Key or ?api_key=) — easy curl testing.
     header_key = request.headers.get("X-API-Key")
-    candidate = api_key or header_key
-    if candidate:
-        client = (
-            db.query(Client)
-            .filter(Client.api_key == candidate, Client.is_active.is_(True))
-            .first()
-        )
+    if header_key:
+        client = find_client_by_api_key(db, header_key)
         if client:
             tenant_id_ctx.set(f"Client_{client.id}")
             return client

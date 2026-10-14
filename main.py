@@ -376,22 +376,24 @@ class _ShadowsFollowups:
         return False
 
 
-scheduler.add_job(dispatch_followups, "interval", minutes=1, id="follow_up_checker")
-scheduler.add_job(backup_postgres, "cron", hour=2, minute=0, id="nightly_backup")
-scheduler.add_job(daily_cleanup_job, "cron", hour=3, minute=0, id="nightly_cleanup")
-scheduler.add_job(escalation_cron_job, "interval", minutes=1, id="escalation_checker")
-scheduler.add_job(crm_resync_job, "interval", minutes=5, id="crm_resync")
+from app.scheduler_lease import leased
+
+scheduler.add_job(leased("follow_up_checker", 50, dispatch_followups), "interval", minutes=1, id="follow_up_checker")
+scheduler.add_job(leased("nightly_backup", 3600, backup_postgres), "cron", hour=2, minute=0, id="nightly_backup")
+scheduler.add_job(leased("nightly_cleanup", 3600, daily_cleanup_job), "cron", hour=3, minute=0, id="nightly_cleanup")
+scheduler.add_job(leased("escalation_checker", 50, escalation_cron_job), "interval", minutes=1, id="escalation_checker")
+scheduler.add_job(leased("crm_resync", 240, crm_resync_job), "interval", minutes=5, id="crm_resync")
 # Phase 8.4: competitor keyword monitor (nightly; no-op when COMPETITOR_KEYWORDS empty).
 from app.workflows.competitor_monitor import competitor_monitor_job
-scheduler.add_job(competitor_monitor_job, "cron", hour=1, minute=0, id="competitor_monitor")
+scheduler.add_job(leased("competitor_monitor", 3600, competitor_monitor_job), "cron", hour=1, minute=0, id="competitor_monitor")
 
 # Wave A.1: weekly marketing cron (publishes cron.weekly_report per client).
 from app.workflows.weekly_marketing_cron import weekly_marketing_cron_job
-scheduler.add_job(weekly_marketing_cron_job, "cron", day_of_week="mon", hour=8, minute=0, id="weekly_marketing_report")
+scheduler.add_job(leased("weekly_marketing_report", 3600, weekly_marketing_cron_job), "cron", day_of_week="mon", hour=8, minute=0, id="weekly_marketing_report")
 
 # Wave A.4: expire stale approvals every 15 minutes.
 from app.automation_engine.engine import expire_stale_approvals
-scheduler.add_job(expire_stale_approvals, "interval", minutes=15, id="expire_approvals", args=[24])
+scheduler.add_job(leased("expire_approvals", 840, expire_stale_approvals), "interval", minutes=15, id="expire_approvals", args=[24])
 
 @asynccontextmanager
 async def lifespan(app):

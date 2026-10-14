@@ -25,6 +25,7 @@ The DLQ handles three event types, identified by the `target_endpoint` column:
 | `hubspot_crm`           | `crm_sync.py` after 5 failed HubSpot pushes                          | Re-calls `_push_to_hubspot(payload)`                |
 | `twilio_outbound`       | `main.py` after both primary agent send and Twilio fallback fail     | Re-calls `client.messages.create(...)`              |
 | `ml_followup_scheduler` | `follow_up.py` when the ML engine or Twilio send fails for a session | Re-generates follow-up message and sends via Twilio |
+| `event_bus`             | Bus publish failed in `lead_hot`, negotiation start, or negotiation counter | Record only. Replay does not republish |
 
 ---
 
@@ -43,6 +44,12 @@ The DLQ handles three event types, identified by the `target_endpoint` column:
   `with_for_update(skip_locked=True)`; locked or already-resolved rows are
   skipped without sending.
 - Not production-proven until a windowed replay against live data.
+
+## Bus Publish Failures (P1 REL01)
+
+A failed `event_bus.publish` from `lead.hot` / `session.completed`, `lead.negotiation.started`, `approval.requested`, or `negotiation.counter.sent` writes one `dlq_events` row with `target_endpoint="event_bus"` and `status="pending"`. The stored payload is the already redacted event. `client_id` is the caller’s id, or null. It is never `1`.
+
+`python dlq_replay.py` has no `event_bus` branch. Those rows stay `pending` and are not republished. A transactional outbox is later. Do not add a replay sender in this pass.
 
 ---
 

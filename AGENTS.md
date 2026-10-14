@@ -18,8 +18,7 @@ High-signal, repo-specific facts an agent would likely miss without help.
 | Ops / maintenance runbook | `docs/MAINTENANCE.md` |
 | Timeouts & timings map | `docs/TIMEOUTS_AND_TIMINGS.md` (all race/TTL/scheduler values + line anchors) |
 | Provision production client | `python add_client.py` (interactive, generates secure keys) |
-| Stress test (126 cases, local/dev only — never vs live prod) | `python task3_runner.py` |
-| Filter stress test | `python task3_runner.py --category HOT` (`--test-id R01`, `--skip-db`, `--base-url`, `--api-key`) |
+| Conversation stress (`task3_runner.py`) | Do not run until explicit approval. Not part of TST01. Never against Render. |
 | Live cert (SoT: Imperion `production/main`) | `docs/PRODUCTION_HARDENING_SPRINT.md` |
 | Live load vs Render | `python load_chat_concurrency.py --leg 25` (`LIVE_API_BASE_URL` + `LIVE_CLIENT_B_KEY` in `.env`). Live curls and the future stub read `LIVE_*` only. Never assign them over `DATABASE_URL`, `N8N_*`, `TWILIO_*`, `ADMIN_API_KEY`, `FRONTEND_URL`, or `NEXT_PUBLIC_API_URL`. |
 | Tenant isolation drill | `python gate_isolation_test.py` |
@@ -36,7 +35,7 @@ High-signal, repo-specific facts an agent would likely miss without help.
 - **Backend:** FastAPI + Gemini 3.1 Flash Lite + Twilio WhatsApp + PostgreSQL + Redis + FAISS RAG
 - **Frontend:** Next.js 16.2.6 with React 19.2.4, Tailwind CSS v4, TypeScript. Route groups: `(public)` and `(dashboard)` with per-group layouts.
 - **Static dashboard:** HTML/JS/CSS served by FastAPI at `/dashboard`
-- **Scheduler (APScheduler):** follow-up checker (1min), nightly backup (2am), nightly cleanup (3am), escalation checker (1min), CRM resync (5min), competitor monitor (01:00), weekly marketing report (Mon 08:00), expire_approvals (15min)
+- **Scheduler (APScheduler):** follow-up checker (1min), nightly backup (2am), nightly cleanup (3am), escalation checker (1min), CRM resync (5min), competitor monitor (01:00), weekly marketing report (Mon 08:00), expire_approvals (15min). Each job takes a Redis lease (`scheduler_lease:{job_id}`) before running. A second replica skips the tick. Redis down skips the job. A dedicated worker is still later.
 - **App entrypoint:** `main.py` — FastAPI app, lifespan starts scheduler, webhook handlers, metrics
 - **Event Bus (IREIOS 3.0):** Redis Streams (`EVENT_STREAM_KEY`, default `ireios:events`) with consumer-group delivery; client in `app/clients/event_bus_client.py` (`EventBusClient`). Runtime: `Event → CEO → Agent/Workflow → Automation Engine → Execution Engine → Event`. Wired into lifespan at Task 1.7.
 
@@ -54,12 +53,13 @@ High-signal, repo-specific facts an agent would likely miss without help.
 
 | Layer | Mechanism | Applies to |
 |-------|-----------|------------|
-| API Key | `X-API-Key` header or `?api_key=` query param | `/api/v1/whatsapp`, `/api/v1/chat`, `/api/v1/ingest`, `/api/v1/webhook/meta`, `/api/v1/webhook/portals`, `/api/v1/incoming_sms` |
+| API Key | `X-API-Key` header only. `?api_key=` is rejected | `/api/v1/whatsapp`, `/api/v1/chat`, `/api/v1/ingest`, `/api/v1/webhook/meta`, `/api/v1/webhook/portals`, `/api/v1/incoming_sms`, `/api/v1/events/*`, `/api/v1/graph/*` |
 | JWT Bearer | `Authorization: Bearer <token>` (7-day, bcrypt) | Dashboard routes: `/api/v1/analytics`, `/api/v1/leads`, `/api/v1/leads/export`, `/api/v1/leads/*/stage`, `/api/v1/settings`, `/api/v1/agents`, `/api/v1/roi/*` |
 | Admin Key | `X-Admin-Key` header | Internal ops only |
 | **Public** | None | `/health`, `/metrics`, `/docs`, `/openapi.json`, `/api/v1/contact`, `/api/v1/webhook/stripe` |
 
 - Frontend JWT stored as HttpOnly cookie named `jwt` by server action (`frontend/src/lib/auth.ts`)
+- API keys: new rows store SHA-256 (`hash_api_key`). Lookup is hash, then legacy plaintext. Do not rewrite the row on auth. Existing Render plaintext rows stay until a later window. `session_id` may still embed the WhatsApp number.
 - Middleware (`frontend/src/proxy.ts`) guards `/dashboard/*`, `/leads/*`, `/crm/*`, `/settings/*` — redirects to `/login` if no cookie
 - Twilio webhook validates `X-Twilio-Signature` — **bypassed when `TEST_MODE=true`**
 - `/metrics` is public — firewall-restrict in production
@@ -70,7 +70,7 @@ High-signal, repo-specific facts an agent would likely miss without help.
 
 - **6-field strict gate** before visit confirmation: `visit_date AND phone AND name AND location AND budget AND property_type`
 - LLM must ask for missing details, cannot confirm booking until all present
-- **RAG** fires only when `is_rag_eligible` (property keyword + location in message or lead context)
+- **RAG** fires only when `is_rag_eligible` (property keyword + location in message or lead context). `retrieve` returns empty if `client_id` is missing (no search). Untagged chunks are hidden unless stamped `shared` from `faq.json`. Never default `client_id` to `1`.
 - **Confidence score** < 75 → `lead.requires_manual_review = True`
 - **Class-vs-instance:** Assign `lead.urgency_level` (lowercase), never `Lead.urgency_level`
 - **Budget normalization:** handles `lakhs`, `cr/crores`, `k/thousand` + `PERMONTH` suffix for rentals
@@ -181,7 +181,7 @@ IS_PRODUCTION=false
 
 - Settings via `pydantic_settings` (`config.py` class `Settings`) — reads `.env`
 - `contextvars`: `request_id_ctx` and `tenant_id_ctx` for structured logging
-- RAG FAISS index built in **background thread** (`rag.py:75`) — first request may wait ≤5s for index to be ready
+- RAG FAISS index built in **background thread** (`rag.py` `_build_rag_index`) — first request may wait ≤5s for index to be ready
 - Gemini embeddings LRU-cached (128 entries) via `@lru_cache` on `get_query_embedding_cached`
 - `google.generativeai` SDK deprecation warning — known, still functional
 - `GEMINI_MODEL` defaults to `gemini-3.1-flash-lite` — can revert to `gemini-2.5-flash` in `.env`
@@ -281,13 +281,13 @@ Sales hot escalate: notify_agent + create_task → agent_tasks
 
 ## IREIOS 3.0 — Early API envelopes + SSE (Phase 1b, FE unblock)
 
-- `GET /api/v1/events/stream` — tenant-scoped SSE bridge from the bus. Auth: `?api_key=` / `X-API-Key` **or** the `jwt` HttpOnly cookie. Filters events to the caller's `Client_<id>`; `: ping` heartbeat every 15s; `503` if bus down.
+- `GET /api/v1/events/stream` — tenant-scoped SSE bridge from the bus. Auth: `X-API-Key` **or** the `jwt` HttpOnly cookie. `?api_key=` is rejected. Filters events to the caller's `Client_<id>`; `: ping` heartbeat every 15s; `503` if bus down.
 - `GET /api/v1/events/leads/{id}/timeline` — envelope-shaped events for a lead (sourced from `event_logs` via the lead's session); `404` if not owned by the caller's client.
 - `POST /api/v1/events/stub` — admin-gated (`X-Admin-Token` == `ADMIN_API_KEY`) publisher of sample events; returns `event_id`.
 - Routes live in `app/api/events.py` (`events_router`), mounted in `main.py`. `EventBusClient` has `subscribe`/`unsubscribe`.
 - **Smoke:**
   ```powershell
-  curl -N "http://localhost:8000/api/v1/events/stream?api_key=secret-client-key-123"
+  curl -N -H "X-API-Key: secret-client-key-123" "http://localhost:8000/api/v1/events/stream"
   python publish_stub_event.py --event-type lead.created --tenant-id Client_1 --payload "{\"name\":\"demo\"}"
   ```
 - Contracts: `plans/IREIOS_3.0_API_SSE_CONTRACTS.md`. FE cutover: `docs/FRONTEND_BACKLOG.md`. Wipes / Neo4j ops: `docs/MAINTENANCE.md` §4.1.

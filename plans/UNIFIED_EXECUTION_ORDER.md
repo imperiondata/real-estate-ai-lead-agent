@@ -187,7 +187,7 @@ Before **any** expansion work:
 1. Run bug plan **§13 Master regression checklist** (Safety, Assignment, FSM/language, Concurrency, CRM/notif).  
 2. Run: `python gate_isolation_test.py`  
 3. Run: `python gate_dlq_drill.py` (and recovery path as applicable)  
-4. Run: `python task3_runner.py` when API/env allow  
+4. `task3_runner.py` is deferred. Do not run until explicit approval. G1 used the unit suite.
 
 **Only when G1 is `[x]` may Step 8 begin.**
 
@@ -373,7 +373,7 @@ Exit checklist = `PHASE3_AUTOMATIONS_CLOSEOUT.md` §8.
 | Ops | HTTPS brochure/floorplan media URLs | `[x]` final-check GET PDF 200 |
 | FE | MockSSE cutover | Mayank — `docs/FRONTEND_BACKLOG.md` |
 | Done | D.2 memory auto-write, B.7 create_task | `[x]` 2026-07-23 |
-| Optional | `task3_runner` evidence | when Gemini quota OK |
+| Deferred | `task3_runner` | Do not run until explicit approval |
 | — | HubSpot live portal (Python) | `[-]` skip |
 | — | Dual-path module delete (10.2/10.3) | **Still deferred** |
 | Later | n8n automations (incl. optional GCal fan-out nodes) | Step 24 / Maitri |

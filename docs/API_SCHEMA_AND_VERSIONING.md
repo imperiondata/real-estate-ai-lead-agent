@@ -25,12 +25,12 @@
 
 | Auth type     | How to send                                                   | Used on                                                                                      |
 |---------------|---------------------------------------------------------------|----------------------------------------------------------------------------------------------|
-| API Key       | `X-API-Key: <key>` header **or** `?api_key=<key>` query param | Ingestion & webhook routes                                                                   |
+| API Key       | `X-API-Key: <key>` header only. `?api_key=` is rejected       | Ingestion, webhooks, events, graph                                                           |
 | JWT Bearer    | `Authorization: Bearer <token>`                               | Dashboard routes                                                                             |
 | Admin API Key | `X-Admin-Key: <key>` header                                   | Internal ops / ROI routes                                                                    |
 | None          | —                                                             | `/health`, `/metrics`, `/docs`, `/openapi.json`, `/api/v1/contact`, `/api/v1/webhook/stripe` |
 
-API keys are provisioned via `add_client.py` and stored hashed in the `clients` table.
+New API keys from `add_client.py` are stored as SHA-256. Lookup accepts that hash, then a legacy plaintext row. Existing Render plaintext rows are not rewritten in this pass.
 JWT tokens are issued by `POST /api/v1/auth/login` and expire after 7 days.
 
 ---
@@ -101,7 +101,7 @@ Content-Type: `application/json`
 
 #### `POST /api/v1/chat`
 
-Auth: API Key (query param `?api_key=`)
+Auth: `X-API-Key` header. `?api_key=` is rejected.
 Query params: `session_id`, `message`
 
 **Response `200`:**
@@ -118,7 +118,7 @@ Query params: `session_id`, `message`
 
 #### `POST /api/v1/whatsapp`
 
-Auth: API Key (`?api_key=` query param — sent by Twilio as part of the webhook URL)
+Auth: `X-API-Key` header. Bare webhook URL. `?api_key=` is rejected.
 Content-Type: `application/x-www-form-urlencoded` (Twilio standard)
 
 Twilio fields used: `Body`, `From`, `To`
@@ -128,7 +128,7 @@ Response: TwiML `<Response>` XML
 
 #### `POST /api/v1/incoming_sms`
 
-Auth: API Key (`?api_key=` query param)
+Auth: `X-API-Key` header. `?api_key=` is rejected.
 Same Twilio field structure as WhatsApp.
 Response: TwiML `<Response>` XML
 

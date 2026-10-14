@@ -15,6 +15,7 @@ from __future__ import annotations
 import logging
 from typing import Any, Optional
 
+from app.events.redact import mask_phones
 from config import settings
 
 logger = logging.getLogger("lead_hot")
@@ -83,7 +84,6 @@ def build_lead_hot_payload(
         "lead_id": getattr(lead, "id", None),
         "session_id": session_id or getattr(lead, "session_id", None),
         "name": getattr(lead, "name", None),
-        "phone": getattr(lead, "phone", None),
         "location": getattr(lead, "location", None),
         "budget": getattr(lead, "budget", None),
         "property_type": getattr(lead, "property_type", None),
@@ -94,7 +94,7 @@ def build_lead_hot_payload(
         "trigger": trigger,
         "reason": reason,
         "assigned_agent": getattr(lead, "assigned_agent", None),
-        "chat_context": (chat_context or "")[:4000],
+        "chat_context": mask_phones(chat_context or "")[:4000],
         "catalog_event": PRIMARY_EVENT,
     }
 
@@ -112,6 +112,9 @@ async def _safe_publish(event_type: str, client_id: int, lead_id: Any, payload: 
         )
     except Exception as exc:  # noqa: BLE001
         logger.warning("%s publish failed client=%s lead=%s: %s", event_type, client_id, lead_id, exc)
+        from app.events.publish_dlq import record_publish_failure
+
+        record_publish_failure(event_type, client_id, lead_id, payload, source, exc)
 
 
 async def publish_lead_hot(
@@ -183,14 +186,13 @@ async def publish_session_completed(
         "session_id": session_id,
         "close_reason": close_reason,
         "name": getattr(lead, "name", None),
-        "phone": getattr(lead, "phone", None),
         "location": getattr(lead, "location", None),
         "budget": getattr(lead, "budget", None),
         "property_type": getattr(lead, "property_type", None),
         "intent": getattr(lead, "intent", None),
         "lead_temperature": getattr(lead, "lead_temperature", None),
         "conversion_probability": getattr(lead, "conversion_probability", None),
-        "chat_context": (chat_context or "")[:4000],
+        "chat_context": mask_phones(chat_context or "")[:4000],
         "catalog_note": "Prefer lead.qualified for field sync; session.completed is PR#10 alias for n8n CRM notes",
     }
     await _safe_publish("session.completed", int(client_id), lead_id, payload, source)

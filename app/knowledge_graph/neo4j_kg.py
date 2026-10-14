@@ -44,6 +44,8 @@ class KnowledgeGraph:
     # ---- Public API (all safe when unavailable) ----
 
     def upsert_lead(self, lead_id: int, client_id: int, props: dict) -> None:
+        if client_id in (None, ""):
+            return
         self._run(
             "MERGE (l:Lead {lead_id:$lead_id, client_id:$client_id}) "
             "SET l += $props",
@@ -51,6 +53,8 @@ class KnowledgeGraph:
         )
 
     def link_lead_agent(self, lead_id: int, agent_name: str, client_id: int) -> None:
+        if client_id in (None, ""):
+            return
         self._run(
             "MATCH (l:Lead {lead_id:$lead_id, client_id:$client_id}) "
             "MERGE (a:Agent {name:$agent_name, client_id:$client_id}) "
@@ -60,6 +64,8 @@ class KnowledgeGraph:
 
     def get_similar_leads(self, lead_id: int, client_id: int, limit: int = 5) -> list:
         """Return leads sharing location (and optional property_type) with the given lead."""
+        if client_id in (None, ""):
+            return []
         rows = self._run(
             "MATCH (l:Lead {lead_id:$lead_id, client_id:$client_id}) "
             "MATCH (o:Lead {client_id:$client_id}) "
@@ -74,6 +80,8 @@ class KnowledgeGraph:
 
     def get_assigned_agent(self, lead_id: int, client_id: int) -> Optional[str]:
         """Return assigned agent name from graph, or None."""
+        if client_id in (None, ""):
+            return None
         rows = self._run(
             "MATCH (l:Lead {lead_id:$lead_id, client_id:$client_id})"
             "-[:ASSIGNED_TO]->(a:Agent) "

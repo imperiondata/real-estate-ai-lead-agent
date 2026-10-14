@@ -51,8 +51,14 @@ def arm_followup_state(session_id: str, client_id: int, next_in: int = 0) -> Non
 
 async def on_lead_created(event: dict) -> None:
     """CEO handler: arm a follow-up state when a lead is created/updated."""
-    tenant_id = event.get("tenant_id", "Client_1")
+    tenant_id = event.get("tenant_id")
     client_id = _resolve_client(tenant_id)
+    if client_id is None:
+        logger.debug(
+            "followup_arm skip: missing/unresolvable tenant_id in event %s",
+            event.get("event_type"),
+        )
+        return
     payload = event.get("payload") or {}
     # Prefer explicit session_id (entity_id is often lead_id on lifecycle events).
     session_id = payload.get("session_id") or event.get("entity_id")
@@ -66,10 +72,20 @@ async def on_lead_created(event: dict) -> None:
     arm_followup_state(str(session_id), client_id, next_in=0)
 
 
-def _resolve_client(tenant_id) -> int:
+def _resolve_client(tenant_id):
+    """Resolve a tenant id to an int client id, or None when unresolvable.
+
+    Never returns a fallback tenant. ``None``, blank, or non-numeric ids
+    (after stripping a ``Client_`` prefix) return ``None`` so the caller
+    refuses to arm or write.
+    """
     if tenant_id is None:
-        return 1
+        return None
     s = str(tenant_id).strip()
+    if not s:
+        return None
     if s.lower().startswith("client_"):
-        s = s[len("client_"):]
-    return int(s) if s.isdigit() else 1
+        s = s[len("client_"):].strip()
+    if not s or not s.isdigit():
+        return None
+    return int(s)

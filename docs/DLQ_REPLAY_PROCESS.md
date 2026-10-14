@@ -28,6 +28,24 @@ The DLQ handles three event types, identified by the `target_endpoint` column:
 
 ---
 
+## Tenant Fail-Closed Rule (P0 SEC02, Oct 2026)
+
+- Root cause: `process_ml_followup` sent the WhatsApp message first, then set
+  `client_id = 1` when the session row was missing, wrote `EventLog`/`Message`
+  under tenant 1, returned true, and the caller marked the DLQ row `resolved`.
+- Rule: the tenant is resolved from `Session` **before** any send or write.
+  No session row (or missing `client_id`) means the row stays `pending`:
+  no Twilio call, no `db.add`, no commit. There is no default of `1`.
+- Sibling: `followup_arm.on_lead_created` no longer defaults a missing
+  `tenant_id` to `"Client_1"`, and `_resolve_client` returns `None` (never `1`)
+  for missing/blank/non-numeric ids; unresolvable events are skipped.
+- Concurrency: `main` reloads each pending row with
+  `with_for_update(skip_locked=True)`; locked or already-resolved rows are
+  skipped without sending.
+- Not production-proven until a windowed replay against live data.
+
+---
+
 ## DLQ Record Structure
 
 ```sql

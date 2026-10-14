@@ -64,12 +64,13 @@ production without a pre-restore snapshot.
 ### Command
 
 ```powershell
-python db_restore.py backups/backup_20260617_073805.sql
+python db_restore.py backups/backup_20260617_073805.sql --confirm LOCAL
 ```
 
 ### What it does
 
-`db_restore.py` calls `psql <DATABASE_URL> -f <backup_file>`. The SQL file uses
+`db_restore.py` calls `psql <DATABASE_URL> -v ON_ERROR_STOP=1 -f <backup_file>`
+(only after `--confirm LOCAL` and a local-host check). The SQL file uses
 `--clean` output so it issues `DROP TABLE IF EXISTS` before each `CREATE TABLE`,
 making the restore idempotent.
 
@@ -125,7 +126,17 @@ and `event_logs`, restored cleanly with zero data loss.
 
 ---
 
-## 5. Render Production Notes
+## 5. Current Local Guard Rule (P0 INF01, Oct 2026)
+
+- Local scripts refuse a non-local host and exit non-zero on tool failure.
+- `db_backup.py` exits `1` on `pg_dump` failure (deleting the partial file) and
+  on missing/empty output without `CREATE TABLE` for `clients`.
+- Restore requires `--confirm LOCAL` and runs
+  `psql -v ON_ERROR_STOP=1 -f <file>`; any failure exits `1`.
+- Live dump and restore stay on `live_dr.py` and `LIVE_DATABASE_URL`.
+- Off-site encryption is not done.
+
+## 5b. Render Production Notes
 
 Do not set `DATABASE_URL` to the Render URL. `db_backup.py` and `db_restore.py` read that variable and are for the local database only.
 

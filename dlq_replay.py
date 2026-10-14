@@ -41,17 +41,31 @@ def process_ml_followup(payload: dict, db: Session) -> bool:
     try:
         # Import dynamically to avoid circular issues
         from follow_up import generate_followup_payload
-        
+
         session_id = payload.get("session_id")
+        if not session_id:
+            logger.error("ML Followup Replay refused: missing session_id. Leaving pending.")
+            return False
+
+        # Resolve the tenant BEFORE any external send or DB write (SEC02 fail-closed).
+        session_record = db.query(SessionModel).filter(SessionModel.id == session_id).first()
+        if session_record is None or getattr(session_record, "client_id", None) is None:
+            logger.error(
+                "ML Followup Replay refused: no session row for session_id=%s. "
+                "No send, no write. Leaving pending.", session_id
+            )
+            return False
+        client_id = session_record.client_id
+
         current_stage = payload.get("stage", "Day 0")
         lead_data = payload.get("lead_data", {})
-        
+
         day_map = {"Day 0": 0, "Day 1": 1, "Day 3": 3, "Day 7": 7}
         current_day = day_map.get(current_stage, 0)
-        
+
         # We mock assigned_agent here just to replay the message payload generation
         assigned_agent = {"assigned_agent": lead_data.get("assigned_agent", "ABC Properties Team")}
-        
+
         generated = generate_followup_payload(
             lead_data=lead_data,
             assigned_agent=assigned_agent,
@@ -59,22 +73,19 @@ def process_ml_followup(payload: dict, db: Session) -> bool:
             current_day=current_day,
             inactivity=lead_data.get("inactive_lead", False)
         )
-        
+
         payload_msg = generated.get("message")
         if not payload_msg:
             raise ValueError("Empty message generated.")
-            
+
         if settings.TWILIO_ACCOUNT_SID:
             client = Client(settings.TWILIO_ACCOUNT_SID, settings.TWILIO_AUTH_TOKEN)
+            sid_str = str(session_id)
             client.messages.create(
                 from_=settings.TWILIO_PHONE_NUMBER,
                 body=payload_msg,
-                to=f"whatsapp:{session_id}" if session_id.startswith("+") else session_id
+                to=f"whatsapp:{sid_str}" if sid_str.startswith("+") else sid_str
             )
-
-        # Resolve the correct client_id from the session metadata
-        session_record = db.query(SessionModel).filter(SessionModel.id == session_id).first()
-        client_id = session_record.client_id if session_record else 1
 
         # Log successful recovery with mandatory multi-tenant client_id mapping
         event = EventLog(
@@ -95,25 +106,44 @@ def process_ml_followup(payload: dict, db: Session) -> bool:
         return True
     except Exception as e:
         logger.error(f"ML Followup Replay Failed: {e}")
+        try:
+            db.rollback()
+        except Exception:
+            pass
         return False
 
 async def main():
     logger.info("Starting DLQ Replay Job...")
     db = SessionLocal()
     try:
-        pending_events = db.query(DLQEvent).filter(DLQEvent.status == "pending").all()
-        if not pending_events:
+        pending_ids = [
+            row_id
+            for (row_id,) in db.query(DLQEvent.id).filter(DLQEvent.status == "pending").all()
+        ]
+        if not pending_ids:
             logger.info("No pending events in DLQ.")
             return
 
-        logger.info(f"Found {len(pending_events)} pending events. Beginning replay...")
+        logger.info(f"Found {len(pending_ids)} pending events. Beginning replay...")
         success_count = 0
-        
-        for event in pending_events:
+
+        for event_id in pending_ids:
+            # Reload each row under lock; a missing row means another run holds
+            # it or it is no longer pending — skip without sending.
+            event = (
+                db.query(DLQEvent)
+                .filter(DLQEvent.id == event_id, DLQEvent.status == "pending")
+                .with_for_update(skip_locked=True)
+                .first()
+            )
+            if event is None:
+                logger.info(f"Skipping Event ID: {event_id} (locked or no longer pending).")
+                db.rollback()
+                continue
             logger.info(f"Replaying Event ID: {event.id} | Target: {event.target_endpoint}")
-            
+
             success = False
-            
+
             if event.target_endpoint == "hubspot_crm":
                 success = await process_hubspot_crm(event.payload)
             elif event.target_endpoint == "twilio_outbound":
@@ -122,16 +152,17 @@ async def main():
                 success = process_ml_followup(event.payload, db)
             else:
                 logger.warning(f"Unknown target endpoint: {event.target_endpoint}")
-                
+
             if success:
                 event.status = "resolved"
                 db.commit()
                 logger.info(f"[PASS] Event {event.id} resolved.")
                 success_count += 1
             else:
+                db.rollback()
                 logger.error(f"[FAIL] Event {event.id} failed again. Keeping as pending.")
                 
-        logger.info(f"DLQ Replay complete. {success_count}/{len(pending_events)} events recovered successfully.")
+        logger.info(f"DLQ Replay complete. {success_count}/{len(pending_ids)} events recovered successfully.")
     except Exception as e:
         logger.error(f"DLQ Replay Job crashed: {e}")
     finally:

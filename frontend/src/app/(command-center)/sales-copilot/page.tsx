@@ -24,10 +24,11 @@ function SalesCopilotContent() {
     const fetchTimeline = async () => {
       if (!leadId) return;
       try {
+        // SEC-04: API key must never appear in the URL (visible in proxy/access logs).
+        // Authentication is handled by the HttpOnly jwt cookie (set on login).
         const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
-        const res = await fetch(`${apiUrl}/api/v1/events/leads/${leadId}/timeline?api_key=secret-client-key-123`, {
-          // Send cookies if available
-          credentials: 'omit' // use api_key for now to bypass CORS cookie issues during dev
+        const res = await fetch(`${apiUrl}/api/v1/events/leads/${leadId}/timeline`, {
+          credentials: 'include' // rely on HttpOnly JWT cookie for auth
         });
         if (res.ok) {
           const data = await res.json();

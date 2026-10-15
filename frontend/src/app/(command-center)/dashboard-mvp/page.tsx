@@ -18,10 +18,12 @@ export default function ExecutiveDashboardPage() {
     // Initial fetch of forecast API
     setForecast(mockForecastData.forecast);
 
-    // Live SSE Connection
-    const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
-    const eventSource = new EventSource(`${apiUrl}/api/v1/events/stream?api_key=secret-client-key-123`, {
-      withCredentials: false // using api key for dev
+    // Live SSE Connection — SEC-04: Use HttpOnly JWT cookie (withCredentials: true).
+    // The API key must never appear in the URL; it is visible in proxy logs,
+    // browser history, and server access logs. Authentication is handled by the
+    // jwt HttpOnly cookie set by the server on login.
+    const eventSource = new EventSource('/api/v1/events/stream', {
+      withCredentials: true
     });
 
     eventSource.onmessage = (event) => {

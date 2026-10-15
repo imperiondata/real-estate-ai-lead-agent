@@ -8,19 +8,7 @@ Description:
     (COLD, WARM, HOT, and AUTOMATION) to stress-test NLP parsing, state machine
     synchronization, and multi-tenant isolation. Generates detailed reports.
 
-Usage Examples:
-    # 1. Run all 126 test cases against the local backend
-    python task3_runner.py
-
-    # 2. Run a specific category (AUTOMATION, COLD, WARM, or HOT)
-    python task3_runner.py --category HOT
-    python task3_runner.py --category WARM
-
-    # 3. Provide a specific API Key explicitly (bypassing .env)
-    python task3_runner.py --api-key "YOUR_API_KEY_HERE"
-
-    # 4. Run against a live production server (Skips local PostgreSQL verification)
-    python task3_runner.py --base-url https://your-backend.onrender.com --skip-db
+Do not run until explicit approval. Never against Render. Not part of TST01.
 
 Output Artifacts:
     test_task3_maitri_results.json   — Machine-readable full JSON dataset

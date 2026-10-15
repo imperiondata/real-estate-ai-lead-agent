@@ -348,7 +348,7 @@ PH-A.2 ∥ PH-B allowed after PH-C. Everything else serial.
 
 **Postgres API audit (2026-10-01):** client dashboard routes, including ROI (`main.py:1330`, `1360`, `1388`, `1413`), already filter `client_id`. No new client-facing filter added. Exceptions left in place: `app/api/lifecycle.py:104` (admin token, lead by id), `main.py:1241` (Twilio status callback by `MessageSid`), `daily_cleanup_job` (ops delete of rows older than 90 days). Internal PK lookups (`notification_service.py`, `crm_sync.py`, `crm_executor.py`) are not client APIs.
 
-**Vector retrieval:** `data/faq.json` has no `client_id` (shared catalog). `rag.retrieve` drops a hit only when the chunk has `client_id` and it does not match the caller. Untagged FAQ rows stay visible. `agent.py` passes `lead.client_id`.
+**Vector retrieval:** `data/faq.json` has no `client_id` (shared catalog). `rag.retrieve` drops a hit only when the chunk has `client_id` and it does not match the caller. Untagged FAQ rows stay visible. `agent.py` passes `lead.client_id`. Superseded by SEC01/SEC03: missing `client_id` returns empty. Untagged chunks are hidden unless stamped `shared`.
 
 ### A.2 Load — 25 / 50 / 100 concurrent (live) `[x]` 2026-09-17
 Target: `POST /api/v1/chat` Client B (`LIVE_*`). Warm `/health` 200 (uptime 785s).

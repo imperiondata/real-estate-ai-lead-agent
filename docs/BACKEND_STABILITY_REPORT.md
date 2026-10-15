@@ -30,7 +30,7 @@ must not be exposed to clients without adding JWT auth and a `client_id` filter.
 
 | Layer                                          | Mechanism                                     | Scope                                                   |
 |------------------------------------------------|-----------------------------------------------|---------------------------------------------------------|
-| Ingestion (webhooks, WhatsApp, SMS)            | `X-API-Key` header or `?api_key=` query param | Per-client API key, now provisioned via `add_client.py` |
+| Ingestion (webhooks, WhatsApp, SMS)            | `X-API-Key` header only. `?api_key=` is rejected | New keys from `add_client.py` are SHA-256 |
 | Dashboard (analytics, leads, export, settings) | `Authorization: Bearer <JWT>`                 | 7-day token, issued on login                            |
 | Internal ops                                   | `X-Admin-Key` header                          | Single shared key per deployment                        |
 

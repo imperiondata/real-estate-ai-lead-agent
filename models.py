@@ -17,6 +17,7 @@ class Client(Base):
     email = Column(String, unique=True, index=True, nullable=False)
     hashed_password = Column(String, nullable=False)
     api_key = Column(String, unique=True, index=True, nullable=False) # For server-to-server ingestion
+    is_api_key_hashed = Column(Boolean, default=False, nullable=False)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     is_active = Column(Boolean, default=True)
     

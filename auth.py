@@ -72,18 +72,30 @@ def get_client_by_api_key(
     api_key_q: str = Security(api_key_query),
     db: Session = Depends(get_db)
 ):
-    api_key = api_key_h or api_key_q
-    if not api_key:
+    # Reject API keys passed via query strings to prevent credential leakage in web server access logs
+    if api_key_q is not None:
         raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Missing X-API-Key header or api_key query parameter",
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="API keys in URL query parameters are strictly forbidden. Pass credentials via 'X-API-Key' header.",
         )
 
-    # Hash incoming plaintext API key using hashlib.sha256() before comparing to stored database hash
-    hashed_key = hashlib.sha256(api_key.encode("utf-8")).hexdigest()
+    if not api_key_h:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Missing X-API-Key header",
+        )
+
+    raw_key = api_key_h.strip()
+    hashed_key = hashlib.sha256(raw_key.encode("utf-8")).hexdigest()
+
     client = db.query(models.Client).filter(
-        (models.Client.api_key == hashed_key) | (models.Client.api_key == api_key)
+        (
+            (models.Client.is_api_key_hashed.is_(True)) & (models.Client.api_key == hashed_key)
+        ) | (
+            (models.Client.is_api_key_hashed.is_(False)) & (models.Client.api_key == raw_key)
+        )
     ).first()
+
     if not client or not client.is_active:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,

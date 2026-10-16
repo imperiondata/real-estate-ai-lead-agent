@@ -60,42 +60,41 @@ Remove the plaintext fallback `| (Client.api_key == api_key)` from `auth.py`, en
 
 ## 3. Production SQL Migration Script
 
-This script is **fully idempotent** and will skip keys that are already SHA-256 hashed (64 hex characters):
+This script is **fully idempotent** and relies on explicit migration state (`is_api_key_hashed`), safely handling all keys including 64-character hex strings:
 
 ```sql
 -- ============================================================================
 -- P0 REMEDIATION: API KEY SHA-256 HASH MIGRATION
+-- Explicit Migration State (Zero Plaintext Backup Snapshots)
 -- ============================================================================
 BEGIN;
 
--- 1. Create audit backup table for immediate rollback safety
-CREATE TABLE IF NOT EXISTS _clients_api_key_backup_p0 AS
-SELECT id, api_key, updated_at, NOW() AS migrated_at
-FROM clients;
+-- 1. Ensure schema column is_api_key_hashed exists
+ALTER TABLE clients ADD COLUMN IF NOT EXISTS is_api_key_hashed BOOLEAN DEFAULT FALSE;
 
 -- 2. Ensure pgcrypto extension is enabled for digest() calculation
 CREATE EXTENSION IF NOT EXISTS pgcrypto;
 
--- 3. Update non-hashed keys to SHA-256 hex string
+-- 3. Update non-hashed keys to SHA-256 hex string and mark as hashed
+--    Only hashes keys where is_api_key_hashed IS FALSE (immune to 64-char hex collisions)
 UPDATE clients
-SET api_key = encode(digest(api_key::bytea, 'sha256'), 'hex')
-WHERE length(api_key) != 64 
-   OR api_key !~ '^[0-9a-f]{64}$';
+SET api_key = encode(digest(api_key::bytea, 'sha256'), 'hex'),
+    is_api_key_hashed = TRUE
+WHERE is_api_key_hashed IS FALSE;
 
--- 4. Verification Check: Assert no plaintext keys remain
+-- 4. Verification Check: Assert no unhashed keys remain
 DO $$
 DECLARE
     unhashed_count INT;
 BEGIN
     SELECT COUNT(*) INTO unhashed_count
     FROM clients
-    WHERE length(api_key) != 64 
-       OR api_key !~ '^[0-9a-f]{64}$';
+    WHERE is_api_key_hashed IS FALSE;
 
     IF unhashed_count > 0 THEN
-        RAISE EXCEPTION 'MIGRATION FAILED: Found % rows with unhashed api_key values', unhashed_count;
+        RAISE EXCEPTION 'MIGRATION FAILED: Found % rows with is_api_key_hashed = FALSE', unhashed_count;
     END IF;
-    RAISE NOTICE 'SUCCESS: All % client keys verified as SHA-256 hex digests.', (SELECT COUNT(*) FROM clients);
+    RAISE NOTICE 'SUCCESS: All % client keys verified as SHA-256 hex digests with is_api_key_hashed = TRUE.', (SELECT COUNT(*) FROM clients);
 END $$;
 
 COMMIT;
@@ -110,31 +109,42 @@ When a client rotates their API key or when a new client is provisioned via `add
 1. **Generation:** Generate 32 bytes of secure entropy:
    ```python
    import secrets, hashlib
-   raw_key = secrets.token_urlsafe(32)  # e.g. 'c3VwZXJzZWNyZXRrZXkxMjM0NTY3ODkwMTI'
+   raw_key = secrets.token_hex(32)  # 64-char lowercase hex
    hashed_verifier = hashlib.sha256(raw_key.encode("utf-8")).hexdigest()
    ```
-2. **Storage:** Insert `hashed_verifier` into `clients.api_key`.
+2. **Storage:** Insert `hashed_verifier` into `clients.api_key` and set `is_api_key_hashed = TRUE`.
 3. **Display:** Display `raw_key` to the agency administrator **once**.
 4. **Invalidation:** To revoke, set `clients.is_active = FALSE` or overwrite `clients.api_key` with a revoked hash placeholder.
 
 ---
 
-## 5. Rollback Plan
+## 5. Rollback & Disaster Recovery Plan
 
-If any authentication anomaly occurs post-migration:
+Storing plaintext keys in a rollback snapshot table violates the zero-plaintext security architecture and re-introduces credential exposure risks.
 
-### Fast Rollback (SQL)
-Restore the plaintext keys from the atomic snapshot table:
+Instead, the system relies on **Forward-Compatible Auth and Dynamic Key Rotation**:
+
+### 1. Forward-Compatible Dual-Read Auth
+During rollout windows, the authentication layer verifies against `is_api_key_hashed`:
+- If `is_api_key_hashed == True`, compares incoming key hash against stored hash.
+- If `is_api_key_hashed == False` (legacy un-migrated row), compares incoming plaintext key directly.
+
+### 2. Zero-Downtime Key Rotation Rollback
+If an individual tenant or client encounters an authentication failure:
+1. Generate a new high-entropy raw key via `secrets.token_hex(32)`.
+2. Compute `hashlib.sha256(raw_key.encode("utf-8")).hexdigest()`.
+3. Update `clients` record:
+   ```sql
+   UPDATE clients
+   SET api_key = '<new_sha256_hash>',
+       is_api_key_hashed = TRUE
+   WHERE id = <client_id>;
+   ```
+4. Deliver `raw_key` out-of-band to tenant administrator.
+
+### 3. Emergency Key Invalidation
+If a key is compromised, immediately deactivate the client:
 ```sql
-BEGIN;
-
-UPDATE clients c
-SET api_key = b.api_key
-FROM _clients_api_key_backup_p0 b
-WHERE c.id = b.id;
-
-COMMIT;
+UPDATE clients SET is_active = FALSE WHERE id = <client_id>;
 ```
-
-### Safety Valve
-Because Phase 1 dual-read code accepts both `api_key == incoming_hash` and `api_key == plaintext`, rolling back the database rows requires **zero backend downtime** and **no code redeployment**.
+No plaintext snapshots are ever stored or restored.

@@ -1,4 +1,5 @@
 import argparse
+import hashlib
 import re
 import secrets
 import string
@@ -50,7 +51,8 @@ def create_client(company_name: str = None, email: str = None):
     alphabet = string.ascii_letters + string.digits
     raw_password = ''.join(secrets.choice(alphabet) for i in range(12))
     hashed_password = get_password_hash(raw_password)
-    api_key = secrets.token_hex(32)
+    raw_api_key = secrets.token_hex(32)
+    hashed_api_key = hashlib.sha256(raw_api_key.encode("utf-8")).hexdigest()
 
     # 3. Database Insertion
     db = SessionLocal()
@@ -67,7 +69,8 @@ def create_client(company_name: str = None, email: str = None):
             company_name=company_name,
             email=email,
             hashed_password=hashed_password,
-            api_key=api_key
+            api_key=hashed_api_key,
+            is_api_key_hashed=True
         )
         db.add(new_client)
         db.commit()
@@ -95,10 +98,11 @@ def create_client(company_name: str = None, email: str = None):
         print(f"  Company Name   : {new_client.company_name}")
         print(f"  Login Email    : {new_client.email}")
         print(f"  Login Password : {raw_password}    <-- SHARE SECURELY ONCE")
-        print(f"  Twilio API Key : {new_client.api_key}")
+        print(f"  Twilio API Key : {raw_api_key}    <-- SHARE SECURELY ONCE (SHA-256 verifier stored in DB)")
         print("-" * 50)
         print("  Twilio Webhook URL Setup:")
-        print(f"  https://<your-domain>/api/v1/whatsapp?api_key={new_client.api_key}")
+        print("  Endpoint: https://<your-domain>/api/v1/whatsapp")
+        print("  Pass API Key in header: 'X-API-Key: <Twilio API Key>'")
         print("=" * 50 + "\n")
 
     except Exception as e:

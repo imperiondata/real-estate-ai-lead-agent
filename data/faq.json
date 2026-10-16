@@ -9,7 +9,12 @@
       "Rent_2BHK": "22K - 32K"
     },
     "description": "A fast-growing residential hub preferred by IT professionals due to its proximity to Hinjewadi.",
-    "landmarks": ["Phoenix Marketcity Wakad", "Indira College", "Dange Chowk"]
+    "landmarks": [
+      "Phoenix Marketcity Wakad",
+      "Indira College",
+      "Dange Chowk"
+    ],
+    "is_public": true
   },
   {
     "location": "Hinjewadi",
@@ -21,7 +26,12 @@
       "Rent_2BHK": "20K - 30K"
     },
     "description": "The primary IT corridor of Pune, home to major global tech firms and large integrated townships.",
-    "landmarks": ["Rajiv Gandhi Infotech Park", "Quadron Business Park", "Xion Mall"]
+    "landmarks": [
+      "Rajiv Gandhi Infotech Park",
+      "Quadron Business Park",
+      "Xion Mall"
+    ],
+    "is_public": true
   },
   {
     "location": "Baner",
@@ -32,7 +42,12 @@
       "Rent_2BHK": "28K - 45K"
     },
     "description": "An upscale residential and commercial area known for its premium lifestyle and high-end dining.",
-    "landmarks": ["Balewadi High Street", "Jupiter Hospital", "Baner Hill"]
+    "landmarks": [
+      "Balewadi High Street",
+      "Jupiter Hospital",
+      "Baner Hill"
+    ],
+    "is_public": true
   },
   {
     "location": "Kharadi",
@@ -43,7 +58,12 @@
       "Rent_2BHK": "25K - 40K"
     },
     "description": "A major IT and business hub in Eastern Pune, hosting EON IT Park and the World Trade Center.",
-    "landmarks": ["EON Free Zone", "World Trade Center", "Radisson Blu"]
+    "landmarks": [
+      "EON Free Zone",
+      "World Trade Center",
+      "Radisson Blu"
+    ],
+    "is_public": true
   },
   {
     "location": "Kothrud",
@@ -53,7 +73,12 @@
       "3BHK": "1.8Cr - 2.8Cr"
     },
     "description": "A prestigious and well-established residential area with excellent cultural and educational roots.",
-    "landmarks": ["MIT College", "City Pride Kothrud", "Paud Road"]
+    "landmarks": [
+      "MIT College",
+      "City Pride Kothrud",
+      "Paud Road"
+    ],
+    "is_public": true
   },
   {
     "location": "Hadapsar",
@@ -63,7 +88,12 @@
       "Rent_2BHK": "22K - 35K"
     },
     "description": "An industrial and IT powerhouse featuring Magarpatta City and major corporate offices.",
-    "landmarks": ["Amanora Mall", "Seasons Mall", "Noble Hospital"]
+    "landmarks": [
+      "Amanora Mall",
+      "Seasons Mall",
+      "Noble Hospital"
+    ],
+    "is_public": true
   },
   {
     "location": "Ravet",
@@ -73,7 +103,12 @@
       "3BHK": "85L - 1.15Cr"
     },
     "description": "The gateway to Pune from the Expressway, popular for its relative affordability and connectivity.",
-    "landmarks": ["D.Y. Patil University", "MCA Stadium", "Ravet Hanging Bridge"]
+    "landmarks": [
+      "D.Y. Patil University",
+      "MCA Stadium",
+      "Ravet Hanging Bridge"
+    ],
+    "is_public": true
   },
   {
     "location": "Balewadi",
@@ -84,7 +119,11 @@
       "Rent_2BHK": "26K - 38K"
     },
     "description": "A modern sports and lifestyle hub featuring world-class infrastructure and premium housing.",
-    "landmarks": ["Shree Shivchhatrapati Sports Complex", "Balewadi High Street"]
+    "landmarks": [
+      "Shree Shivchhatrapati Sports Complex",
+      "Balewadi High Street"
+    ],
+    "is_public": true
   },
   {
     "location": "Aundh",
@@ -94,7 +133,12 @@
       "Rent_2BHK": "30K - 45K"
     },
     "description": "One of Pune's oldest premium residential neighborhoods with a refined social infrastructure.",
-    "landmarks": ["Westend Mall", "Pune University", "Spicer College"]
+    "landmarks": [
+      "Westend Mall",
+      "Pune University",
+      "Spicer College"
+    ],
+    "is_public": true
   },
   {
     "location": "Pashan",
@@ -104,7 +148,12 @@
       "3BHK": "1.1Cr - 1.5Cr"
     },
     "description": "A serene, green locality favored by scientists and professionals from nearby research institutes.",
-    "landmarks": ["Pashan Lake", "ARDE", "IISER"]
+    "landmarks": [
+      "Pashan Lake",
+      "ARDE",
+      "IISER"
+    ],
+    "is_public": true
   },
   {
     "location": "Viman Nagar",
@@ -114,7 +163,12 @@
       "Rent_2BHK": "30K - 50K"
     },
     "description": "A high-end hub located near the airport, popular for its malls, luxury hotels, and cafes.",
-    "landmarks": ["Pune Airport", "Phoenix Marketcity", "Symbiosis Campus"]
+    "landmarks": [
+      "Pune Airport",
+      "Phoenix Marketcity",
+      "Symbiosis Campus"
+    ],
+    "is_public": true
   },
   {
     "location": "Magarpatta",
@@ -124,7 +178,12 @@
       "Rent_2BHK": "28K - 42K"
     },
     "description": "An award-winning integrated township with a self-sufficient ecosystem of offices and homes.",
-    "landmarks": ["Cybercity", "Seasons Mall", "Destination Center"]
+    "landmarks": [
+      "Cybercity",
+      "Seasons Mall",
+      "Destination Center"
+    ],
+    "is_public": true
   },
   {
     "location": "Kondhwa",
@@ -134,7 +193,12 @@
       "Rent_2BHK": "18K - 28K"
     },
     "description": "A diverse residential pocket with good connectivity to NIBM and Southern Pune.",
-    "landmarks": ["NIBM Road", "Jyoti Chowk", "Salunkhe Vihar"]
+    "landmarks": [
+      "NIBM Road",
+      "Jyoti Chowk",
+      "Salunkhe Vihar"
+    ],
+    "is_public": true
   },
   {
     "location": "Undri",
@@ -144,7 +208,12 @@
       "3BHK": "80L - 1.1Cr"
     },
     "description": "An emerging residential hotspot known for its international schools and lush surroundings.",
-    "landmarks": ["Bishop's School", "The Corinthian Club", "Undri Chowk"]
+    "landmarks": [
+      "Bishop's School",
+      "The Corinthian Club",
+      "Undri Chowk"
+    ],
+    "is_public": true
   },
   {
     "location": "Mundhwa",
@@ -154,7 +223,12 @@
       "Rent_2BHK": "22K - 32K"
     },
     "description": "A bridge between the major hubs of Kharadi and Hadapsar, undergoing rapid development.",
-    "landmarks": ["Zensar Park", "Mundhwa Bridge", "Passport Office"]
+    "landmarks": [
+      "Zensar Park",
+      "Mundhwa Bridge",
+      "Passport Office"
+    ],
+    "is_public": true
   },
   {
     "location": "Wakad Road",
@@ -163,7 +237,11 @@
       "2BHK": "72L - 98L"
     },
     "description": "The main artery connecting Wakad to the highway, featuring several new-age residential projects.",
-    "landmarks": ["Dutta Mandir Road", "Ginger Hotel"]
+    "landmarks": [
+      "Dutta Mandir Road",
+      "Ginger Hotel"
+    ],
+    "is_public": true
   },
   {
     "location": "Punawale",
@@ -173,7 +251,11 @@
       "3BHK": "82L - 1.1Cr"
     },
     "description": "A preferred choice for first-time buyers looking for affordable homes near the IT park.",
-    "landmarks": ["Lotus Business School", "Koyte Vasti"]
+    "landmarks": [
+      "Lotus Business School",
+      "Koyte Vasti"
+    ],
+    "is_public": true
   },
   {
     "location": "Tathawade",
@@ -183,7 +265,11 @@
       "3BHK": "90L - 1.2Cr"
     },
     "description": "An educational and residential hub situated conveniently along the Mumbai-Pune highway.",
-    "landmarks": ["JSPM Tathawade", "Blossom Public School"]
+    "landmarks": [
+      "JSPM Tathawade",
+      "Blossom Public School"
+    ],
+    "is_public": true
   },
   {
     "location": "Bavdhan",
@@ -193,7 +279,12 @@
       "Rent_2BHK": "24K - 34K"
     },
     "description": "A quiet, valley-like residential area with a cool climate and great highway access.",
-    "landmarks": ["Aditya Shagun Mall", "Chandni Chowk", "LMD Square"]
+    "landmarks": [
+      "Aditya Shagun Mall",
+      "Chandni Chowk",
+      "LMD Square"
+    ],
+    "is_public": true
   },
   {
     "location": "Sinhagad Road",
@@ -203,6 +294,11 @@
       "3BHK": "95L - 1.4Cr"
     },
     "description": "A bustling residential corridor connecting Southern Pune to the city center.",
-    "landmarks": ["Abhiruchi Mall", "Pu La Deshpande Garden", "Dhayari Phata"]
+    "landmarks": [
+      "Abhiruchi Mall",
+      "Pu La Deshpande Garden",
+      "Dhayari Phata"
+    ],
+    "is_public": true
   }
 ]

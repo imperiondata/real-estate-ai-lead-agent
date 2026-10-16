@@ -47,6 +47,22 @@ def mask_phone(phone: str) -> str:
     return phone
 
 
+def mask_name(name: str) -> str:
+    """Mask name/contact/company field preserving only the first character of each word.
+
+    Examples:
+        'Mayank Jindal' -> 'M*** J***'
+        'Acme Real Estate' -> 'A*** R*** E***'
+        'Alice' -> 'A***'
+    """
+    if not name or not isinstance(name, str):
+        return name
+    words = name.strip().split()
+    if not words:
+        return name
+    return " ".join(f"{w[0]}***" if len(w) > 0 else "***" for w in words)
+
+
 def redact_text(text: str) -> str:
     """Mask all emails and phone numbers embedded inside free-form text."""
     if not isinstance(text, str):
@@ -70,9 +86,9 @@ def redact_text(text: str) -> str:
 
 
 def redact_payload(obj: Any) -> Any:
-    """Recursively redacts PII (emails and phone numbers) in dicts, lists, and strings.
+    """Recursively redacts PII (emails, phone numbers, names, and companies) in dicts, lists, and strings.
 
-    Field keys explicitly associated with email or phone are directly formatted with
+    Field keys explicitly associated with email, phone, name, or company are directly formatted with
     standard mask shapes.
     """
     if isinstance(obj, dict):
@@ -86,6 +102,42 @@ def redact_payload(obj: Any) -> Any:
                 for term in ("phone", "mobile", "whatsapp", "caller", "from_number", "to_number")
             ) and isinstance(v, str):
                 redacted[k] = mask_phone(v)
+            elif any(
+                term in key_lower
+                for term in ("company", "company_name")
+            ) and isinstance(v, str):
+                redacted[k] = mask_name(v)
+            elif any(
+                term in key_lower
+                for term in (
+                    "name",
+                    "full_name",
+                    "first_name",
+                    "last_name",
+                    "contact_name",
+                    "lead_name",
+                    "customer_name",
+                    "user_name",
+                    "agent_name",
+                )
+            ) and isinstance(v, str):
+                if key_lower in (
+                    "event_name",
+                    "model_name",
+                    "table_name",
+                    "class_name",
+                    "file_name",
+                    "filename",
+                    "endpoint_name",
+                    "service_name",
+                    "queue_name",
+                    "task_name",
+                    "action_name",
+                    "template_name",
+                ):
+                    redacted[k] = v
+                else:
+                    redacted[k] = mask_name(v)
             else:
                 redacted[k] = redact_payload(v)
         return redacted

@@ -75,12 +75,13 @@ threading.Thread(target=_build_rag_index, daemon=True).start()
 def _chunk_visible(item, client_id) -> bool:
     if not isinstance(item, dict):
         return False
-    item_client = item.get("client_id")
-    is_public = item.get("is_public", False) or item.get("public", False) or item_client in (None, "")
+    is_public = item.get("is_public") is True or item.get("public") is True
     if is_public:
         return True
-    if client_id is None:
-        # Fail closed: missing tenant context cannot see private tenant-tagged chunks
+    if not client_id:
+        return False
+    item_client = item.get("client_id")
+    if not item_client:
         return False
     return str(item_client) == str(client_id)
 

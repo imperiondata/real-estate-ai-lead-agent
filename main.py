@@ -1729,6 +1729,27 @@ def update_lead_stage(
     return {"status": "success", "lead_id": lead.id, "stage": lead.funnel_stage}
 
 
+@app.delete("/api/v1/leads/{lead_id}")
+def delete_lead_endpoint(
+    lead_id: int,
+    current_client: models.Client = Depends(auth.get_current_client),
+    db: DBSession = Depends(get_db),
+):
+    """
+    Deletes a specific lead owned by the current tenant.
+    Guarantees strict tenant isolation: fails with 404 if the lead does not belong to the caller.
+    """
+    lead = db.query(models.Lead).filter(
+        models.Lead.id == lead_id, models.Lead.client_id == current_client.id
+    ).first()
+    if not lead:
+        raise HTTPException(status_code=404, detail="Lead not found")
+
+    db.delete(lead)
+    db.commit()
+    return {"status": "success", "message": f"Lead {lead_id} deleted successfully"}
+
+
 @app.get("/api/v1/leads/{lead_id}/score")
 def score_lead_endpoint(
     lead_id: int,

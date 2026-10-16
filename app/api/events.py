@@ -51,19 +51,34 @@ async def get_events_client(
     api_key: Optional[str] = Query(default=None),
     db: Session = Depends(get_db),
 ) -> Client:
-    # 1) API key (header X-API-Key or ?api_key=) — easy curl testing.
+    # Explicitly reject API keys in query parameters
+    if api_key is not None or request.query_params.get("api_key") is not None:
+        raise HTTPException(
+            status_code=400,
+            detail="API keys in URL query parameters are strictly forbidden. Pass credentials via 'X-API-Key' header or HttpOnly cookie.",
+        )
+
+    # 1) API key via 'X-API-Key' header
     header_key = request.headers.get("X-API-Key")
-    candidate = api_key or header_key
-    if candidate:
-        hashed_cand = hashlib.sha256(candidate.encode("utf-8")).hexdigest()
+    if header_key:
+        raw_key = header_key.strip()
+        hashed_cand = hashlib.sha256(raw_key.encode("utf-8")).hexdigest()
         client = (
             db.query(Client)
-            .filter((Client.api_key == hashed_cand) | (Client.api_key == candidate), Client.is_active.is_(True))
+            .filter(
+                (
+                    (Client.is_api_key_hashed.is_(True)) & (Client.api_key == hashed_cand)
+                ) | (
+                    (Client.is_api_key_hashed.is_(False)) & (Client.api_key == raw_key)
+                ),
+                Client.is_active.is_(True)
+            )
             .first()
         )
         if client:
             tenant_id_ctx.set(f"Client_{client.id}")
             return client
+        raise HTTPException(status_code=401, detail="Invalid or revoked API Key")
     # 2) JWT HttpOnly cookie (frontend EventSource cannot set headers).
     token = request.cookies.get("jwt")
     if token:

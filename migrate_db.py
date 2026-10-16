@@ -42,6 +42,9 @@ def run_migration():
         "CREATE INDEX IF NOT EXISTS ix_agent_tasks_lead ON agent_tasks (lead_id);",
         "CREATE INDEX IF NOT EXISTS ix_agent_tasks_status ON agent_tasks (client_id, status);",
         "ALTER TABLE leads ADD COLUMN IF NOT EXISTS is_negotiating BOOLEAN DEFAULT FALSE;",
+        "ALTER TABLE clients ADD COLUMN IF NOT EXISTS is_api_key_hashed BOOLEAN DEFAULT FALSE;",
+        "CREATE EXTENSION IF NOT EXISTS pgcrypto;",
+        "UPDATE clients SET api_key = encode(digest(api_key::bytea, 'sha256'), 'hex'), is_api_key_hashed = TRUE WHERE is_api_key_hashed IS FALSE;",
     ]
 
     for query in migrations:

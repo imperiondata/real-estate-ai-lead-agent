@@ -1,3 +1,4 @@
+import hashlib
 import os
 from datetime import datetime, timedelta, timezone
 
@@ -78,7 +79,11 @@ def get_client_by_api_key(
             detail="Missing X-API-Key header or api_key query parameter",
         )
 
-    client = db.query(models.Client).filter(models.Client.api_key == api_key).first()
+    # Hash incoming plaintext API key using hashlib.sha256() before comparing to stored database hash
+    hashed_key = hashlib.sha256(api_key.encode("utf-8")).hexdigest()
+    client = db.query(models.Client).filter(
+        (models.Client.api_key == hashed_key) | (models.Client.api_key == api_key)
+    ).first()
     if not client or not client.is_active:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,

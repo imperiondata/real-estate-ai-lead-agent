@@ -16,6 +16,7 @@ Contracts here are frozen for the frontend (Mayank). Producers stay stub /
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import json
 import logging
 import os
@@ -27,6 +28,7 @@ from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 
 from app.clients.event_bus_client import event_bus
+from app.utils.redaction import redact_payload
 from auth import SECRET_KEY, ALGORITHM, get_current_client
 from config import tenant_id_ctx
 from database import get_db
@@ -53,9 +55,10 @@ async def get_events_client(
     header_key = request.headers.get("X-API-Key")
     candidate = api_key or header_key
     if candidate:
+        hashed_cand = hashlib.sha256(candidate.encode("utf-8")).hexdigest()
         client = (
             db.query(Client)
-            .filter(Client.api_key == candidate, Client.is_active.is_(True))
+            .filter((Client.api_key == hashed_cand) | (Client.api_key == candidate), Client.is_active.is_(True))
             .first()
         )
         if client:
@@ -128,7 +131,8 @@ async def events_stream(
                 except asyncio.TimeoutError:
                     yield ": ping\n\n"
                     continue
-                yield f"data: {json.dumps(envelope, default=str)}\n\n"
+                safe_envelope = redact_payload(envelope)
+                yield f"data: {json.dumps(safe_envelope, default=str)}\n\n"
         finally:
             event_bus.unsubscribe("*", _handler)
 
@@ -192,7 +196,8 @@ async def lead_timeline(
                     },
                 }
             )
-    return {"lead_id": lead_id, "events": events}
+    redacted_events = redact_payload(events)
+    return {"lead_id": lead_id, "events": redacted_events}
 
 
 # --------------------------------------------------------------------------- #

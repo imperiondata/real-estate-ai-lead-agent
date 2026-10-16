@@ -275,11 +275,22 @@ def test_client_b_denied_access_to_client_a():
             db.commit()
             db.refresh(cb)
 
+        from models import Session as SessionModel
+
+        # Ensure dummy session exists for Client A
+        session_a = db.query(SessionModel).filter(SessionModel.id == "dummy_test_session_a").first()
+        if not session_a:
+            session_a = SessionModel(id="dummy_test_session_a", client_id=ca.id)
+            db.add(session_a)
+            db.commit()
+            db.refresh(session_a)
+
         # Create private lead belonging exclusively to Client A
         lead_a = db.query(Lead).filter(Lead.client_id == ca.id, Lead.phone == "+919999900001").first()
         if not lead_a:
             lead_a = Lead(
                 client_id=ca.id,
+                session_id="dummy_test_session_a",
                 name="Client A Private Lead",
                 phone="+919999900001",
                 location="Koregaon Park",

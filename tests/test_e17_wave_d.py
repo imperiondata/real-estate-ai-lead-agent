@@ -344,11 +344,26 @@ def test_sales_send_brochure_includes_media_url(monkeypatch):
 
 
 # --------------------------------------------------------------------------- #
-# D.5 — Evidence pack / G3 (skeleton)
+# D.5 — Evidence pack / G3
 # --------------------------------------------------------------------------- #
-_D5_IMPLEMENTED = False
+_D5_IMPLEMENTED = True
+
 
 def test_evidence_pack_readme_up_to_date():
-    if not _D5_IMPLEMENTED:
-        pytest.skip("D.5 not implemented")
-    raise NotImplementedError
+    from pathlib import Path
+
+    evidence_pack = Path("plans/IREIOS_3.0_EVIDENCE_PACK.md")
+    assert evidence_pack.exists(), "IREIOS_3.0_EVIDENCE_PACK.md must exist"
+    content = evidence_pack.read_text(encoding="utf-8")
+    assert "Gate G2" in content
+    assert "Gate G3" in content
+    assert "Wave A" in content
+    assert "Wave B" in content
+    assert "Wave C" in content
+    assert "Wave D" in content
+    assert "Quality gates" in content
+
+    # Verify P0 evidence pack
+    p0_pack = Path("P0_Remediation_Evidence_Package.md")
+    assert p0_pack.exists(), "P0_Remediation_Evidence_Package.md must exist"
+

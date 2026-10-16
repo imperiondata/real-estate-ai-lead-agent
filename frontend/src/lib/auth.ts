@@ -38,7 +38,7 @@ export async function loginClient(prevState: any, formData: FormData) {
     const cookieStore = await cookies()
     cookieStore.set('jwt', data.access_token, {
       httpOnly: true,
-      secure: process.env.NODE_ENV === 'production',
+      secure: true,
       sameSite: 'strict',
       maxAge: 60 * 60 * 24 * 7,
       path: '/',

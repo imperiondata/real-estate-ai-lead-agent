@@ -42,9 +42,9 @@ def mask_phone(phone: str) -> str:
     if not phone:
         return phone
     digits = re.sub(r"\D", "", phone)
-    if len(digits) >= 4:
+    if len(digits) >= 7:
         return f"***-***-{digits[-4:]}"
-    return "***-***-****"
+    return phone
 
 
 def redact_text(text: str) -> str:

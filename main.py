@@ -201,10 +201,8 @@ class SecurePIILogFilter(logging.Filter):
         tenant_id = tenant_id_ctx.get()
         msg = str(record.msg)
 
-        # PII MASKING: Mask Phone Numbers (e.g. +919163962356 -> +91******2356)
-        msg = re.sub(r'(\+\d{1,3})\d{6,8}(\d{4})', r'\1******\2', msg)
-        # PII MASKING: Mask Emails (e.g. aritro@gmail.com -> a***@gmail.com)
-        msg = re.sub(r'([a-zA-Z])[a-zA-Z0-9_.+-]+@([a-zA-Z0-9-]+\.[a-zA-Z0-9-.]+)', r'\1***@\2', msg)
+        from app.utils.redaction import redact_text
+        msg = redact_text(msg)
 
         record.msg = f"[Req: {req_id}] [Tenant: {tenant_id}] {msg}"
         return True

@@ -178,7 +178,10 @@ class EventBusClient:
         """
         if not self._running or self._pub_redis is None:
             raise RuntimeError("EventBusClient.publish called before start()")
-        envelope = self.build_envelope(event_type, tenant_id, entity_id, payload, source, correlation_id)
+        from app.utils.redaction import redact_payload
+
+        scrubbed_payload = redact_payload(payload) if payload is not None else payload
+        envelope = self.build_envelope(event_type, tenant_id, entity_id, scrubbed_payload, source, correlation_id)
         try:
             await self._pub_redis.xadd(self.stream, {"data": json.dumps(envelope, default=str)})
         except aioredis.RedisError as exc:

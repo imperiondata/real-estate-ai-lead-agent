@@ -232,17 +232,26 @@ def test_graph_api_routes():
     from app.knowledge_graph.graph_api import router as graph_router
     from database import Base, engine
 
+    import hashlib
+    raw_key = "e11_key"
+    hashed_key = hashlib.sha256(raw_key.encode("utf-8")).hexdigest()
+
     Base.metadata.create_all(bind=engine)
     SessionLocal = sessionmaker(bind=engine)
     db = SessionLocal()
     try:
-        client = db.query(Client).filter(Client.api_key == "e11_key").first()
+        client = db.query(Client).filter((Client.email == "e11@test.com") | (Client.api_key == hashed_key)).first()
         if not client:
             client = Client(company_name="E11", email="e11@test.com",
-                            hashed_password="x", api_key="e11_key",
+                            hashed_password="x", api_key=hashed_key,
+                            is_api_key_hashed=True,
                             is_active=True, subscription_status="inactive")
             db.add(client)
-            db.commit()
+        else:
+            client.api_key = hashed_key
+            client.is_api_key_hashed = True
+            client.is_active = True
+        db.commit()
     finally:
         db.close()
 
@@ -257,7 +266,7 @@ def test_graph_api_routes():
         assert "available" in body  # True when local Neo4j is up; False when not
         # context: 401 without key, 404 for a non-owned/unknown lead
         assert tc.get("/api/v1/graph/leads/999999/context").status_code == 401
-        r = tc.get("/api/v1/graph/leads/999999/context?api_key=e11_key")
+        r = tc.get("/api/v1/graph/leads/999999/context", headers={"X-API-Key": raw_key})
         assert r.status_code == 404
 
 

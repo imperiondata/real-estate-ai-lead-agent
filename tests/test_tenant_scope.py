@@ -54,9 +54,9 @@ def test_job_sets_tenant_scope(module, qualname):
     assert "use_tenant(" in src
 
 
-def test_untagged_faq_chunk_stays_visible():
-    assert _chunk_visible({"location": "Baner"}, client_id=3) is True
-    assert _chunk_visible({"location": "Baner"}, client_id=None) is True
+def test_untagged_faq_chunk_fails_closed():
+    assert _chunk_visible({"location": "Baner"}, client_id=3) is False
+    assert _chunk_visible({"location": "Baner"}, client_id=None) is False
 
 
 def test_foreign_tagged_chunk_is_dropped():

@@ -275,19 +275,25 @@ def test_auth_dependency_valid_invalid_and_revoked_keys():
         revoked_hash = hashlib.sha256(revoked_raw.encode("utf-8")).hexdigest()
 
         # Seed active client with hashed key
-        c1 = db.query(Client).filter(Client.api_key == active_hash).first()
+        c1 = db.query(Client).filter((Client.email == "active@test.com") | (Client.api_key == active_hash)).first()
         if not c1:
             c1 = Client(company_name="ActiveClient", email="active@test.com",
                         hashed_password="x", api_key=active_hash, is_api_key_hashed=True, is_active=True)
             db.add(c1)
+        else:
+            c1.api_key = active_hash
+            c1.is_api_key_hashed = True
+            c1.is_active = True
 
         # Seed revoked client (is_active=False) with hashed key
-        c2 = db.query(Client).filter(Client.api_key == revoked_hash).first()
+        c2 = db.query(Client).filter((Client.email == "revoked@test.com") | (Client.api_key == revoked_hash)).first()
         if not c2:
             c2 = Client(company_name="RevokedClient", email="revoked@test.com",
                         hashed_password="x", api_key=revoked_hash, is_api_key_hashed=True, is_active=False)
             db.add(c2)
         else:
+            c2.api_key = revoked_hash
+            c2.is_api_key_hashed = True
             c2.is_active = False
 
         db.commit()
@@ -522,24 +528,34 @@ def test_cross_tenant_negative_access_deep():
         # 1. Setup Tenant A
         raw_key_a = "secret-client-a-key-p0"
         hash_a = hashlib.sha256(raw_key_a.encode("utf-8")).hexdigest()
-        ca = db.query(Client).filter(Client.api_key == hash_a).first()
+        ca = db.query(Client).filter((Client.email == "tenant_a_deep@test.com") | (Client.api_key == hash_a)).first()
         if not ca:
             ca = Client(company_name="Tenant A Corp", email="tenant_a_deep@test.com",
                         hashed_password="pw", api_key=hash_a, is_api_key_hashed=True, is_active=True)
             db.add(ca)
             db.commit()
             db.refresh(ca)
+        else:
+            ca.api_key = hash_a
+            ca.is_api_key_hashed = True
+            ca.is_active = True
+            db.commit()
 
         # 2. Setup Tenant B
         raw_key_b = "secret-client-b-key-p0"
         hash_b = hashlib.sha256(raw_key_b.encode("utf-8")).hexdigest()
-        cb = db.query(Client).filter(Client.api_key == hash_b).first()
+        cb = db.query(Client).filter((Client.email == "tenant_b_deep@test.com") | (Client.api_key == hash_b)).first()
         if not cb:
             cb = Client(company_name="Tenant B Corp", email="tenant_b_deep@test.com",
                         hashed_password="pw", api_key=hash_b, is_api_key_hashed=True, is_active=True)
             db.add(cb)
             db.commit()
             db.refresh(cb)
+        else:
+            cb.api_key = hash_b
+            cb.is_api_key_hashed = True
+            cb.is_active = True
+            db.commit()
 
         # Generate JWT Bearer tokens for Dashboard operations
         jwt_b = create_access_token(data={"sub": str(cb.id)})

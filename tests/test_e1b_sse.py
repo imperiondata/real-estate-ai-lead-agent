@@ -12,6 +12,7 @@ require Postgres. Both skip cleanly when unavailable, using the same
 See plans/IREIOS_3.0_EXPANSION_CHANGELOG.md (Phase 1b status).
 """
 import asyncio
+import hashlib
 import os
 
 import pytest
@@ -154,8 +155,18 @@ def test_timeline_returns_envelopes_and_isolates_tenant():
         db = SessionLocal()
         created = {"sessions": [], "leads": [], "logs": []}
         try:
-            c1 = db.query(Client).filter(Client.api_key == "secret-client-key-123").first()
-            c2 = db.query(Client).filter(Client.api_key == "secret-client-key-456").first()
+            hash1 = hashlib.sha256("secret-client-key-123".encode()).hexdigest()
+            hash2 = hashlib.sha256("secret-client-key-456".encode()).hexdigest()
+            c1 = db.query(Client).filter((Client.id == 1) | (Client.api_key == hash1) | (Client.api_key == "secret-client-key-123")).first()
+            c2 = db.query(Client).filter((Client.id == 2) | (Client.api_key == hash2) | (Client.api_key == "secret-client-key-456")).first()
+            if not c1:
+                c1 = Client(company_name="Client 1", email="admin@revenueos.com", hashed_password="x", api_key=hash1, is_api_key_hashed=True, is_active=True)
+                db.add(c1)
+                db.commit()
+            if not c2:
+                c2 = Client(company_name="Client 2", email="client2@revenueos.com", hashed_password="x", api_key=hash2, is_api_key_hashed=True, is_active=True)
+                db.add(c2)
+                db.commit()
             assert c1 and c2, "seed clients missing"
 
             # Session -> Lead (Lead.session_id FK to Session.id)
@@ -191,7 +202,8 @@ def test_timeline_returns_envelopes_and_isolates_tenant():
             async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
                 # own lead -> 200 with envelope-shaped events
                 r1 = await client.get(
-                    f"/api/v1/events/leads/{lead1.id}/timeline?api_key=secret-client-key-123"
+                    f"/api/v1/events/leads/{lead1.id}/timeline",
+                    headers={"X-API-Key": "secret-client-key-123"}
                 )
                 assert r1.status_code == 200
                 body = r1.json()
@@ -201,7 +213,8 @@ def test_timeline_returns_envelopes_and_isolates_tenant():
                 assert body["events"][0]["source"] == "event_log"
                 # other tenant's lead -> 404 (isolation)
                 r2 = await client.get(
-                    f"/api/v1/events/leads/{lead2.id}/timeline?api_key=secret-client-key-123"
+                    f"/api/v1/events/leads/{lead2.id}/timeline",
+                    headers={"X-API-Key": "secret-client-key-123"}
                 )
                 assert r2.status_code == 404
         finally:

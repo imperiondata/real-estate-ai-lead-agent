@@ -45,7 +45,7 @@ def test_publish_reaches_subscriber():
         assert env["event_type"] == "lead.created"
         assert env["tenant_id"] == "client_A"
         assert env["entity_id"] == "lead_1"
-        assert env["payload"] == {"name": "x"}
+        assert env["payload"] == {"name": "x***"}
         assert env["correlation_id"]
         assert env["source"] == "system"
 

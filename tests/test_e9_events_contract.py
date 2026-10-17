@@ -24,17 +24,26 @@ def _make_app():
 
 
 def _seed():
+    import hashlib
+    raw_key = "e9_test_key"
+    hashed_key = hashlib.sha256(raw_key.encode("utf-8")).hexdigest()
+
     Base.metadata.create_all(bind=engine)
     SessionLocal = sessionmaker(bind=engine)
     db = SessionLocal()
     try:
-        client = db.query(Client).filter(Client.api_key == "e9_test_key").first()
+        client = db.query(Client).filter((Client.email == "e9@test.com") | (Client.api_key == hashed_key)).first()
         if not client:
             client = Client(company_name="E9Test", email="e9@test.com",
-                            hashed_password="x", api_key="e9_test_key",
+                            hashed_password="x", api_key=hashed_key,
+                            is_api_key_hashed=True,
                             is_active=True, subscription_status="inactive")
             db.add(client)
-            db.commit()
+        else:
+            client.api_key = hashed_key
+            client.is_api_key_hashed = True
+            client.is_active = True
+        db.commit()
         cid = client.id
         sid = "e9_sess_1"
         db.query(Lead).filter(Lead.session_id == sid).delete()
@@ -60,8 +69,8 @@ def test_timeline_envelope_contract():
         # 401 without a key
         r = client.get(f"/api/v1/events/leads/{lid}/timeline")
         assert r.status_code == 401
-        # envelope shape with api key
-        r = client.get(f"/api/v1/events/leads/{lid}/timeline?api_key=e9_test_key")
+        # envelope shape with api key via X-API-Key header
+        r = client.get(f"/api/v1/events/leads/{lid}/timeline", headers={"X-API-Key": "e9_test_key"})
         assert r.status_code == 200
         body = r.json()
         assert body["lead_id"] == lid
@@ -77,18 +86,27 @@ def test_timeline_isolation():
     cid, lid = _seed()
     app = _make_app()
     # Create a second client that must NOT see client 1's lead.
+    import hashlib
+    raw_key2 = "e9_test_key2"
+    hashed_key2 = hashlib.sha256(raw_key2.encode("utf-8")).hexdigest()
+
     SessionLocal = sessionmaker(bind=engine)
     db = SessionLocal()
     try:
-        other = db.query(Client).filter(Client.api_key == "e9_test_key2").first()
+        other = db.query(Client).filter((Client.email == "e9o@test.com") | (Client.api_key == hashed_key2)).first()
         if not other:
             other = Client(company_name="E9Other", email="e9o@test.com",
-                           hashed_password="x", api_key="e9_test_key2",
+                           hashed_password="x", api_key=hashed_key2,
+                           is_api_key_hashed=True,
                            is_active=True, subscription_status="inactive")
             db.add(other)
-            db.commit()
+        else:
+            other.api_key = hashed_key2
+            other.is_api_key_hashed = True
+            other.is_active = True
+        db.commit()
     finally:
         db.close()
     with TestClient(app) as client:
-        r = client.get(f"/api/v1/events/leads/{lid}/timeline?api_key=e9_test_key2")
+        r = client.get(f"/api/v1/events/leads/{lid}/timeline", headers={"X-API-Key": raw_key2})
         assert r.status_code == 404  # lead belongs to client 1, not client 2

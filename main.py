@@ -33,6 +33,7 @@ import auth
 import models
 from app.agents.qualification import process_chat
 from app.agents.whatsapp_agent import whatsapp_agent_v3
+from app.api.whatsapp import validate_twilio_request
 from app.knowledge_graph.neo4j_kg import knowledge_graph
 from app.memory.conversation_memory import conversation_memory
 from config import settings, tenant_id_ctx, request_id_ctx, use_tenant
@@ -1114,26 +1115,13 @@ async def whatsapp_webhook(
         MessageSid: str = Form(None),
         From: str = Form(...),
         Body: str = Form(...),
-        current_client: models.Client = Depends(auth.get_client_by_api_key),
+        current_client: models.Client = Depends(validate_twilio_request),
         db: DBSession = Depends(get_db)
 ):
     """
     Twilio WhatsApp Webhook.
-    Handles duplicate prevention, queueing, timeouts, and signature validation.
+    Handles duplicate prevention, queueing, timeouts, and tenant-bound signature validation.
     """
-    # --- SECURITY: VALIDATE TWILIO SIGNATURE ---
-    validator = RequestValidator(settings.TWILIO_AUTH_TOKEN)
-    form_data = await request.form()
-    signature = request.headers.get("X-Twilio-Signature", "")
-
-    # Twilio validates against the exact URL it called (enforce https in prod)
-    url = str(request.url).replace("http://", "https://") if settings.IS_PRODUCTION else str(request.url)
-
-    # Bypass validation ONLY if we are in local development testing mode
-    if not settings.TEST_MODE and not validator.validate(url, form_data, signature):
-        logger.warning(f"SECURITY ALERT: Invalid Twilio signature from IP {request.client.host}")
-        raise HTTPException(status_code=403, detail="Invalid Twilio signature")
-    # -------------------------------------------
 
     request_start = time.time()
     try:

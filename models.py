@@ -21,6 +21,10 @@ class Client(Base):
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     is_active = Column(Boolean, default=True)
     
+    twilio_phone_number = Column(String, unique=True, index=True, nullable=True)
+    twilio_auth_token = Column(String, nullable=True)
+    twilio_account_sid = Column(String, index=True, nullable=True)
+
     settings = Column(JSONB, default=lambda: {})
     subscription_status = Column(String, default="inactive")
     stripe_customer_id = Column(String, nullable=True)

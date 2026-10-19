@@ -76,9 +76,14 @@ Backend dual-publishes catalog + review aliases. Bridge maps **catalog only**.
 
 | Business signal | Catalog (bridge maps) | Alias (not in default map) | Code |
 |-----------------|----------------------|----------------------------|------|
-| Hot score or handoff | `lead.hot` (`payload.trigger`) | `lead.escalated` | `app/events/lead_hot.py` |
-| Session closed | `lead.qualified` (+ `chat_context`) | `session.completed` | same + `main.py` |
+| Hot score or handoff | `lead.hot` | `lead.escalated` | `app/events/lead_hot.py` |
+| Session closed | `lead.qualified` | `session.completed` | same + `main.py` |
 | Site visit booked | `site_visit.scheduled` | — | EE after `CalendarExecutor` |
+
+**P0 claim-check (2026-10-19):** every bus payload is exactly `{"lead_id", "tenant_id"}` —
+identifiers only. `name`, `phone`, `chat_context`, scores and `visit_id` no longer travel on
+the stream. Any workflow that needs lead details must fetch the lead from the API or database
+(`GET /api/v1/leads/{id}`). Do not put PII back on the stream to keep a workflow working.
 
 **n8n rule:** one event type per workflow. Prefer catalog names.
 
@@ -185,13 +190,16 @@ N8N_BRIDGE_GROUP=ireios-n8n
 }
 ```
 
-n8n expressions: `{{ $json.payload.name }}`, `{{ $json.event_type }}`, `{{ $json.tenant_id }}`.
+n8n expressions: `{{ $json.payload.lead_id }}`, `{{ $json.event_type }}`, `{{ $json.tenant_id }}`.
 
 ### Tenant gate (Mayank 2026-10-01, due 2026-10-02)
 
 The bus sends `tenant_id` like `Client_1` (`event_bus_client.build_envelope`). Accept pattern for Maitri's cloud IF: `^Client_[0-9]+$`. WF-1..WF-5 Flatten copies `body.tenant_id || root.tenant_id || ''` and still continues, so an empty tenant reaches Gmail or Sheets. The Oct 2 gate is an IF before the side-effect node on WF-1 and WF-4: missing or non-matching `tenant_id` stops the branch. Cloud UI only. Do not change the localhost CRM links in `n8n_workflows/*.json`. Do not import those files over the live workflows.
 
 ## Canonical payloads
+
+Every event's payload is exactly `{lead_id, tenant_id}` (identifiers only, P0 claim-check).
+`tenant_id` is echoed at the top level and inside the payload.
 
 ### `lead.hot` (WF-1)
 
@@ -203,22 +211,13 @@ The bus sends `tenant_id` like `Client_1` (`event_bus_client.build_envelope`). A
   "source": "agent | lead_scoring_handler",
   "payload": {
     "lead_id": 123,
-    "session_id": "1_+919999999999",
-    "name": "John Doe",
-    "phone": "+919999999999",
-    "location": "Baner",
-    "budget": "80L",
-    "property_type": "2BHK",
-    "lead_temperature": "hot",
-    "conversion_probability": 85,
-    "score": 85,
-    "trigger": "hot_threshold | human_handoff",
-    "reason": "HOT threshold crossed | Explicit human agent requested.",
-    "assigned_agent": "Sneha",
-    "chat_context": "User: ...\nAgent: ..."
+    "tenant_id": "Client_1"
   }
 }
 ```
+
+Fetch lead details (`name`, `phone`, location, budget, `visit_date`) from the API or
+Postgres when a workflow needs them.
 
 | Chat wording | Bus emits |
 |--------------|-----------|
@@ -230,7 +229,8 @@ The bus sends `tenant_id` like `Client_1` (`event_bus_client.build_envelope`). A
 
 ### `lead.qualified` (WF-4 CRM)
 
-Emitted from `main.py` `_emit_turn_events` when 6-field gate complete (`chat_context` attached).
+Emitted from `main.py` `_emit_turn_events` when the 6-field gate completes. Identifiers
+only — CRM field sync is `crm_automation` → AE → EE `update_crm` (loads the lead row).
 
 ### `site_visit.scheduled` (WF-2)
 
@@ -240,22 +240,21 @@ Python owns Google create when `GOOGLE_CALENDAR_*` set. n8n = Gmail/ops fan-out 
 {
   "payload": {
     "lead_id": 123,
-    "visit_id": "...",
-    "visit_date": "2026-08-01T10:00:00+05:30",
-    "name": "John Doe",
-    "phone": "+919999999999",
-    "location": "Baner",
-    "provider": "google_calendar | stub",
-    "html_link": "https://calendar.google.com/..."
+    "tenant_id": "Client_1"
   }
 }
 ```
+
+`visit_id` is **no longer on the stream** (claim-check; not a `Lead` column — a later
+window can persist it). `visit_date` comes from `Lead.visit_date` in Postgres.
 
 **Do not** create a second Google event if `provider=google_calendar`.
 
 ### `approval.requested` (WF-3)
 
-From `app/automation_engine/hitl.py`: `approve_path`, `reject_path`, optional `api_base_hint`.  
+From `app/automation_engine/hitl.py`: identifiers only — `approve_path` / `reject_path` /
+param summary stay on the `ApprovalRequest` row (_already the decision source_; the
+dashboard/API resolves them by approval id via `entity_id`/correlation, not the payload). 
 Approve APIs need JWT — Gmail links should open the **dashboard**, not unauthenticated POST.
 
 ### `marketing.report.generated` (WF-5)
@@ -268,7 +267,7 @@ From `marketing_agent`.
 docker compose up -d redis n8n
 # Activate WF-1 in n8n UI (path ireios_hot_lead_alert + Header Auth + Gmail or Set)
 # uvicorn with N8N_* set, then:
-python publish_stub_event.py --event-type lead.hot --tenant-id Client_1 --entity-id 1 --payload "{\"lead_id\":1,\"name\":\"Demo\",\"phone\":\"+9199\",\"trigger\":\"hot_threshold\",\"score\":90,\"reason\":\"stub\",\"chat_context\":\"User: hi\"}"
+python publish_stub_event.py --event-type lead.hot --tenant-id Client_1 --entity-id 1 --payload "{\"lead_id\":1,\"tenant_id\":\"Client_1\"}"
 ```
 
 Expect: API log `n8n_bridge_forwarded` · n8n execution · Gmail (or Set node output).
@@ -295,7 +294,7 @@ Legacy path name `ireios_hot_lead_slack` is **retired** (Gmail-first). Override 
 | AE `template_type=n8n` | **Shipped** |
 | **Bus → webhook bridge** | **Shipped** — `n8n_bridge.py`, group `ireios-n8n` |
 | Docker Compose `n8n` | **Shipped** — `n8nio/n8n:2.31.5` |
-| Bus emits (`lead.hot`, `chat_context`, visit merge, HITL paths) | **Shipped** |
+| Bus emits (`lead.hot` identifiers-only, visit fan-out, HITL) | **Shipped** |
 | Google OAuth2 credentials | **Shipped** — Gmail + Google Sheets via custom OAuth2 |
 | Live n8n **workflows** (6/6 Active) | **Shipped** — webhook-verified, import via `import_n8n_workflows.py` |
 | WF-1 `ireios_hot_lead_alert` | **Shipped** — Hot Lead → Gmail (IF handoff → prefix) |

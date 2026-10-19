@@ -116,8 +116,11 @@ def test_logger_filter_redacts_pii():
     assert "***-***-3210" in record.msg
 
 
-def test_event_bus_publisher_redacts_pii_payload():
-    """Verify EventBusClient scrubs PII (including names) before emitting payload to Redis Streams."""
+def test_event_bus_publisher_stores_claim_check_payload_only():
+    """P0 claim-check: a fat payload is stored as exactly {lead_id, tenant_id}.
+
+    Not the evidence — the live proof is scripts/prove_pii_claim_check.py.
+    """
     from app.clients.event_bus_client import EventBusClient
 
     captured = []
@@ -134,9 +137,10 @@ def test_event_bus_publisher_redacts_pii_payload():
     async def run():
         await bus.publish(
             "lead.created",
-            "Client_1",
+            "Client_7",
             "lead_101",
             {
+                "lead_id": "101",
                 "name": "John Doe",
                 "email": "john.doe@company.com",
                 "phone": "+919876543210",
@@ -147,12 +151,11 @@ def test_event_bus_publisher_redacts_pii_payload():
     asyncio.run(run())
     assert len(captured) == 1
     p = captured[0]["payload"]
-    assert p["name"] == "J*** D***"
-    assert "John Doe" not in json.dumps(p)
-    assert p["email"] == "j***@company.com"
-    assert p["phone"] == "***-***-3210"
-    assert "personal@domain.com" not in p["notes"]
-    assert "p***@domain.com" in p["notes"]
+    assert p == {"lead_id": 101, "tenant_id": "Client_7"}
+    blob = json.dumps(p)
+    assert "John Doe" not in blob
+    assert "john.doe@company.com" not in blob
+    assert "+919876543210" not in blob
 
 
 # --------------------------------------------------------------------------- #
@@ -354,10 +357,30 @@ def test_rag_chunk_fails_closed_on_missing_context():
 
 
 def test_neo4j_retrieval_fails_closed_on_missing_or_down():
-    """Verify GraphClient fails closed to empty dict when context cannot be established."""
-    gc = GraphClient(kg=None)
-    assert gc.available is False
-    assert gc.get_lead_context(lead_id=1, client_id=1) == {}
+    """Verify GraphClient fails closed to empty dict when context cannot be established.
+
+    Note: ``kg=None`` falls back to the global ``knowledge_graph`` singleton, so
+    availability here is environment-dependent (Local Neo4j may be up). Use an
+    explicitly unavailable stub and a degraded stub for deterministic fail-closed
+    checks.
+    """
+
+    class _Down:
+        available = False
+
+    class _Degraded:
+        available = True
+
+        def get_similar_leads(self, *args, **kwargs):
+            raise RuntimeError("neo4j down")
+
+    gc_down = GraphClient(kg=_Down())
+    assert gc_down.available is False
+    assert gc_down.get_lead_context(lead_id=1, client_id=1) == {}
+
+    gc_degraded = GraphClient(kg=_Degraded())
+    assert gc_degraded.available is True
+    assert gc_degraded.get_lead_context(lead_id=1, client_id=1) == {}
 
 
 def test_dlq_fails_closed_on_missing_session():

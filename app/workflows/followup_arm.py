@@ -11,6 +11,7 @@ reply publishes ``lead.created`` / ``conversation.updated``.
 from __future__ import annotations
 
 import logging
+from typing import Optional
 
 from app.automation_engine.engine import submit
 from config import settings
@@ -49,27 +50,49 @@ def arm_followup_state(session_id: str, client_id: int, next_in: int = 0) -> Non
             logger.debug("FollowUpState arm skipped for %s: %s", session_id, exc)
 
 
-async def on_lead_created(event: dict) -> None:
-    """CEO handler: arm a follow-up state when a lead is created/updated."""
-    tenant_id = event.get("tenant_id", "Client_1")
-    client_id = _resolve_client(tenant_id)
-    payload = event.get("payload") or {}
-    # Prefer explicit session_id (entity_id is often lead_id on lifecycle events).
-    session_id = payload.get("session_id") or event.get("entity_id")
-    if not session_id or str(session_id).isdigit():
-        # entity_id was a bare lead id with no session — cannot arm.
-        if not payload.get("session_id"):
-            logger.debug("followup_arm skip: no session_id in event %s", event.get("event_type"))
-            return
-        session_id = payload.get("session_id")
-    # New leads get an immediate Day 0 window; re-arms respect the existing row.
-    arm_followup_state(str(session_id), client_id, next_in=0)
+def _resolve_client_id(tenant_id) -> Optional[int]:
+    """Map ``Client_<id>`` (or bare int) to int; ``None`` when unresolvable.
 
-
-def _resolve_client(tenant_id) -> int:
+    P0 claim-check: never default to a tenant — no default, no cross-tenant arm.
+    """
     if tenant_id is None:
-        return 1
+        return None
     s = str(tenant_id).strip()
     if s.lower().startswith("client_"):
         s = s[len("client_"):]
-    return int(s) if s.isdigit() else 1
+    return int(s) if s.isdigit() else None
+
+
+def _lead_id(envelope: dict) -> Optional[int]:
+    payload = envelope.get("payload") or {}
+    raw = payload.get("lead_id", envelope.get("entity_id"))
+    try:
+        return int(raw)
+    except (ValueError, TypeError):
+        return None
+
+
+async def on_lead_created(event: dict) -> None:
+    """CEO handler: arm a follow-up state when a lead is created/updated.
+
+    P0 claim-check: the bus payload is ``{"lead_id", "tenant_id"}`` — the
+    session id comes from the lead row. A lead missing / not owned by that
+    tenant is skipped (never armed, never cross-tenant).
+    """
+    client_id = _resolve_client_id(event.get("tenant_id"))
+    lead_id = _lead_id(event)
+    if client_id is None or lead_id is None:
+        logger.debug("followup_arm skip: unresolvable tenant/lead in event %s", event.get("event_type"))
+        return
+    with SessionLocal() as db:
+        from models import Lead
+
+        lead = db.query(Lead).filter(Lead.id == lead_id, Lead.client_id == client_id).first()
+        if lead is None or not lead.session_id:
+            logger.debug(
+                "followup_arm skip: lead %s not owned by client %s or has no session", lead_id, client_id
+            )
+            return
+        session_id = lead.session_id
+    # New leads get an immediate Day 0 window; re-arms respect the existing row.
+    arm_followup_state(str(session_id), client_id, next_in=0)

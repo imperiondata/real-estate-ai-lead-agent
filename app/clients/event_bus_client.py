@@ -162,6 +162,26 @@ class EventBusClient:
     # ------------------------------------------------------------------ #
     # Publish
     # ------------------------------------------------------------------ #
+    @staticmethod
+    def claim_check_payload(payload: Any, tenant_id: str) -> dict:
+        """P0 claim-check: the stored payload is exactly the check claim.
+
+        The publisher emits only ``{"lead_id", "tenant_id"}``. Workers that
+        need PII load the lead from Postgres. ``entity_id`` on the envelope
+        remains the routing key. Nothing else survives — no masking, no
+        deny-list, no caller can re-attach PII by adding fields.
+        """
+        lead_id = None
+        if isinstance(payload, dict):
+            raw = payload.get("lead_id")
+            if isinstance(raw, bool):  # bool is int subclass — reject it
+                lead_id = None
+            elif isinstance(raw, int):
+                lead_id = raw
+            elif isinstance(raw, str) and raw.strip().isdigit():
+                lead_id = int(raw)
+        return {"lead_id": lead_id, "tenant_id": tenant_id}
+
     async def publish(
         self,
         event_type: str,
@@ -178,10 +198,8 @@ class EventBusClient:
         """
         if not self._running or self._pub_redis is None:
             raise RuntimeError("EventBusClient.publish called before start()")
-        from app.utils.redaction import redact_payload
-
-        scrubbed_payload = redact_payload(payload) if payload is not None else payload
-        envelope = self.build_envelope(event_type, tenant_id, entity_id, scrubbed_payload, source, correlation_id)
+        claimed_payload = self.claim_check_payload(payload, tenant_id)
+        envelope = self.build_envelope(event_type, tenant_id, entity_id, claimed_payload, source, correlation_id)
         try:
             await self._pub_redis.xadd(self.stream, {"data": json.dumps(envelope, default=str)})
         except aioredis.RedisError as exc:

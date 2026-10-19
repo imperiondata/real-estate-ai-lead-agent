@@ -152,7 +152,7 @@ def test_scoring_handler_publishes_hot_and_escalated(monkeypatch):
         await h.lead_scoring_handler({
             "tenant_id": "Client_1",
             "entity_id": "601",
-            "payload": {"lead_id": 601, "session_id": "sess_601", "chat_context": "User: buy"},
+            "payload": {"lead_id": 601, "tenant_id": "Client_1"},
         })
 
     asyncio.run(run())
@@ -202,14 +202,14 @@ def test_session_completed_publish(monkeypatch):
 
     assert asyncio.run(run()) is True
     assert published[0][0] == "session.completed"
-    assert published[0][1]["close_reason"] == "human_handoff"
-    assert "agent" in published[0][1]["chat_context"]
+    # P0 claim-check: identifiers only — close_reason/chat_context stay off the bus.
+    assert published[0][1] == {"lead_id": 3}
 
 
-def test_emit_turn_events_chat_context(monkeypatch):
+def test_emit_turn_events_identifier_only_payload(monkeypatch):
     import main as main_mod
     from database import SessionLocal
-    from models import Lead, Message, Session
+    from models import Lead, Session
 
     cid = ensure_test_client(1)
     sid = f"e18_pr10_{uuid4().hex[:8]}"
@@ -228,7 +228,6 @@ def test_emit_turn_events_chat_context(monkeypatch):
             location="Wakad", budget="50L", property_type="2BHK",
         )
         db.add(lead)
-        db.add(Message(session_id=sid, client_id=cid, role="user", content="Need Baner flat"))
         db.commit()
         db.refresh(lead)
         lid = lead.id
@@ -240,32 +239,38 @@ def test_emit_turn_events_chat_context(monkeypatch):
                 lead=lead,
                 source_channel="chat",
                 is_new_lead=False,
-                message="hi",
+                message="Need Baner flat",
                 db=db,
             )
 
         try:
             asyncio.run(run())
         finally:
-            db.query(Message).filter(Message.session_id == sid).delete()
             db.query(Lead).filter(Lead.id == lid).delete()
             db.query(Session).filter(Session.id == sid).delete()
             db.commit()
 
+    assert published
     conv = next(p for p in published if p[0] == "conversation.updated")
-    assert "Baner" in (conv[1].get("chat_context") or "")
+    assert conv[1] == {"lead_id": lid}
 
 
-def test_ee_site_visit_merged_payload():
+def test_ee_site_visit_stored_claim_payload():
+    import json
+
     from app.execution_engine.base_executor import BaseExecutor
     from app.execution_engine.execution_engine import ExecutionEngine
+    from app.clients.event_bus_client import EventBusClient
 
-    published = []
-
-    class FakeBus:
-        async def publish(self, etype, tenant, entity, payload, source="ee", correlation_id=None):
-            published.append((etype, payload))
-            return "eid"
+    captured = []
+    fake_redis = MagicMock()
+    async def fake_xadd(stream, fields):
+        captured.append(json.loads(fields["data"]))
+        return "1-0"
+    fake_redis.xadd = fake_xadd
+    bus = EventBusClient(stream="test_stream", group="test_group")
+    bus._running = True
+    bus._pub_redis = fake_redis
 
     class CalEx(BaseExecutor):
         action_type = "schedule_visit"
@@ -278,7 +283,7 @@ def test_ee_site_visit_merged_payload():
                 "visit_date": "2026-08-01T10:00:00Z",
             }
 
-    ee = ExecutionEngine(session_factory=lambda: MagicMock(), bus=FakeBus())
+    ee = ExecutionEngine(session_factory=lambda: MagicMock(), bus=bus)
     ee.register("schedule_visit", CalEx())
     ee.register_event("schedule_visit", "site_visit.scheduled")
 
@@ -292,10 +297,12 @@ def test_ee_site_visit_merged_payload():
 
     res = asyncio.run(run())
     assert res["status"] == "success"
-    assert published[0][0] == "site_visit.scheduled"
-    assert published[0][1]["name"] == "John"
-    assert published[0][1]["visit_id"] == "visit_xyz"
-    assert published[0][1]["lead_id"] == 77
+    assert captured[0]["event_type"] == "site_visit.scheduled"
+    assert captured[0]["payload"] == {"lead_id": 77, "tenant_id": "Client_1"}
+    blob = json.dumps(captured[0]["payload"])
+    assert "John" not in blob
+    assert "+91" not in blob
+    assert "visit_xyz" not in blob
 
 
 def test_calendar_executor_docstring_no_direct_publish():

@@ -1,11 +1,15 @@
-"""Automations closeout BA-1…BA-5 — lead.hot, chat_context, EE merge, HITL paths, calendar API.
+"""Automations closeout BA-1…BA-5 — lead.hot, turn events, EE merge, HITL paths, calendar API.
 
+P0 claim-check: all bus payload assertions route through the real
+EventBusClient enforcement point — the stored payload is exactly
+``{"lead_id", "tenant_id"}``.
 See plans/PHASE3_AUTOMATIONS_CLOSEOUT.md.
 """
 from __future__ import annotations
 
 import asyncio
 import inspect
+import json
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
 from uuid import uuid4
@@ -29,7 +33,8 @@ def test_is_hot_threshold_rule():
     assert is_hot(conversion_probability=50, lead_temperature="warm") is False
 
 
-def test_build_lead_hot_payload_trigger_fields():
+def test_build_lead_hot_payload_identifiers_only():
+    """P0 claim-check: builders emit {lead_id} — the bus stores {lead_id, tenant_id}."""
     from app.events.lead_hot import build_lead_hot_payload
 
     lead = SimpleNamespace(
@@ -48,10 +53,7 @@ def test_build_lead_hot_payload_trigger_fields():
     p = build_lead_hot_payload(
         lead, trigger="hot_threshold", reason="crossed", chat_context="User: hi"
     )
-    assert p["trigger"] == "hot_threshold"
-    assert p["score"] == 90
-    assert p["chat_context"] == "User: hi"
-    assert p["lead_id"] == 42
+    assert p == {"lead_id": 42}
 
 
 def test_publish_lead_hot_calls_bus(monkeypatch):
@@ -92,7 +94,7 @@ def test_publish_lead_hot_calls_bus(monkeypatch):
     assert "lead.escalated" in types  # PR #10 dual-publish alias
     hot = next(p for p in published if p[0] == "lead.hot")
     assert hot[1] == "Client_1"
-    assert hot[3]["trigger"] == "hot_threshold"
+    assert hot[3] == {"lead_id": 7}
 
 
 def test_publish_lead_hot_debounce_skips_second(monkeypatch):
@@ -214,11 +216,7 @@ def test_lead_scoring_handler_publishes_lead_hot(monkeypatch):
         await h.lead_scoring_handler({
             "tenant_id": "Client_1",
             "entity_id": "501",
-            "payload": {
-                "lead_id": 501,
-                "session_id": "sess_hot_501",
-                "chat_context": "User: buy now",
-            },
+            "payload": {"lead_id": 501, "tenant_id": "Client_1"},
         })
 
     asyncio.run(run())
@@ -226,9 +224,10 @@ def test_lead_scoring_handler_publishes_lead_hot(monkeypatch):
     assert "lead.scored" in types
     assert "lead.hot" in types
     assert "lead.escalated" in types
+    scored = next(p for p in published if p[0] == "lead.scored")
+    assert scored[1] == {"lead_id": 501}
     hot = next(p for p in published if p[0] == "lead.hot")
-    assert hot[1]["trigger"] == "hot_threshold"
-    assert hot[1]["chat_context"] == "User: buy now"
+    assert hot[1] == {"lead_id": 501}
 
 
 def test_agent_handoff_source_publishes_human_handoff():
@@ -262,15 +261,15 @@ def test_handoff_backfills_fields_before_snapshot():
 
 
 # --------------------------------------------------------------------------- #
-# BA-2 — chat_context on turn events
+# BA-2 — turn events (identifiers only; P0 claim-check)
 # --------------------------------------------------------------------------- #
-def test_emit_turn_events_includes_chat_context(monkeypatch):
+def test_emit_turn_events_identifiers_only(monkeypatch):
     import main as main_mod
     from database import SessionLocal
-    from models import Lead, Message, Session
+    from models import Lead, Session
 
     cid = ensure_test_client(1)
-    sid = f"e18_ctx_{uuid4().hex[:8]}"
+    sid = f"e18_turn_{uuid4().hex[:8]}"
     published = []
 
     async def capture(etype, client_id, entity_id, payload=None, source="main"):
@@ -291,8 +290,6 @@ def test_emit_turn_events_includes_chat_context(monkeypatch):
             property_type="2BHK",
         )
         db.add(lead)
-        db.add(Message(session_id=sid, client_id=cid, role="user", content="Looking in Baner"))
-        db.add(Message(session_id=sid, client_id=cid, role="assistant", content="Budget?"))
         db.commit()
         db.refresh(lead)
         lead_id = lead.id
@@ -311,18 +308,16 @@ def test_emit_turn_events_includes_chat_context(monkeypatch):
         try:
             asyncio.run(run())
         finally:
-            db.query(Message).filter(Message.session_id == sid).delete()
             db.query(Lead).filter(Lead.id == lead_id).delete()
             db.query(Session).filter(Session.id == sid).delete()
             db.commit()
 
     assert published
     conv = next(p for p in published if p[0] == "conversation.updated")
-    assert "chat_context" in conv[1]
-    assert "Baner" in (conv[1].get("chat_context") or "")
+    assert conv[1] == {"lead_id": lead_id}
 
 
-def test_emit_turn_events_empty_chat_context_without_db(monkeypatch):
+def test_emit_turn_events_without_db_still_identifier_only(monkeypatch):
     import main as main_mod
 
     published = []
@@ -335,8 +330,7 @@ def test_emit_turn_events_empty_chat_context_without_db(monkeypatch):
 
     lead = SimpleNamespace(
         id=1, name="A", phone="1", location=None, budget=None,
-        property_type=None, intent=None, lead_temperature=None,
-        conversion_probability=None, budget_alignment_status=None,
+        property_type=None, intent=None,
         visit_date=None,
     )
 
@@ -353,22 +347,33 @@ def test_emit_turn_events_empty_chat_context_without_db(monkeypatch):
 
     asyncio.run(run())
     assert published
-    assert published[0].get("chat_context") == ""
+    assert published[0] == {"lead_id": 1}
 
 
 # --------------------------------------------------------------------------- #
-# BA-3 — EE success payload merge
+# BA-3 — EE success publish stores the claim payload only
 # --------------------------------------------------------------------------- #
-def test_ee_publish_success_merges_parameters():
+def _fake_redis_capture():
+    """Real EventBusClient backed by a fake redis so assertions hit the guard."""
+    from app.clients.event_bus_client import EventBusClient
+
+    captured = []
+    fake_redis = MagicMock()
+    async def fake_xadd(stream, fields):
+        captured.append((stream, json.loads(fields["data"])))
+        return "1-0"
+    fake_redis.xadd = fake_xadd
+    bus = EventBusClient(stream="test_stream", group="test_group")
+    bus._running = True
+    bus._pub_redis = fake_redis
+    return bus, captured
+
+
+def test_ee_publish_success_stores_claim_payload():
     from app.execution_engine.base_executor import BaseExecutor
     from app.execution_engine.execution_engine import ExecutionEngine
 
-    published = []
-
-    class FakeBus:
-        async def publish(self, etype, tenant, entity, payload, source="ee", correlation_id=None):
-            published.append((etype, payload))
-            return "eid"
+    bus, captured = _fake_redis_capture()
 
     class CalEx(BaseExecutor):
         action_type = "schedule_visit"
@@ -381,7 +386,7 @@ def test_ee_publish_success_merges_parameters():
                 "visit_date": "2026-08-01T10:00:00Z",
             }
 
-    ee = ExecutionEngine(session_factory=lambda: MagicMock(), bus=FakeBus())
+    ee = ExecutionEngine(session_factory=lambda: MagicMock(), bus=bus)
     ee.register("schedule_visit", CalEx())
     ee.register_event("schedule_visit", "site_visit.scheduled")
 
@@ -400,37 +405,29 @@ def test_ee_publish_success_merges_parameters():
 
     res = asyncio.run(run())
     assert res["status"] == "success"
-    assert published
-    etype, payload = published[0]
-    assert etype == "site_visit.scheduled"
-    assert payload["name"] == "John"
-    assert payload["phone"] == "+9199"
-    assert payload["visit_id"] == "visit_abc"
-    assert payload["lead_id"] == 99
-    assert payload["provider"] == "stub"
+    assert captured
+    stream, env = captured[0]
+    assert env["event_type"] == "site_visit.scheduled"
+    assert env["entity_id"] == "99"
+    # Stored payload is exactly the claim — name/phone/visit_id never hit the stream.
+    assert env["payload"] == {"lead_id": 99, "tenant_id": "Client_1"}
+    blob = json.dumps(env["payload"])
+    assert "John" not in blob
+    assert "+9199" not in blob
+    assert "visit_abc" not in blob
 
 
 # --------------------------------------------------------------------------- #
 # BA-4 — HITL deep-link paths
 # --------------------------------------------------------------------------- #
-def test_request_approval_payload_has_paths(monkeypatch):
+def test_request_approval_stores_claim_payload(monkeypatch):
+    """approval.requested stores {lead_id, tenant_id} — params stay on the ApprovalRequest row."""
     from app.automation_engine import hitl as hitl_mod
     from database import SessionLocal
     from models import ApprovalRequest
 
-    published = []
-
-    async def fake_pub(etype, tenant, entity, payload, source="hitl", correlation_id=None):
-        published.append((etype, payload))
-        return "eid"
-
-    class Bus:
-        _running = True
-
-        async def publish(self, *a, **k):
-            return await fake_pub(*a, **k)
-
-    monkeypatch.setattr(hitl_mod, "event_bus", Bus())
+    bus, captured = _fake_redis_capture()
+    monkeypatch.setattr(hitl_mod, "event_bus", bus)
     ensure_test_client(1)
     entity = f"e18_hitl_{uuid4().hex[:8]}"
 
@@ -449,12 +446,14 @@ def test_request_approval_payload_has_paths(monkeypatch):
 
         res = asyncio.run(run())
         assert res["status"] == "pending"
-        assert published
-        assert published[0][0] == "approval.requested"
-        p = published[0][1]
-        assert p["approve_path"] == f"/api/v1/approvals/{res['id']}/approve"
-        assert p["reject_path"] == f"/api/v1/approvals/{res['id']}/reject"
-        assert "parameters_summary" in p
+        assert captured
+        _, env = captured[0]
+        assert env["event_type"] == "approval.requested"
+        assert env["entity_id"] == entity
+        assert env["payload"] == {"lead_id": None, "tenant_id": "Client_1"}
+        blob = json.dumps(env["payload"])
+        assert "offer" not in blob
+        assert "approve_path" not in blob
     finally:
         with SessionLocal() as db:
             db.query(ApprovalRequest).filter(

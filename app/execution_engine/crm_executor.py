@@ -13,7 +13,7 @@ Runtime: ``Event -> CEO -> Agent/Workflow -> Automation Engine -> Execution Engi
 from __future__ import annotations
 
 import logging
-from typing import Any
+from typing import Any, Optional
 
 from app.execution_engine.base_executor import BaseExecutor
 from config import settings
@@ -29,6 +29,23 @@ from crm_sync import (  # noqa: E402
     build_crm_properties,
     decide_crm_status_after_poll,
 )
+
+
+def resolve_tenant_client_id(action_request: Optional[dict]) -> Optional[int]:
+    """Resolve an integer client_id from the action's ``tenant_id``.
+
+    Returns ``None`` when missing or not ``Client_<int>`` / bare int — callers
+    must fail closed (P0 claim-check: no tenant, no PII access).
+    """
+    if not action_request:
+        return None
+    tenant_id = action_request.get("tenant_id")
+    if tenant_id is None:
+        return None
+    s = str(tenant_id).strip()
+    if s.lower().startswith("client_"):
+        s = s[len("client_"):]
+    return int(s) if s.isdigit() else None
 
 
 class CRMExecutor(BaseExecutor):
@@ -51,7 +68,11 @@ class CRMExecutor(BaseExecutor):
         raw_props = params.get("properties")
 
         if lead_id is not None:
-            return await self._sync_lead(int(lead_id))
+            # P0 claim-check: tenant-scoped PII access. Fail closed without a tenant.
+            client_id = resolve_tenant_client_id(action_request)
+            if client_id is None:
+                return {"status": "error", "error": "update_crm requires a numeric tenant_id"}
+            return await self._sync_lead(int(lead_id), client_id=client_id)
         if raw_props:
             return await self._push_raw(raw_props)
         return {"status": "error", "error": "update_crm requires 'lead_id' or 'properties'"}
@@ -70,10 +91,17 @@ class CRMExecutor(BaseExecutor):
             logger.error("CRM raw push failed: %s", exc)
             return {"status": "error", "error": str(exc)}
 
-    async def _sync_lead(self, lead_id: int) -> dict:
+    async def _sync_lead(self, lead_id: int, client_id: Optional[int] = None) -> dict:
         with SessionLocal() as db:
-            lead = db.query(Lead).filter(Lead.id == lead_id).first()
+            query = db.query(Lead).filter(Lead.id == lead_id)
+            if client_id is not None:
+                query = query.filter(Lead.client_id == client_id)
+            lead = query.first()
             if lead is None:
+                if client_id is not None:
+                    logger.warning(
+                        "CRM lead sync refused: lead %s not owned by client %s", lead_id, client_id
+                    )
                 return {"status": "error", "error": f"lead {lead_id} not found"}
             try:
                 props = build_crm_properties(lead, include_extended=settings.CRM_SYNC_EXTENDED_PROPERTIES)

@@ -109,6 +109,44 @@ def _hydrate_lead_props(lead_id: int, client_id: int, payload: dict) -> dict:
     return props
 
 
+def _assigned_agent_from_row(lead_id: int, client_id: int) -> Optional[str]:
+    """Read ``assigned_agent`` from the lead row (payload is identifiers-only)."""
+    try:
+        from database import SessionLocal
+        from models import Lead
+
+        with SessionLocal() as db:
+            lead = (
+                db.query(Lead.assigned_agent)
+                .filter(Lead.id == lead_id, Lead.client_id == client_id)
+                .first()
+            )
+        if lead is not None:
+            return lead.assigned_agent
+    except Exception as e:  # noqa: BLE001 - never fail the writer on DB blips
+        logger.debug("kg assigned_agent read failed lead=%s: %s", lead_id, e)
+    return None
+
+
+def _visit_date_from_row(lead_id: int, client_id: int) -> Optional[Any]:
+    """Read ``visit_date`` from the lead row (payload is identifiers-only)."""
+    try:
+        from database import SessionLocal
+        from models import Lead
+
+        with SessionLocal() as db:
+            lead = (
+                db.query(Lead.visit_date)
+                .filter(Lead.id == lead_id, Lead.client_id == client_id)
+                .first()
+            )
+        if lead is not None:
+            return lead.visit_date
+    except Exception as e:  # noqa: BLE001 - never fail the writer on DB blips
+        logger.debug("kg visit_date read failed lead=%s: %s", lead_id, e)
+    return None
+
+
 async def graph_event_writer(envelope: dict) -> None:
     """CEO-registered handler: project a bus event into Neo4j (best-effort)."""
     if not knowledge_graph.available:
@@ -126,17 +164,17 @@ async def graph_event_writer(envelope: dict) -> None:
         elif event_type == "lead.assigned":
             props = _hydrate_lead_props(lead_id, client_id, payload)
             knowledge_graph.upsert_lead(lead_id, client_id, props)
-            agent_name = payload.get("assigned_agent") or payload.get("agent_name")
+            # P0 claim-check: payload is identifiers-only — read the assignee
+            # from the live row (crm_automation commits before publish).
+            agent_name = _assigned_agent_from_row(lead_id, client_id)
             if agent_name:
                 knowledge_graph.link_lead_agent(lead_id, str(agent_name), client_id)
         elif event_type == "site_visit.scheduled":
-            props = {
-                "visit_id": payload.get("visit_id"),
-                "visit_date": payload.get("visit_date"),
-            }
-            knowledge_graph.upsert_lead(
-                lead_id, client_id, {k: v for k, v in props.items() if v}
-            )
+            # P0 claim-check: visit_date comes from the lead row. visit_id is
+            # not persisted on Lead and no longer travels on the bus.
+            visit_date = _visit_date_from_row(lead_id, client_id)
+            if visit_date:
+                knowledge_graph.upsert_lead(lead_id, client_id, {"visit_date": visit_date})
     except Exception as e:  # noqa: BLE001 - writer never fails the agent
         logger.warning("graph writer failed for %s lead=%s: %s", event_type, lead_id, e)
 

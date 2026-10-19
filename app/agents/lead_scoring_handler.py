@@ -57,9 +57,9 @@ async def lead_scoring_handler(envelope: dict) -> None:
     if client_id is None or lead_id is None:
         return
 
-    payload_in = envelope.get("payload") or {}
-    session_id = payload_in.get("session_id")
-    chat_context = payload_in.get("chat_context") or ""
+    # P0 claim-check: the bus payload is identifiers-only. The session id
+    # falls back to lead.session_id below; no chat_context arrives on the bus.
+    session_id = (envelope.get("payload") or {}).get("session_id")
 
     scores = {}
     lead_snapshot = None
@@ -85,7 +85,7 @@ async def lead_scoring_handler(envelope: dict) -> None:
             "lead.scored",
             f"Client_{client_id}",
             str(lead_id),
-            {"lead_id": lead_id, **scores},
+            {"lead_id": lead_id},
             source="lead_scoring_handler",
         )
     except Exception as e:  # noqa: BLE001
@@ -106,7 +106,7 @@ async def lead_scoring_handler(envelope: dict) -> None:
             trigger="hot_threshold",
             reason=f"HOT threshold crossed (conversion_probability={prob})",
             session_id=session_id,
-            chat_context=chat_context,
+            chat_context="",
             score=prob,
             source="lead_scoring_handler",
         )

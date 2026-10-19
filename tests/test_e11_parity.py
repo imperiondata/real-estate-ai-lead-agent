@@ -104,7 +104,8 @@ def test_lead_scoring_publishes_scored(monkeypatch):
         _clean(db, "sess_ls_1")
 
     assert published and published[0][0] == "lead.scored"
-    assert "conversion_probability" in published[0][1]
+    # P0 claim-check: the builder publishes identifiers only.
+    assert published[0][1] == {"lead_id": lead_id}
 
 
 # --------------------------------------------------------------------------- #

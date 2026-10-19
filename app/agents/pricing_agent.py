@@ -48,21 +48,48 @@ def resolve_pricing(client_id: int, location: str, budget: int) -> Optional[dict
         db.close()
 
 
+def resolve_lead_query(client_id: int, lead_id: Optional[int]) -> Optional[tuple]:
+    """Load location/budget from the lead row when it resolves for this tenant.
+
+    P0 claim-check: the bus payload is identifiers-only — never trust location
+    or budget fields on the payload. Returns None when the row is missing or
+    not owned by ``client_id``.
+    """
+    if lead_id is None:
+        return None
+    try:
+        int(lead_id)
+    except (ValueError, TypeError):
+        return None
+    from models import Lead
+
+    db = SessionLocal()
+    try:
+        lead = db.query(Lead).filter(Lead.id == int(lead_id), Lead.client_id == client_id).first()
+        if lead is None:
+            return None
+        return (lead.location or "", lead.budget or 0)
+    finally:
+        db.close()
+
+
 async def handler(envelope: dict) -> None:
     client_id = _resolve_client_id(envelope.get("tenant_id"))
     if client_id is None:
         return
     payload = envelope.get("payload") or {}
-    lead_id = envelope.get("entity_id") or payload.get("lead_id")
-    location = payload.get("location", "")
-    budget = payload.get("budget", 0)
+    lead_id_raw = envelope.get("entity_id") or payload.get("lead_id")
+    try:
+        lead_id = int(lead_id_raw) if lead_id_raw is not None else None
+    except (ValueError, TypeError):
+        lead_id = None
+    resolved = resolve_lead_query(client_id, lead_id)
+    if resolved is None:
+        return
+    location, budget = resolved
     if not location:
         return
-    try:
-        budget = int(budget)
-    except (ValueError, TypeError):
-        budget = 0
-    match = resolve_pricing(client_id, location, budget)
+    match = resolve_pricing(client_id, location, int(budget or 0))
     try:
         await ae_submit({
             "action_type": "notify_agent",

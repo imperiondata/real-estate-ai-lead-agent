@@ -207,7 +207,7 @@ Flip these in `.env` at deploy (see `.env.example` footer): `IS_PRODUCTION=true`
 
 **Dual-path note:** Expansion 10.2/10.3 module delete is **deferred**. Root `agent.py`, `crm_sync.py`, `follow_up.py` remain shared libraries for v3 wrappers (not a second product path).
 
-**PR #10 bus hooks (n8n):** `app/events/lead_hot.py` dual-publishes catalog `lead.hot` + alias `lead.escalated`; `session.completed` on handoff/full-qualify close; turn events include `chat_context`. `site_visit.scheduled` is published by **EE** after `CalendarExecutor` (executor has no `event_bus.publish` — by design). See `docs/N8N_INTEGRATION.md` § Dual-publish aliases.
+**PR #10 bus hooks (n8n):** `app/events/lead_hot.py` dual-publishes catalog `lead.hot` + alias `lead.escalated`; `session.completed` on handoff/full-qualify close. **P0 claim-check:** every bus payload is exactly `{lead_id, tenant_id}` — workers load the lead row from Postgres (turn events carry no `chat_context`/name/phone). `site_visit.scheduled` is published by **EE** after `CalendarExecutor` (executor has no `event_bus.publish` — by design), no `visit_id` on the stream. See `docs/N8N_INTEGRATION.md` § Dual-publish aliases. Proof: `python scripts/prove_pii_claim_check.py` (local only).
 
 ## IREIOS 3.0 — Active agents / workflows (full parity)
 
@@ -257,7 +257,7 @@ Sales hot escalate: notify_agent + create_task → agent_tasks
 - **Timeouts & timings (all race/TTL/scheduler values):** `docs/TIMEOUTS_AND_TIMINGS.md`
 - n8n: Compose + AE path + **bridge** shipped; **6/6 workflows** (Gmail + Sheets). Full Cloud Console + import runbook: `docs/N8N_GOOGLE_CREDENTIALS_SETUP.md`. Arch: `docs/N8N_INTEGRATION.md`. Brochure HTTPS URLs optional until set.
 - **Post-G3 automations closeout (Step 24):** `plans/PHASE3_AUTOMATIONS_CLOSEOUT.md`. Canonical bus (`lead.hot` + `trigger`). HubSpot Python stays skipped.
-- **BA-1…BA-7 + bridge:** `lead_hot.py`; `chat_context`; EE visit merge; HITL paths; calendar REST; **`n8n_bridge`** (not stock Redis→n8n). Tests: `tests/test_e18_*.py`, `tests/test_e20_n8n_bridge.py`.
+- **BA-1…BA-7 + bridge:** `lead_hot.py`; identifiers-only turn events; EE visit fan-out; HITL paths; calendar REST; **`n8n_bridge`** (not stock Redis→n8n). Tests: `tests/test_e18_*.py`, `tests/test_e20_n8n_bridge.py`.
 - Frontend remaining work: `docs/FRONTEND_BACKLOG.md` (Mayank: partial SSE in `a10aa68`; MockSSE file + mocks + JWT SSE still open)
 - Evidence: `plans/IREIOS_3.0_EVIDENCE_PACK.md` (G2 + G3)
 - **Post-G2 Waves A–D (depth fill, G3 green):** living log `plans/IREIOS_3.0_WAVE_A_D_CHANGELOG.md`; how-to `plans/IREIOS_3.0_WAVE_A_D_EXPANSION.md`; tests `tests/test_e14_wave_a.py`…`test_e17_wave_d.py`. UNIFIED Steps **20–23** + Gate **G3** = `[x]`.
@@ -288,7 +288,7 @@ Sales hot escalate: notify_agent + create_task → agent_tasks
 - **Smoke:**
   ```powershell
   curl -N "http://localhost:8000/api/v1/events/stream?api_key=secret-client-key-123"
-  python publish_stub_event.py --event-type lead.created --tenant-id Client_1 --payload "{\"name\":\"demo\"}"
+  python publish_stub_event.py --event-type lead.created --tenant-id Client_1 --payload "{\"lead_id\":1,\"tenant_id\":\"Client_1\"}"
   ```
 - Contracts: `plans/IREIOS_3.0_API_SSE_CONTRACTS.md`. FE cutover: `docs/FRONTEND_BACKLOG.md`. Wipes / Neo4j ops: `docs/MAINTENANCE.md` §4.1.
 

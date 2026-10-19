@@ -101,42 +101,18 @@ async def _emit_turn_events(
 ) -> None:
     """Publish lifecycle events so CEO bus agents (scoring/CRM/KG/arm) run on real traffic.
 
-    PR #10 / BA-2: when ``db`` is set, attaches ``chat_context`` for n8n / scoring.
-    Qualify-close also dual-publishes ``session.completed`` (PR #10 alias).
+    P0 claim-check: the bus payload is ``{"lead_id", "tenant_id"}`` only —
+    workers load the lead row from Postgres. ``message``/``db`` are kept for
+    signature compatibility; ``message`` free-text is never on the wire.
     """
     if lead is None or not getattr(lead, "id", None):
         return
     lead_id = lead.id
-    chat_context = ""
-    if db is not None:
-        try:
-            chat_context = (
-                conversation_memory.summarize_recent(
-                    db, session_id=scoped_session_id, turns=10
-                )
-                or ""
-            )[:4000]
-        except Exception as exc:  # noqa: BLE001
-            logger.debug("chat_context summarize skipped: %s", exc)
-    base = {
-        "lead_id": lead_id,
-        "session_id": scoped_session_id,
-        "source": source_channel,
-        "name": lead.name,
-        "phone": lead.phone,
-        "location": lead.location,
-        "budget": lead.budget,
-        "property_type": lead.property_type,
-        "intent": lead.intent,
-        "lead_temperature": getattr(lead, "lead_temperature", None),
-        "conversion_probability": getattr(lead, "conversion_probability", None),
-        "budget_alignment_status": getattr(lead, "budget_alignment_status", None),
-        "chat_context": chat_context,
-    }
+    base = {"lead_id": lead_id}
     channel_event = "whatsapp.received" if source_channel == "whatsapp" else (
         "chat.received" if source_channel in ("chat", "web", "api") else f"{source_channel}.received"
     )
-    await _publish_bus_event(channel_event, client_id, str(lead_id), {**base, "message": (message or "")[:500]})
+    await _publish_bus_event(channel_event, client_id, str(lead_id), base)
     if is_new_lead:
         await _publish_bus_event("lead.created", client_id, str(lead_id), base)
     await _publish_bus_event("conversation.updated", client_id, str(lead_id), base)

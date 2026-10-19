@@ -76,26 +76,9 @@ def build_lead_hot_payload(
     chat_context: str = "",
     score: Any = None,
 ) -> dict:
-    prob = getattr(lead, "conversion_probability", None)
-    if score is None:
-        score = prob
+    """P0 claim-check: identifiers only — downstream agents load the lead row."""
     return {
         "lead_id": getattr(lead, "id", None),
-        "session_id": session_id or getattr(lead, "session_id", None),
-        "name": getattr(lead, "name", None),
-        "phone": getattr(lead, "phone", None),
-        "location": getattr(lead, "location", None),
-        "budget": getattr(lead, "budget", None),
-        "property_type": getattr(lead, "property_type", None),
-        "intent": getattr(lead, "intent", None),
-        "lead_temperature": getattr(lead, "lead_temperature", None),
-        "conversion_probability": prob,
-        "score": score,
-        "trigger": trigger,
-        "reason": reason,
-        "assigned_agent": getattr(lead, "assigned_agent", None),
-        "chat_context": (chat_context or "")[:4000],
-        "catalog_event": PRIMARY_EVENT,
     }
 
 
@@ -156,7 +139,7 @@ async def publish_lead_hot(
     await _safe_publish(PRIMARY_EVENT, int(client_id), lead_id, payload, source)
     # ALIAS: lead.escalated mirrors lead.hot for n8n PR#10; prefer lead.hot long-term.
     if dual_publish_alias:
-        alias_payload = {**payload, "alias_of": PRIMARY_EVENT}
+        alias_payload = {"lead_id": lead_id}
         await _safe_publish(ALIAS_EVENT, int(client_id), lead_id, alias_payload, source)
     return True
 
@@ -173,25 +156,13 @@ async def publish_session_completed(
     """Publish PR #10 ``session.completed`` (alias alongside catalog ``lead.qualified``).
 
     Call only on transition to session.status == closed. Prefer ``lead.qualified``
-    for CRM field sync; this event carries transcript for n8n notes.
+    for CRM field sync; n8n readers fetch the lead from the API.
     """
     lead_id = getattr(lead, "id", None)
     if lead_id is None or client_id is None:
         return False
     payload = {
         "lead_id": lead_id,
-        "session_id": session_id,
-        "close_reason": close_reason,
-        "name": getattr(lead, "name", None),
-        "phone": getattr(lead, "phone", None),
-        "location": getattr(lead, "location", None),
-        "budget": getattr(lead, "budget", None),
-        "property_type": getattr(lead, "property_type", None),
-        "intent": getattr(lead, "intent", None),
-        "lead_temperature": getattr(lead, "lead_temperature", None),
-        "conversion_probability": getattr(lead, "conversion_probability", None),
-        "chat_context": (chat_context or "")[:4000],
-        "catalog_note": "Prefer lead.qualified for field sync; session.completed is PR#10 alias for n8n CRM notes",
     }
     await _safe_publish("session.completed", int(client_id), lead_id, payload, source)
     return True

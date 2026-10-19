@@ -45,7 +45,8 @@ def test_publish_reaches_subscriber():
         assert env["event_type"] == "lead.created"
         assert env["tenant_id"] == "client_A"
         assert env["entity_id"] == "lead_1"
-        assert env["payload"] == {"name": "x***"}
+        # P0 claim-check: identifiers only — no masked name reaches the stream.
+        assert env["payload"] == {"lead_id": None, "tenant_id": "client_A"}
         assert env["correlation_id"]
         assert env["source"] == "system"
 
@@ -289,7 +290,8 @@ def test_ceo_publishes_failed_event():
             await bus.stop()
         assert len(failed_seen) == 1, failed_seen
         assert failed_seen[0]["event_type"] == "a1.failed"
-        assert failed_seen[0]["payload"]["agent_id"] == "a1"
+        # P0 claim-check: agent identity rides the event_type/entity, not the payload.
+        assert failed_seen[0]["payload"] == {"lead_id": None, "tenant_id": "t"}
         # health recorded
         rec = registry.get_subscribers("lead.created")[0]
         assert rec.last_error == "agent broke"
@@ -468,7 +470,8 @@ def test_base_agent_lifecycle_failure_publishes_failed():
         finally:
             await bus.stop()
         assert len(failed_seen) == 1, failed_seen
-        assert failed_seen[0]["payload"]["agent_id"] == "broken_agent"
+        # P0 claim-check: agent identity rides the event_type/entity, not the payload.
+        assert failed_seen[0]["payload"] == {"lead_id": None, "tenant_id": "Client_1"}
 
     asyncio.run(run())
 

@@ -80,14 +80,7 @@ async def publish_negotiation_started(
             "lead.negotiation.started",
             f"Client_{client_id}",
             str(lead_id),
-            {
-                "lead_id": lead_id,
-                "session_id": session_id,
-                "trigger": trigger,
-                "message": message[:200],
-                "budget": budget,
-                "budget_alignment_status": budget_alignment_status,
-            },
+            {"lead_id": lead_id},
             source=source,
         )
         return True

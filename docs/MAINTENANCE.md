@@ -388,6 +388,12 @@ Live follow-up concurrency proof (local Postgres only, not Render):
 python scripts/prove_dlq_concurrency.py
 ```
 
+P0 claim-check proof (local Postgres + Redis only, not Render):
+
+```powershell
+python scripts/prove_pii_claim_check.py
+```
+
 ---
 
 ## 10. Testing & gates (before deploy)

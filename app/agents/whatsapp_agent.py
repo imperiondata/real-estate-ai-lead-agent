@@ -411,12 +411,7 @@ class WhatsAppAgent:
                                 f"{intent}.sent",
                                 f"Client_{client_id}",
                                 str(lead.id),
-                                {
-                                    "lead_id": lead.id,
-                                    "session_id": session_id,
-                                    "tool": intent,
-                                    "media_url": media_url,
-                                },
+                                {"lead_id": lead.id},
                                 source="whatsapp_agent_v3",
                             )
                     except Exception as e:  # pragma: no cover
@@ -434,13 +429,7 @@ class WhatsAppAgent:
                             evt,
                             f"Client_{client_id}",
                             str(lead.id),
-                            {
-                                "lead_id": lead.id,
-                                "session_id": session_id,
-                                "tool": intent,
-                                "preview": tool_reply[:200],
-                                "media_url": media_url,
-                            },
+                            {"lead_id": lead.id},
                             source="whatsapp_agent_v3",
                         )
                 except Exception as e:  # pragma: no cover

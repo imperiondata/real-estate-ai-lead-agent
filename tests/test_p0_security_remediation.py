@@ -4,9 +4,11 @@
 - PII redaction across logger, events, payloads, names, and companies
 - Fail-closed RAG / Vector / Neo4j retrieval on missing context / unknown metadata
 - Deep cross-tenant negative-access isolation (read, update, delete, export, webhook)
-- True concurrent DLQ replay with competing workers on distinct DB sessions
-- DLQ failure window handling (external provider success + DB commit failure)
+- DLQ fail-closed on a missing session or a tenant mismatch
 - INF-01 S3 backup pipeline verification with moto (KMS encryption, SHA-256 checksum, 30-day lifecycle)
+
+Live DLQ concurrency is not in this file. Run scripts/prove_dlq_concurrency.py
+against local Postgres.
 """
 from __future__ import annotations
 
@@ -15,7 +17,6 @@ import hashlib
 import json
 import logging
 import secrets
-import threading
 from unittest.mock import MagicMock
 import pytest
 from fastapi import HTTPException
@@ -27,7 +28,7 @@ from app.utils.redaction import mask_email, mask_phone, mask_name, redact_text, 
 from rag import _chunk_visible
 from app.clients.graph_client import GraphClient
 from dlq_replay import process_ml_followup
-from models import DLQEvent, Session as SessionModel, Client, Lead
+from models import Session as SessionModel, Client, Lead
 from database import SessionLocal
 from scripts.backup_to_s3 import run_s3_backup
 from auth import get_client_by_api_key, create_access_token
@@ -357,119 +358,6 @@ def test_neo4j_retrieval_fails_closed_on_missing_or_down():
     gc = GraphClient(kg=None)
     assert gc.available is False
     assert gc.get_lead_context(lead_id=1, client_id=1) == {}
-
-
-# --------------------------------------------------------------------------- #
-# 4. True Concurrency DLQ Replay: Competing Workers & DB Failure Window
-# --------------------------------------------------------------------------- #
-
-def test_dlq_concurrent_competing_workers_separate_sessions():
-    """Verify real concurrency using separate SessionLocal() instances and competing workers.
-
-    Ensures that under simultaneous race conditions, exactly one worker claims the pending
-    event and the competing worker is safely locked out.
-    """
-    db_setup = SessionLocal()
-    try:
-        # Create a pending DLQ event
-        dlq_ev = DLQEvent(
-            client_id=1,
-            target_endpoint="hubspot_crm",
-            payload={"lead_id": 9999, "action": "sync"},
-            error_trace="simulated network timeout",
-            status="pending",
-        )
-        db_setup.add(dlq_ev)
-        db_setup.commit()
-        db_setup.refresh(dlq_ev)
-        ev_id = dlq_ev.id
-    finally:
-        db_setup.close()
-
-    barrier = threading.Barrier(2)
-    results = {}
-
-    def worker_attempt(worker_id: str):
-        # Distinct database session per worker
-        db_worker = SessionLocal()
-        try:
-            # Synchronize thread launch for true race condition
-            barrier.wait()
-            claimed = db_worker.query(DLQEvent).filter(
-                DLQEvent.id == ev_id,
-                DLQEvent.status == "pending"
-            ).update({"status": "processing"})
-            db_worker.commit()
-            results[worker_id] = claimed
-        finally:
-            db_worker.close()
-
-    t1 = threading.Thread(target=worker_attempt, args=("worker_1",))
-    t2 = threading.Thread(target=worker_attempt, args=("worker_2",))
-    t1.start()
-    t2.start()
-    t1.join()
-    t2.join()
-
-    # STRICT ASSERTION: Exactly one worker claims the event, the other receives 0 rows updated
-    assert results["worker_1"] + results["worker_2"] == 1
-    assert {results["worker_1"], results["worker_2"]} == {0, 1}
-
-    # Verify database state in a fresh session
-    db_verify = SessionLocal()
-    try:
-        final_ev = db_verify.query(DLQEvent).filter(DLQEvent.id == ev_id).first()
-        assert final_ev.status == "processing"
-
-        # Winning worker resolves and cleans up
-        db_verify.delete(final_ev)
-        db_verify.commit()
-    finally:
-        db_verify.close()
-
-
-def test_dlq_failure_window_external_success_db_fail():
-    """Simulate failure window: external provider succeeds, but database transaction fails.
-
-    Verifies rollback occurs and status does not falsely report resolved.
-    """
-    db = SessionLocal()
-    try:
-        dlq_ev = DLQEvent(
-            client_id=1,
-            target_endpoint="hubspot_crm",
-            payload={"lead_id": 8888},
-            error_trace="initial",
-            status="processing",
-        )
-        db.add(dlq_ev)
-        db.commit()
-        db.refresh(dlq_ev)
-        ev_id = dlq_ev.id
-
-        # External provider succeeds
-        external_call_success = True
-        assert external_call_success is True
-
-        # Database failure occurs during commit (e.g. operational error or constraint violation)
-        try:
-            dlq_ev.status = "resolved"
-            # Simulate unexpected DB crash / abort before commit completes
-            raise RuntimeError("Database connection severed mid-commit")
-        except RuntimeError:
-            db.rollback()
-
-        # Verify event was NOT committed as resolved
-        db_check = SessionLocal()
-        try:
-            ev = db_check.query(DLQEvent).filter(DLQEvent.id == ev_id).first()
-            assert ev.status == "processing"  # preserved in processing, not falsely marked resolved
-            db_check.delete(ev)
-            db_check.commit()
-        finally:
-            db_check.close()
-    finally:
-        db.close()
 
 
 def test_dlq_fails_closed_on_missing_session():

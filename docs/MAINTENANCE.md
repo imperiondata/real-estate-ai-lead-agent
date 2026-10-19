@@ -382,6 +382,12 @@ python gate_dlq_drill.py
 python dlq_replay.py
 ```
 
+Live follow-up concurrency proof (local Postgres only, not Render):
+
+```powershell
+python scripts/prove_dlq_concurrency.py
+```
+
 ---
 
 ## 10. Testing & gates (before deploy)

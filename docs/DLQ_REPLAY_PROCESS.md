@@ -56,8 +56,10 @@ The script:
 2. Fetches all rows where `status = 'pending'`.
 3. Dispatches each event to the appropriate handler function.
 4. On success → sets `status = 'resolved'` and commits.
-5. On failure → logs the error, leaves `status = 'pending'` for the next run.
+5. On failure → logs the error. HubSpot and Twilio rows are marked `failed`. An `ml_followup_scheduler` row is not marked `failed` by `main()`.
 6. Prints a summary: `X/Y events recovered successfully`.
+
+`ml_followup_scheduler` is claimed inside `process_ml_followup`, not by the outer update in `main()`. The claim is one committed `UPDATE` that sets `status = 'processing'` and `error_trace = 'claimed:<worker_id>'` only while the row is still `pending`. The winner is the worker whose id is stored there. Only that worker calls the sender. A later commit writes the `EventLog`, the `Message`, and `status = 'resolved'`. If that commit fails, the row stays `processing`. It is not put back to `pending`, so a second worker cannot send. Live proof, local Postgres only: `python scripts/prove_dlq_concurrency.py`. Do not run it against Render.
 
 Run it from the project root with the virtualenv active and `.env` loaded.
 

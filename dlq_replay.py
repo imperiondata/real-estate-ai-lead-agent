@@ -37,80 +37,118 @@ def process_twilio_outbound(payload: dict) -> bool:
         logger.error(f"Twilio Outbound Replay Failed: {e}")
         return False
 
-def process_ml_followup(payload: dict, db: Session, event_client_id: int | None = None) -> bool:
+def _send_twilio(body: str, to: str) -> None:
+    client = Client(settings.TWILIO_ACCOUNT_SID, settings.TWILIO_AUTH_TOKEN)
+    client.messages.create(
+        from_=settings.TWILIO_PHONE_NUMBER,
+        body=body,
+        to=to,
+    )
+
+def _claim_followup(db: Session, event_id: int, worker_id: str | None) -> bool:
+    claimed = db.query(DLQEvent).filter(
+        DLQEvent.id == event_id,
+        DLQEvent.status == "pending",
+    ).update(
+        {
+            "status": "processing",
+            "error_trace": f"claimed:{worker_id or 'unknown'}",
+        },
+        synchronize_session=False,
+    )
+    db.commit()
+    return claimed == 1
+
+def process_ml_followup(
+    payload: dict,
+    db: Session,
+    event_client_id: int | None = None,
+    event_id: int | None = None,
+    worker_id: str | None = None,
+    sender=None,
+) -> bool:
+    session_id = payload.get("session_id") if payload else None
+    if not session_id:
+        logger.error("DLQ Replay Failed Closed: Missing session_id in payload.")
+        return False
+
+    session_record = db.query(SessionModel).filter(SessionModel.id == session_id).first()
+    if not session_record or session_record.client_id is None:
+        logger.error("DLQ Replay Failed Closed: Session %s not found in database.", session_id)
+        return False
+
+    if event_client_id and session_record.client_id != event_client_id:
+        logger.error(
+            "DLQ Replay Failed Closed: Tenant mismatch. Event client_id=%s, Session client_id=%s",
+            event_client_id,
+            session_record.client_id,
+        )
+        return False
+
+    client_id = session_record.client_id
+
+    if event_id is not None:
+        try:
+            won = _claim_followup(db, event_id, worker_id)
+        except Exception as e:
+            logger.error("ML Followup Replay Failed: %s: %s", type(e).__name__, e)
+            try:
+                db.rollback()
+            except Exception:
+                pass
+            return False
+        if not won:
+            logger.info("DLQ event %s not claimed by %s.", event_id, worker_id)
+            return False
+
     try:
-        # Import dynamically to avoid circular issues
         from follow_up import generate_followup_payload
-        
-        session_id = payload.get("session_id")
-        if not session_id:
-            logger.error("DLQ Replay Failed Closed: Missing session_id in payload.")
-            return False
 
-        # Fail closed if session record does not exist
-        session_record = db.query(SessionModel).filter(SessionModel.id == session_id).first()
-        if not session_record:
-            logger.error("DLQ Replay Failed Closed: Session %s not found in database.", session_id)
-            return False
-
-        # Fail closed on tenant mismatch
-        if event_client_id and session_record.client_id != event_client_id:
-            logger.error(
-                "DLQ Replay Failed Closed: Tenant mismatch. Event client_id=%s, Session client_id=%s",
-                event_client_id,
-                session_record.client_id,
-            )
-            return False
-
-        client_id = session_record.client_id
         current_stage = payload.get("stage", "Day 0")
         lead_data = payload.get("lead_data", {})
-        
         day_map = {"Day 0": 0, "Day 1": 1, "Day 3": 3, "Day 7": 7}
         current_day = day_map.get(current_stage, 0)
-        
-        # We mock assigned_agent here just to replay the message payload generation
         assigned_agent = {"assigned_agent": lead_data.get("assigned_agent", "ABC Properties Team")}
-        
         generated = generate_followup_payload(
             lead_data=lead_data,
             assigned_agent=assigned_agent,
             session_id=session_id,
             current_day=current_day,
-            inactivity=lead_data.get("inactive_lead", False)
+            inactivity=lead_data.get("inactive_lead", False),
         )
-        
         payload_msg = generated.get("message")
         if not payload_msg:
             raise ValueError("Empty message generated.")
-            
-        if settings.TWILIO_ACCOUNT_SID:
-            client = Client(settings.TWILIO_ACCOUNT_SID, settings.TWILIO_AUTH_TOKEN)
-            client.messages.create(
-                from_=settings.TWILIO_PHONE_NUMBER,
-                body=payload_msg,
-                to=f"whatsapp:{session_id}" if session_id.startswith("+") else session_id
-            )
 
-        # Log successful recovery with mandatory multi-tenant client_id mapping
-        event = EventLog(
+        to_addr = f"whatsapp:{session_id}" if str(session_id).startswith("+") else str(session_id)
+        if sender is not None:
+            sender(body=payload_msg, to=to_addr)
+        elif settings.TWILIO_ACCOUNT_SID:
+            _send_twilio(payload_msg, to_addr)
+
+        db.add(EventLog(
             session_id=session_id,
             client_id=client_id,
             event_type="tracking",
-            action_type="follow_up_sent_from_dlq"
-        )
-        db.add(event)
-
+            action_type="follow_up_sent_from_dlq",
+        ))
         db.add(Message(
             session_id=session_id,
             client_id=client_id,
             role="assistant",
-            content=f"[DLQ RECOVERY {current_stage.upper()}] {payload_msg}"
+            content=f"[DLQ RECOVERY {current_stage.upper()}] {payload_msg}",
         ))
+        if event_id is not None:
+            row = db.query(DLQEvent).filter(DLQEvent.id == event_id).one()
+            row.status = "resolved"
         db.commit()
         return True
     except Exception as e:
-        logger.error(f"ML Followup Replay Failed: {e}")
+        logger.error("ML Followup Replay Failed: %s: %s", type(e).__name__, e)
+        try:
+            db.rollback()
+        except Exception:
+            pass
         return False
 
 async def main():
@@ -126,7 +164,24 @@ async def main():
         success_count = 0
         
         for event in pending_events:
-            # Atomic lock/claim to prevent concurrent replay race conditions
+            if event.target_endpoint == "ml_followup_scheduler":
+                logger.info(f"Replaying Event ID: {event.id} | Target: {event.target_endpoint}")
+                success = process_ml_followup(
+                    event.payload,
+                    db,
+                    event_client_id=event.client_id,
+                    event_id=event.id,
+                    worker_id="replay-main",
+                )
+                if success:
+                    logger.info(f"[PASS] Event {event.id} resolved.")
+                    success_count += 1
+                else:
+                    logger.error(
+                        f"[FAIL] Event {event.id} not resolved. Leaving claim state unchanged."
+                    )
+                continue
+
             claimed = db.query(DLQEvent).filter(
                 DLQEvent.id == event.id,
                 DLQEvent.status == "pending"
@@ -144,8 +199,6 @@ async def main():
                 success = await process_hubspot_crm(event.payload)
             elif event.target_endpoint == "twilio_outbound":
                 success = process_twilio_outbound(event.payload)
-            elif event.target_endpoint == "ml_followup_scheduler":
-                success = process_ml_followup(event.payload, db, event_client_id=event.client_id)
             else:
                 logger.warning(f"Unknown target endpoint: {event.target_endpoint}")
                 

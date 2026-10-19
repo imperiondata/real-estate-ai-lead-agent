@@ -394,6 +394,12 @@ P0 claim-check proof (local Postgres + Redis only, not Render):
 python scripts/prove_pii_claim_check.py
 ```
 
+Active Neo4j tenant-isolation proof (local Neo4j + Postgres must be up; not a substitute for the claim-check proof):
+
+```powershell
+python scripts/prove_graph_isolation.py
+```
+
 ---
 
 ## 10. Testing & gates (before deploy)

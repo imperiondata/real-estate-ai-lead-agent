@@ -125,7 +125,18 @@ and `event_logs`, restored cleanly with zero data loss.
 
 ---
 
-## 5. Render Production Notes
+## 5. INF-01 S3 proof
+
+A local dump followed by a local restore is not the proof. `scripts/prove_inf01_s3_drill.py` dumps the local database, uploads that file, downloads the same object, restores it into local `inf01_drill`, and matches table counts. It refuses a non-local source or restore host. It does not read `LIVE_DATABASE_URL`. It does not print the URL, the AWS key, or row data.
+
+```powershell
+python scripts/prove_inf01_s3_drill.py --check
+python scripts/prove_inf01_s3_drill.py
+```
+
+`--check` does not dump or upload. The full run needs `S3_BACKUP_BUCKET`, `AWS_ACCESS_KEY_ID`, and `AWS_SECRET_ACCESS_KEY`. The moto test in `tests/test_p0_security_remediation.py` is not this proof.
+
+## 6. Render Production Notes
 
 Do not set `DATABASE_URL` to the Render URL. `db_backup.py` and `db_restore.py` read that variable and are for the local database only.
 
@@ -143,7 +154,7 @@ Free tier has no dashboard snapshots. The off-box dump is the rollback. A web-se
 
 ---
 
-## 6. Drill Summary
+## 7. Drill Summary
 
 | Step                  | Result |
 |-----------------------|--------|

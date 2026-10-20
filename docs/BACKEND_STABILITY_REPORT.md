@@ -180,8 +180,8 @@ scheduler remained stable throughout.
    every 5 minutes instead of manually.
 5. **ROI route client isolation** — Add JWT + `client_id` filter to
    `/api/v1/roi/*` routes before any client-facing exposure.
-6. **S3 backup offload** — Ship `db_backup.py` output to an S3 bucket after each
-   successful dump.
+6. **S3 backup offload** — Historical note. The INF-01 proof is now
+   `scripts/prove_inf01_s3_drill.py`, not a direct ship from `db_backup.py`.
 
 ---
 

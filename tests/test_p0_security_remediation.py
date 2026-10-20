@@ -5,10 +5,10 @@
 - Fail-closed RAG / Vector / Neo4j retrieval on missing context / unknown metadata
 - Deep cross-tenant negative-access isolation (read, update, delete, export, webhook)
 - DLQ fail-closed on a missing session or a tenant mismatch
-- INF-01 S3 backup pipeline verification with moto (KMS encryption, SHA-256 checksum, 30-day lifecycle)
+- INF-01 moto upload check. Not the drill. The drill is scripts/prove_inf01_s3_drill.py.
 
 Live DLQ concurrency is not in this file. Run scripts/prove_dlq_concurrency.py
-against local Postgres.
+against local Postgres. Live INF-01 is not in this file either.
 """
 from __future__ import annotations
 

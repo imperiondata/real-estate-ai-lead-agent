@@ -62,6 +62,14 @@ async def handler(envelope: dict) -> None:
             })
             # Fan-out to n8n WF-3 (approval.requested) without pausing the chat path.
             try:
+                from app.automation_engine.n8n_claim import upsert_claim
+
+                upsert_claim(
+                    client_id,
+                    lead_id,
+                    "approval.requested",
+                    action_type="negotiation.counter",
+                )
                 await event_bus.publish(
                     "approval.requested",
                     f"Client_{client_id}",

@@ -396,6 +396,12 @@ P0 claim-check proof (local Postgres + Redis only, not Render):
 python scripts/prove_pii_claim_check.py
 ```
 
+n8n bridge hydration evidence (local Postgres; the proof above remains the live regression):
+
+```powershell
+python -m pytest tests/test_p0_n8n_claim_check.py -q
+```
+
 Active Neo4j tenant-isolation proof (local Neo4j + Postgres must be up; not a substitute for the claim-check proof):
 
 ```powershell

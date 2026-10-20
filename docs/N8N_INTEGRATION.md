@@ -25,7 +25,7 @@ Event Bus (Redis Streams: ireios:events)
               filter allowlisted event_type
               POST {N8N_BASE_URL}/webhook/{path}
               header Authorization: Bearer {N8N_API_KEY}
-              body = full bus envelope
+              body = hydrated webhook body (bridge loads Postgres)
                     │
                     ▼
               n8n Webhook workflows (Active) → Gmail / CRM nodes / Drive
@@ -80,10 +80,11 @@ Backend dual-publishes catalog + review aliases. Bridge maps **catalog only**.
 | Session closed | `lead.qualified` | `session.completed` | same + `main.py` |
 | Site visit booked | `site_visit.scheduled` | — | EE after `CalendarExecutor` |
 
-**P0 claim-check (2026-10-19):** every bus payload is exactly `{"lead_id", "tenant_id"}` —
-identifiers only. `name`, `phone`, `chat_context`, scores and `visit_id` no longer travel on
-the stream. Any workflow that needs lead details must fetch the lead from the API or database
-(`GET /api/v1/leads/{id}`). Do not put PII back on the stream to keep a workflow working.
+**P0 claim-check (2026-10-19):** the Redis stream payload is exactly
+`{"lead_id", "tenant_id"}` — identifiers only. The bridge rebuilds the webhook body from the
+tenant-owned Postgres row immediately before POST (`app/automation_engine/n8n_claim.py`).
+A foreign tenant or a missing owned row does not POST (`n8n_claim_denied`). Do not put PII
+back on the stream to keep a workflow working.
 
 **n8n rule:** one event type per workflow. Prefer catalog names.
 
@@ -156,8 +157,9 @@ N8N_BRIDGE_ENABLED=true
 N8N_BRIDGE_GROUP=ireios-n8n
 ```
 
-Restart uvicorn after changing `.env`. Bridge POSTs  
-`{N8N_BASE_URL}/webhook/{path}` with header `Authorization: Bearer {N8N_API_KEY}` and the **full bus envelope**.
+Restart uvicorn after changing `.env`. Bridge POSTs
+`{N8N_BASE_URL}/webhook/{path}` with header `Authorization: Bearer {N8N_API_KEY}` and a
+**hydrated webhook body** rebuilt from Postgres (the stream envelope stays identifiers-only).
 
 **From another container** (API in Compose): `N8N_BASE_URL=http://n8n:5678`.
 
@@ -190,18 +192,32 @@ N8N_BRIDGE_GROUP=ireios-n8n
 }
 ```
 
-n8n expressions: `{{ $json.payload.lead_id }}`, `{{ $json.event_type }}`, `{{ $json.tenant_id }}`.
+n8n expressions: `{{ $json.entity_id }}`, `{{ $json.event_type }}`, `{{ $json.tenant_id }}`,
+plus the hydrated `payload` fields below.
 
 ### Tenant gate (Mayank 2026-10-01, due 2026-10-02)
 
-The bus sends `tenant_id` like `Client_1` (`event_bus_client.build_envelope`). Accept pattern for Maitri's cloud IF: `^Client_[0-9]+$`. WF-1..WF-5 Flatten copies `body.tenant_id || root.tenant_id || ''` and still continues, so an empty tenant reaches Gmail or Sheets. The Oct 2 gate is an IF before the side-effect node on WF-1 and WF-4: missing or non-matching `tenant_id` stops the branch. Cloud UI only. Do not change the localhost CRM links in `n8n_workflows/*.json`. Do not import those files over the live workflows.
+The bus sends `tenant_id` like `Client_1` (`event_bus_client.build_envelope`). Accept pattern for Maitri's cloud IF: `^Client_[0-9]+$`. WF-1..WF-5 Flatten copies `body.tenant_id || root.tenant_id || ''` and still continues, so an empty tenant reaches Gmail or Sheets. The Oct 2 gate is an IF before the side-effect node on WF-1 and WF-4: missing or non-matching `tenant_id` stops the branch. The bridge also denies (`n8n_claim_denied`, ACK without POST) when the tenant/lead pair is not in Postgres. Cloud UI only. Do not change the localhost CRM links in `n8n_workflows/*.json`. Do not import those files over the live workflows.
 
 ## Canonical payloads
 
-Every event's payload is exactly `{lead_id, tenant_id}` (identifiers only, P0 claim-check).
-`tenant_id` is echoed at the top level and inside the payload.
+On the Redis stream, every event's payload is exactly `{lead_id, tenant_id}` (identifiers
+only, P0 claim-check). The bridge replaces it with the hydrated webhook body below before
+POST. The stream still never carries names, phones, emails, chat context, or `visit_id`.
+
+| Event | Hydrated webhook `payload` |
+|-------|----------------------------|
+| `lead.hot` | `name`, `phone`, `location`, `budget`, `property_type`, `score` (= `Lead.conversion_probability`), `assigned_agent`, `trigger` when known |
+| `lead.qualified` | `name`, `phone`, `location`, `budget`, `property_type`, `visit_date` |
+| `site_visit.scheduled` | those Lead fields + `visit_date`; `visit_id`, `html_link`, `provider` only when the context row has them |
+| `approval.requested` | `approval_id`, `action_type`, `name` (name only when `entity_id` is a numeric lead id owned by the tenant) |
+| `marketing.report.generated` | `segments.{hot,warm,cold}.count`, `suggestions` list of `{segment, channel, message}` |
+
+A foreign tenant or a missing owned row is ACKed without a POST (`n8n_claim_denied`).
 
 ### `lead.hot` (WF-1)
+
+Stream envelope (identifiers only):
 
 ```json
 {
@@ -216,8 +232,8 @@ Every event's payload is exactly `{lead_id, tenant_id}` (identifiers only, P0 cl
 }
 ```
 
-Fetch lead details (`name`, `phone`, location, budget, `visit_date`) from the API or
-Postgres when a workflow needs them.
+The bridge POSTs the hydrated body (`name`, `phone`, `location`, `budget`,
+`property_type`, `score`, `assigned_agent`, `trigger`) built from the lead row.
 
 | Chat wording | Bus emits |
 |--------------|-----------|
@@ -229,12 +245,15 @@ Postgres when a workflow needs them.
 
 ### `lead.qualified` (WF-4 CRM)
 
-Emitted from `main.py` `_emit_turn_events` when the 6-field gate completes. Identifiers
-only — CRM field sync is `crm_automation` → AE → EE `update_crm` (loads the lead row).
+Emitted from `main.py` `_emit_turn_events` when the 6-field gate completes. The stream
+payload is identifiers only; CRM field sync is `crm_automation` → AE → EE `update_crm`
+(loads the lead row). The bridge hydrates the WF-4 webhook body from Postgres.
 
 ### `site_visit.scheduled` (WF-2)
 
 Python owns Google create when `GOOGLE_CALENDAR_*` set. n8n = Gmail/ops fan-out only.
+
+Stream payload (identifiers only):
 
 ```json
 {
@@ -245,21 +264,27 @@ Python owns Google create when `GOOGLE_CALENDAR_*` set. n8n = Gmail/ops fan-out 
 }
 ```
 
-`visit_id` is **no longer on the stream** (claim-check; not a `Lead` column — a later
-window can persist it). `visit_date` comes from `Lead.visit_date` in Postgres.
+`visit_id`, `html_link`, and `provider` are **not on the stream**. The Execution Engine
+writes them to `n8n_claim_context`; the bridge adds them to the webhook body only when
+present. `visit_date` comes from `Lead.visit_date` in Postgres.
 
 **Do not** create a second Google event if `provider=google_calendar`.
 
 ### `approval.requested` (WF-3)
 
-From `app/automation_engine/hitl.py`: identifiers only — `approve_path` / `reject_path` /
-param summary stay on the `ApprovalRequest` row (_already the decision source_; the
-dashboard/API resolves them by approval id via `entity_id`/correlation, not the payload). 
+From `app/automation_engine/hitl.py` and `negotiation_agent`: the stream payload is
+identifiers only. The bridge hydrates `approval_id`, `action_type`, and `name` from the
+`ApprovalRequest` row (or the `n8n_claim_context` row for negotiation counters).
+`approve_path` / `reject_path` / param summary stay on the `ApprovalRequest` row
+(_already the decision source_; the dashboard/API resolves them by approval id via
+`entity_id`/correlation, not the payload).
 Approve APIs need JWT — Gmail links should open the **dashboard**, not unauthenticated POST.
 
 ### `marketing.report.generated` (WF-5)
 
-From `marketing_agent`.
+From `marketing_agent`. The bridge recomputes `segment_leads` for the resolved tenant and
+POSTs segment counts plus `{segment, channel, message}` suggestions. No lead-id arrays or
+names.
 
 ## Smoke (bridge + WF-1)
 

@@ -7,6 +7,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
+from app.automation_engine import n8n_claim
 from app.automation_engine.n8n_bridge import (
     DEFAULT_WEBHOOK_MAP,
     N8NBridge,
@@ -41,7 +42,7 @@ def test_parse_webhook_map_invalid_falls_back():
     assert m == DEFAULT_WEBHOOK_MAP
 
 
-def test_forward_envelope_posts_full_envelope():
+def test_forward_envelope_posts_full_envelope(monkeypatch):
     captured = {}
 
     class FakeClient:
@@ -52,19 +53,28 @@ def test_forward_envelope_posts_full_envelope():
             captured["payload"] = payload
             return {"status": "success", "workflow_id": workflow_id}
 
+    def fake_hydrate(envelope):
+        out = dict(envelope)
+        out["payload"] = {"name": "Hydrated", "trigger": "human_handoff"}
+        return out, None
+
+    monkeypatch.setattr(n8n_claim, "hydrate_outbound", fake_hydrate)
+
     bridge = N8NBridge(n8n_client=FakeClient())
     env = {
         "event_id": "e1",
         "event_type": "lead.hot",
         "tenant_id": "Client_1",
         "entity_id": "42",
-        "payload": {"name": "Demo", "trigger": "hot_threshold"},
+        "payload": {"name": "RawEnvelope", "trigger": "hot_threshold"},
     }
     out = asyncio.run(bridge.forward_envelope(env))
     assert out["status"] == "success"
     assert captured["id"] == "ireios_hot_lead_alert"
     assert captured["payload"]["event_type"] == "lead.hot"
-    assert captured["payload"]["payload"]["name"] == "Demo"
+    # Bridge posts the hydrator output, never the raw bus envelope.
+    assert captured["payload"]["payload"]["name"] == "Hydrated"
+    assert captured["payload"]["payload"]["trigger"] == "human_handoff"
 
 
 def test_forward_envelope_skips_unmapped():
@@ -114,9 +124,16 @@ def test_handle_message_acks_when_n8n_unconfigured():
     assert acked == ["2-0"]
 
 
-def test_handle_message_forwards_and_acks_on_success():
+def test_handle_message_forwards_and_acks_on_success(monkeypatch):
     acked = []
     calls = []
+
+    def fake_hydrate(envelope):
+        out = dict(envelope)
+        out["payload"] = {"name": "Hydrated", "trigger": "human_handoff"}
+        return out, None
+
+    monkeypatch.setattr(n8n_claim, "hydrate_outbound", fake_hydrate)
 
     class FakeRedis:
         async def xack(self, stream, group, msg_id):
@@ -147,8 +164,12 @@ def test_handle_message_forwards_and_acks_on_success():
     assert calls[0][1]["payload"]["trigger"] == "human_handoff"
 
 
-def test_handle_message_acks_4xx_permanent():
+def test_handle_message_acks_4xx_permanent(monkeypatch):
     acked = []
+
+    monkeypatch.setattr(
+        n8n_claim, "hydrate_outbound", lambda envelope: (dict(envelope), None)
+    )
 
     class FakeRedis:
         async def xack(self, stream, group, msg_id):
@@ -170,8 +191,12 @@ def test_handle_message_acks_4xx_permanent():
     assert acked == ["4-0"]
 
 
-def test_handle_message_leaves_pel_on_retryable():
+def test_handle_message_leaves_pel_on_retryable(monkeypatch):
     acked = []
+
+    monkeypatch.setattr(
+        n8n_claim, "hydrate_outbound", lambda envelope: (dict(envelope), None)
+    )
 
     class FakeRedis:
         async def xack(self, stream, group, msg_id):
@@ -191,6 +216,76 @@ def test_handle_message_leaves_pel_on_retryable():
     env = {"event_type": "lead.hot", "payload": {}}
     asyncio.run(bridge._handle_message("5-0", {"data": json.dumps(env)}))
     assert acked == []  # leave in PEL
+
+
+def test_handle_message_acks_claim_denied(monkeypatch):
+    acked = []
+    calls = []
+
+    class FakeRedis:
+        async def xack(self, stream, group, msg_id):
+            acked.append(msg_id)
+
+    class OkClient:
+        configured = True
+
+        async def trigger_workflow(self, workflow_id, payload):
+            calls.append((workflow_id, payload))
+            return {"status": "success", "workflow_id": workflow_id}
+
+    monkeypatch.setattr(
+        n8n_claim, "hydrate_outbound", lambda envelope: (None, "not_owned")
+    )
+
+    bridge = N8NBridge(
+        webhook_map={"lead.hot": "ireios_hot_lead_alert"},
+        n8n_client=OkClient(),
+    )
+    bridge._redis = FakeRedis()
+    env = {
+        "event_id": "deny-1",
+        "event_type": "lead.hot",
+        "tenant_id": "Client_9",
+        "entity_id": "99",
+        "payload": {"lead_id": 99, "tenant_id": "Client_9"},
+    }
+    asyncio.run(bridge._handle_message("6-0", {"data": json.dumps(env)}))
+    assert acked == ["6-0"]  # permanent: ACK, no PEL
+    assert calls == []
+
+
+def test_handle_message_leaves_pel_on_hydrate_db_error(monkeypatch):
+    acked = []
+
+    class FakeRedis:
+        async def xack(self, stream, group, msg_id):
+            acked.append(msg_id)
+
+    class OkClient:
+        configured = True
+
+        async def trigger_workflow(self, workflow_id, payload):
+            return {"status": "success", "workflow_id": workflow_id}
+
+    def boom(envelope):
+        raise RuntimeError("db down")
+
+    monkeypatch.setattr(n8n_claim, "hydrate_outbound", boom)
+
+    bridge = N8NBridge(
+        webhook_map={"lead.hot": "ireios_hot_lead_alert"},
+        n8n_client=OkClient(),
+    )
+    bridge._redis = FakeRedis()
+    env = {
+        "event_id": "db-1",
+        "event_type": "lead.hot",
+        "tenant_id": "Client_9",
+        "entity_id": "99",
+        "payload": {"lead_id": 99, "tenant_id": "Client_9"},
+    }
+    asyncio.run(bridge._handle_message("7-0", {"data": json.dumps(env)}))
+    assert acked == []  # retryable: keep in PEL
 
 
 def test_start_noop_when_disabled(monkeypatch):

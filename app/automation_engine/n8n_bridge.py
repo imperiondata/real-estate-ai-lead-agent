@@ -2,8 +2,9 @@
 
 Stock n8n cannot consume Redis Streams (Redis Trigger = Pub/Sub only). This
 bridge joins consumer group ``ireios-n8n`` on the same stream as the CEO
-(``ireios-cg``), filters allowlisted ``event_type`` values, and POSTs the full
-bus envelope to ``POST {N8N_BASE_URL}/webhook/{path}``.
+(``ireios-cg``), filters allowlisted ``event_type`` values, rebuilds the
+webhook body from the tenant-owned Postgres row, and POSTs it to
+``POST {N8N_BASE_URL}/webhook/{path}``.
 
 Never joins the CEO group (would steal messages). No-ops when n8n is
 unconfigured or ``N8N_BRIDGE_ENABLED=false``. Failures never crash the API.
@@ -20,6 +21,7 @@ from typing import Any, Optional
 
 import redis.asyncio as aioredis
 
+from app.automation_engine import n8n_claim
 from config import settings, use_tenant
 
 logger = logging.getLogger("n8n_bridge")
@@ -234,6 +236,20 @@ class N8NBridge:
             await self._redis.xack(self.stream, self.group, msg_id)
             return
 
+        if err == "n8n_claim_denied":
+            # Permanent: the event has no tenant-owned row to hydrate. Never
+            # log the reconstructed body (there is none) or any PII.
+            logger.warning(
+                "n8n_bridge_claim_denied type=%s event_id=%s tenant=%s reason=%s; acking",
+                event_type,
+                envelope.get("event_id"),
+                envelope.get("tenant_id"),
+                (result or {}).get("reason") or "unknown",
+            )
+            self._retry_counts.pop(msg_id, None)
+            await self._redis.xack(self.stream, self.group, msg_id)
+            return
+
         if (
             err in ("n8n_not_configured", "n8n_misconfigured")
             or err.startswith("n8n_http_4")
@@ -285,14 +301,26 @@ class N8NBridge:
         path: Optional[str] = None,
         client: Any = None,
     ) -> dict:
-        """POST full bus envelope to n8n webhook. Testable without Redis."""
+        """Hydrate from Postgres and POST the webhook body. Testable without Redis."""
         event_type = (envelope or {}).get("event_type") or ""
         wf_path = path or self.webhook_map.get(event_type)
         if not wf_path:
             return {"status": "skipped", "error": "no_webhook_mapping"}
         c = client or self._client()
         try:
-            return await c.trigger_workflow(wf_path, envelope)
+            hydrated, deny = n8n_claim.hydrate_outbound(envelope)
+        except Exception as exc:  # noqa: BLE001 - DB errors stay retryable
+            logger.error(
+                "n8n claim hydrate failed type=%s event_id=%s: %s",
+                event_type,
+                envelope.get("event_id"),
+                type(exc).__name__,
+            )
+            return {"status": "error", "error": "n8n_claim_retryable"}
+        if deny:
+            return {"status": "error", "error": "n8n_claim_denied", "reason": deny}
+        try:
+            return await c.trigger_workflow(wf_path, hydrated)
         except Exception as exc:  # noqa: BLE001
             logger.error("n8n bridge forward failed path=%s: %s", wf_path, exc)
             return {"status": "error", "error": "n8n_unreachable"}

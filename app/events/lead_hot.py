@@ -135,6 +135,11 @@ async def publish_lead_hot(
         chat_context=chat_context,
         score=score,
     )
+    # n8n claim-check: persist non-PII routing context before the identifier
+    # event goes on the bus. The bridge rebuilds the webhook body from Postgres.
+    from app.automation_engine.n8n_claim import upsert_claim
+
+    upsert_claim(client_id, lead_id, "lead.hot", trigger=trigger)
     # Primary catalog event
     await _safe_publish(PRIMARY_EVENT, int(client_id), lead_id, payload, source)
     # ALIAS: lead.escalated mirrors lead.hot for n8n PR#10; prefer lead.hot long-term.

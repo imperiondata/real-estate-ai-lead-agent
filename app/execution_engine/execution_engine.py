@@ -123,6 +123,37 @@ class ExecutionEngine:
     # ------------------------------------------------------------------ #
     # Success event publish
     # ------------------------------------------------------------------ #
+    def _write_visit_claim(self, action_request: dict, merged: dict) -> None:
+        """Persist non-PII visit routing context before the bus publish."""
+        client_id = resolve_client_id(action_request.get("tenant_id"))
+        if client_id is None:
+            return
+        raw = merged.get("lead_id")
+        if isinstance(raw, bool):
+            lead_id = None
+        elif isinstance(raw, int):
+            lead_id = raw
+        elif isinstance(raw, str) and raw.strip().isdigit():
+            lead_id = int(raw.strip())
+        else:
+            lead_id = None
+        if lead_id is None:
+            return
+        fields = {
+            key: merged[key]
+            for key in ("visit_id", "html_link", "provider")
+            if merged.get(key)
+        }
+        from app.automation_engine import n8n_claim
+
+        n8n_claim.upsert_claim(
+            client_id,
+            lead_id,
+            "site_visit.scheduled",
+            session_factory=self._session_factory,
+            **fields,
+        )
+
     async def _publish_success(self, action_request: dict, result: dict) -> None:
         action_type = action_request.get("action_type")
         event_type = self._event_map.get(action_type)
@@ -143,6 +174,13 @@ class ExecutionEngine:
                 merged["lead_id"] = int(entity_id)
             except (TypeError, ValueError):
                 merged.setdefault("lead_id", entity_id)
+        if event_type == "site_visit.scheduled":
+            try:
+                self._write_visit_claim(action_request, merged)
+            except Exception as exc:  # noqa: BLE001 - context write must not block
+                logger.warning(
+                    "n8n claim context write skipped type=%s", type(exc).__name__
+                )
         try:
             await self.bus.publish(
                 event_type,

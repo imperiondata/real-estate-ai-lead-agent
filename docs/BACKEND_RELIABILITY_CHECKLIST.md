@@ -108,10 +108,11 @@ See `docs/BACKUP_RESTORE_DRILL.md`.
 
 `db_backup.py` uses `pg_dump --clean --no-owner --no-privileges` — idempotent and
 schema-only-safe. `db_restore.py` accepts any `.sql` artifact and runs `psql -f`.
-Restore was most recently re-verified against the `backup_20260617_073805.sql`
-artifact, and table integrity was confirmed via row-count query on all 7 core tables
-(including the updated `event_logs`, `settings`, and `stripe_customer_id` schema
-additions).
+The older local `db_backup.py` / `db_restore.py` check used `backup_20260617_073805.sql`
+and confirmed table integrity on the 7 core tables then in use. That file is not the
+INF-01 proof. The S3 proof passed on 2026-10-21: local dump, `ChecksumSHA256` match
+before download, restore into `inf01_drill`, 16 public tables, `counts_match=yes`.
+See `docs/BACKUP_RESTORE_DRILL.md` section 5.
 
 ---
 
@@ -123,4 +124,4 @@ additions).
 | Auth on all sensitive routes | ✅ | Three-layer: API key + JWT + Admin key; `/settings` now included under JWT |
 | Retries + DLQ verified | ✅ | 3 DLQ event types, replay tested |
 | Scheduler stability under load | ✅ | Soak test + 126-conversation stress test both passed |
-| Recovery procedure documented | ✅ | `BACKUP_RESTORE_DRILL.md`, re-verified June 17, 2026 |
+| Recovery procedure documented | ✅ | `BACKUP_RESTORE_DRILL.md`. Local restore June 17, 2026. INF-01 S3 proof October 21, 2026 |

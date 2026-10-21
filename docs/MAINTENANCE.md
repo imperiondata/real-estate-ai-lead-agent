@@ -408,7 +408,7 @@ Active Neo4j tenant-isolation proof (local Neo4j + Postgres must be up; not a su
 python scripts/prove_graph_isolation.py
 ```
 
-INF-01 S3 drill. Local source only. Uploads to `S3_BACKUP_BUCKET`, requires `HeadObject` `ChecksumSHA256` to match the local dump before download, restores into local `inf01_drill`, then matches table counts. Do not point it at Render. `--check` does not dump or upload.
+INF-01 S3 drill. Local source only. Uploads to `S3_BACKUP_BUCKET`, requires `HeadObject` `ChecksumSHA256` to match the local dump before download, restores into local `inf01_drill`, then matches table counts. Do not point it at Render. `--check` does not dump or upload. Set `AWS_REGION=ap-south-1`. The 2026-10-21 pass is in `docs/BACKUP_RESTORE_DRILL.md` section 5.
 
 ```powershell
 python scripts/prove_inf01_s3_drill.py --check

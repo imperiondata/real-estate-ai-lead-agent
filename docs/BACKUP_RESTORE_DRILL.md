@@ -134,7 +134,29 @@ python scripts/prove_inf01_s3_drill.py --check
 python scripts/prove_inf01_s3_drill.py
 ```
 
-`--check` does not dump or upload. The full run needs `S3_BACKUP_BUCKET`, `AWS_ACCESS_KEY_ID`, and `AWS_SECRET_ACCESS_KEY`. The moto test in `tests/test_p0_security_remediation.py` is not this proof.
+`--check` does not dump or upload. The full run needs `S3_BACKUP_BUCKET`, `AWS_ACCESS_KEY_ID`, and `AWS_SECRET_ACCESS_KEY`. Set `AWS_REGION=ap-south-1`. If it is unset, the script falls back to `us-east-1`. Do not set `KMS_KEY_ARN` for the AES-256 bucket. The moto test in `tests/test_p0_security_remediation.py` is not this proof.
+
+### Completed run (2026-10-21)
+
+Local Postgres only. Not Render. No new script commit. The script was `2ce644d` on `remediation/p0-security-fixes`.
+
+| Field | Result |
+|-------|--------|
+| backup_id | `inf01-drill/20261021T162032Z/local_backup_20261021T162032Z.sql` |
+| bucket | `ai-unique-system-paas-production-backups` |
+| region | `ap-south-1` |
+| sse | `AES256` (KMS not set) |
+| started_at | `2026-10-21T16:20:32Z` |
+| finished_at | `2026-10-21T16:21:53Z` |
+| recovery_seconds | `81.565` |
+| s3_checksum_match | yes |
+| sidecar_match | yes |
+| counts_match | yes |
+| source_db | `realestate_db` |
+| restore_db | `inf01_drill` |
+| result | `INF01_S3_DRILL_PASS` |
+
+`HeadObject` `ChecksumSHA256` matched the local digest before download. Sixteen public tables were counted on the source and on `inf01_drill`. The counts matched. Local dump files were deleted. The S3 object and its `.sha256` sidecar were left in the bucket.
 
 ## 6. Render Production Notes
 
@@ -154,7 +176,9 @@ Free tier has no dashboard snapshots. The off-box dump is the rollback. A web-se
 
 ---
 
-## 7. Drill Summary
+## 7. Earlier local restore (2026-06-17)
+
+This table is `db_backup.py` / `db_restore.py` only. It is not the INF-01 S3 proof. That proof is section 5.
 
 | Step                  | Result |
 |-----------------------|--------|

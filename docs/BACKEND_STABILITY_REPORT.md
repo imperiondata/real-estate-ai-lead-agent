@@ -92,7 +92,9 @@ Full process documented in `docs/DLQ_REPLAY_PROCESS.md`.
 - Post-restore row-count query → all 7 tables intact, including the newer
   `settings`, `stripe_customer_id`, and `event_logs` schema additions ✅
 
-Full drill log in `docs/BACKUP_RESTORE_DRILL.md`.
+Full local-restore log in `docs/BACKUP_RESTORE_DRILL.md` section 7. That run is not
+the INF-01 S3 proof. The S3 proof passed on 2026-10-21 and is recorded in section 5
+of the same file.
 
 ---
 
@@ -180,8 +182,9 @@ scheduler remained stable throughout.
    every 5 minutes instead of manually.
 5. **ROI route client isolation** — Add JWT + `client_id` filter to
    `/api/v1/roi/*` routes before any client-facing exposure.
-6. **S3 backup offload** — Historical note. The INF-01 proof is now
+6. **S3 backup offload** — Historical note. The INF-01 proof is
    `scripts/prove_inf01_s3_drill.py`, not a direct ship from `db_backup.py`.
+   That proof passed locally on 2026-10-21. See `docs/BACKUP_RESTORE_DRILL.md`.
 
 ---
 

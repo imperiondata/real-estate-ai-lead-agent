@@ -1,4 +1,4 @@
-"""INF-01 drill: local dump -> S3 upload -> S3 download -> isolated local restore.
+"""INF-01 drill: local dump -> S3 upload -> ChecksumSHA256 gate -> download -> isolated restore.
 
 Does not touch Render. Does not print credentials, database URLs, or row data.
 Requires, when run for real:
@@ -21,6 +21,7 @@ Optional:
 from __future__ import annotations
 
 import argparse
+import base64
 import hashlib
 import os
 import re
@@ -136,12 +137,42 @@ def _stamp() -> str:
     return datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
 
 
-def _sha256(path: Path) -> str:
+def _sha256_digest(path: Path) -> bytes:
     digest = hashlib.sha256()
     with path.open("rb") as handle:
         for chunk in iter(lambda: handle.read(1024 * 1024), b""):
             digest.update(chunk)
-    return digest.hexdigest()
+    return digest.digest()
+
+
+def _sha256(path: Path) -> str:
+    return _sha256_digest(path).hex()
+
+
+def sha256_b64(path: Path) -> str:
+    """Standard base64 of the raw SHA-256 digest. This is what S3 returns."""
+    return base64.b64encode(_sha256_digest(path)).decode("ascii")
+
+
+def _b64_bytes(value: str) -> bytes:
+    padded = value.strip()
+    padded += "=" * ((4 - len(padded) % 4) % 4)
+    return base64.b64decode(padded, validate=False)
+
+
+def checksums_match(head: dict, expected_b64: str) -> bool:
+    """True only when HeadObject ChecksumSHA256 equals the local digest.
+
+    Compare decoded bytes so a missing pad does not fail a real match.
+    A missing header is a failure.
+    """
+    got = (head or {}).get("ChecksumSHA256") or ""
+    if not got or not expected_b64:
+        return False
+    try:
+        return _b64_bytes(got) == _b64_bytes(expected_b64)
+    except Exception:
+        return False
 
 
 def _print_tool(prefix: str, proc: subprocess.CompletedProcess) -> None:
@@ -333,10 +364,12 @@ def drill() -> int:
 
         upload_started = _utc()
         client = _s3_client(region)
+        expected_b64 = sha256_b64(dump_path)
         put_args = {
             "Bucket": bucket,
             "Key": backup_id,
             "Body": dump_path.read_bytes(),
+            "ChecksumAlgorithm": "SHA256",
         }
         if kms:
             put_args["ServerSideEncryption"] = "aws:kms"
@@ -344,18 +377,29 @@ def drill() -> int:
         else:
             put_args["ServerSideEncryption"] = "AES256"
         put = client.put_object(**put_args)
+        head = client.head_object(
+            Bucket=bucket,
+            Key=backup_id,
+            ChecksumMode="ENABLED",
+        )
+        checksum_ok = checksums_match(head, expected_b64)
+        print(f"upload_started_at={upload_started}")
+        print(f"upload_finished_at={_utc()}")
+        print(f"s3_etag_present={'yes' if put.get('ETag') else 'no'}")
+        print(f"s3_sse={head.get('ServerSideEncryption', 'missing')}")
+        print(f"s3_bytes={head.get('ContentLength')}")
+        print("s3_checksum_algo=SHA256")
+        print(f"s3_checksum_match={'yes' if checksum_ok else 'no'}")
+        if not checksum_ok:
+            print("INF01_S3_DRILL_FAIL checksum_metadata_mismatch")
+            return 1
+
         client.put_object(
             Bucket=bucket,
             Key=sha_id,
             Body=f"{digest}  local_backup_{stamp}.sql\n".encode("utf-8"),
             ServerSideEncryption="AES256",
         )
-        head = client.head_object(Bucket=bucket, Key=backup_id)
-        print(f"upload_started_at={upload_started}")
-        print(f"upload_finished_at={_utc()}")
-        print(f"s3_etag_present={'yes' if put.get('ETag') else 'no'}")
-        print(f"s3_sse={head.get('ServerSideEncryption', 'missing')}")
-        print(f"s3_bytes={head.get('ContentLength')}")
 
         download_started = _utc()
         obj = client.get_object(Bucket=bucket, Key=backup_id)

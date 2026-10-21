@@ -127,7 +127,7 @@ and `event_logs`, restored cleanly with zero data loss.
 
 ## 5. INF-01 S3 proof
 
-A local dump followed by a local restore is not the proof. `scripts/prove_inf01_s3_drill.py` dumps the local database, uploads that file, downloads the same object, restores it into local `inf01_drill`, and matches table counts. It refuses a non-local source or restore host. It does not read `LIVE_DATABASE_URL`. It does not print the URL, the AWS key, or row data.
+A local dump followed by a local restore is not the proof. `scripts/prove_inf01_s3_drill.py` dumps the local database, uploads that file with `ChecksumAlgorithm=SHA256`, and refuses to download unless `HeadObject` `ChecksumSHA256` matches the local digest. It then restores into local `inf01_drill` and matches table counts. It refuses a non-local source or restore host. It does not read `LIVE_DATABASE_URL`. It does not print the URL, the AWS key, or row data.
 
 ```powershell
 python scripts/prove_inf01_s3_drill.py --check

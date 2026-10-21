@@ -25,7 +25,7 @@ High-signal, repo-specific facts an agent would likely miss without help.
 | Tenant isolation drill | `python gate_isolation_test.py` |
 | DLQ drill | `python gate_dlq_drill.py` then `python dlq_replay.py` |
 | DB backup / restore (local only) | `python db_backup.py` / `python db_restore.py backups/backup_*.sql` |
-| INF-01 S3 drill | `python scripts/prove_inf01_s3_drill.py --check` then, after `S3_BACKUP_BUCKET` and AWS keys are set, `python scripts/prove_inf01_s3_drill.py`. Local dump, S3 round-trip, restore into `inf01_drill`. Not Render. |
+| INF-01 S3 drill | `python scripts/prove_inf01_s3_drill.py --check` then, after `S3_BACKUP_BUCKET` and AWS keys are set, `python scripts/prove_inf01_s3_drill.py`. Local dump, S3 upload, `ChecksumSHA256` must match before download, restore into `inf01_drill`. Not Render. |
 | Live DR vs Render | `python live_dr.py counts` then `dump` / `restore --confirm LIVE` (`LIVE_DATABASE_URL` only; dumps outside the repo). Do not assign it over `DATABASE_URL`. |
 | Frontend lint | `cd frontend && npm run lint` (ESLint, no TypeScript check) |
 | Phase 3 concurrency tests | `pytest tests/test_p3_concurrency.py -v` (dependency-free source-inspection suite) |

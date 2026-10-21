@@ -103,7 +103,7 @@ python db_backup.py
 python db_restore.py backups\backup_YYYYMMDD_HHMMSS.sql
 ```
 
-Those two scripts are not the INF-01 proof. The proof is `scripts/prove_inf01_s3_drill.py`: local dump, upload, download, restore into `inf01_drill`, count match. See the command block below.
+Those two scripts are not the INF-01 proof. The proof is `scripts/prove_inf01_s3_drill.py`: local dump, upload, `ChecksumSHA256` match before download, restore into `inf01_drill`, count match. See the command block below.
 
 Live Render drill. Reads `LIVE_DATABASE_URL` only. Dumps go to `../dr_dumps` (or `DR_DUMP_DIR`), never inside the repo. Restore will not run without `--confirm LIVE`.
 
@@ -408,7 +408,7 @@ Active Neo4j tenant-isolation proof (local Neo4j + Postgres must be up; not a su
 python scripts/prove_graph_isolation.py
 ```
 
-INF-01 S3 drill. Local source only. Uploads to `S3_BACKUP_BUCKET`, downloads that object, restores into local `inf01_drill`, then matches table counts. Do not point it at Render. `--check` does not dump or upload.
+INF-01 S3 drill. Local source only. Uploads to `S3_BACKUP_BUCKET`, requires `HeadObject` `ChecksumSHA256` to match the local dump before download, restores into local `inf01_drill`, then matches table counts. Do not point it at Render. `--check` does not dump or upload.
 
 ```powershell
 python scripts/prove_inf01_s3_drill.py --check
@@ -538,7 +538,7 @@ Structured logs use `request_id` / `tenant_id` contextvars when set.
 | `add_client.py` | Production client provisioning |
 | `migrate_db.py` | SQL additive migrations |
 | `db_backup.py` / `db_restore.py` | Local DB snapshots (`DATABASE_URL` only). Not the INF-01 proof. |
-| `scripts/prove_inf01_s3_drill.py` | INF-01: local dump, S3 round-trip, restore into `inf01_drill` |
+| `scripts/prove_inf01_s3_drill.py` | INF-01: local dump, S3 upload, ChecksumSHA256 gate, restore into `inf01_drill` |
 | `live_dr.py` | Live Render dump / restore (`LIVE_DATABASE_URL` only) |
 | `load_chat_concurrency.py` | Live load vs Render (`LIVE_API_BASE_URL` + `LIVE_CLIENT_B_KEY`) |
 | `gate_isolation_test.py` | Tenant isolation |

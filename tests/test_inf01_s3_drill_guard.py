@@ -1,4 +1,6 @@
 """INF-01 drill guards. No AWS, no live dump, no credentials printed."""
+import base64
+import hashlib
 from pathlib import Path
 
 import scripts.prove_inf01_s3_drill as drill
@@ -58,3 +60,31 @@ def test_script_does_not_read_live_database_url():
     src = Path(drill.__file__).read_text(encoding="utf-8")
     assert "LIVE_DATABASE_URL" not in src
     assert "put_bucket_lifecycle_configuration" not in src
+
+
+def test_sha256_b64_matches_known_bytes(tmp_path):
+    payload = b"PG_DUMP_FORMAT_C_BINARY_REVENUE_OS_BACKUP_DRILL_DATA"
+    path = tmp_path / "dump.sql"
+    path.write_bytes(payload)
+    expected = base64.b64encode(hashlib.sha256(payload).digest()).decode("ascii")
+    assert drill.sha256_b64(path) == expected
+    assert drill.checksums_match({"ChecksumSHA256": expected}, expected) is True
+    assert drill.checksums_match({"ChecksumSHA256": expected.rstrip("=")}, expected) is True
+
+
+def test_checksum_mismatch_or_missing_fails():
+    expected = base64.b64encode(b"\x00" * 32).decode("ascii")
+    assert drill.checksums_match({}, expected) is False
+    assert drill.checksums_match({"ChecksumSHA256": ""}, expected) is False
+    assert drill.checksums_match({"ChecksumSHA256": "not-base64!!!"}, expected) is False
+    other = base64.b64encode(b"\x01" * 32).decode("ascii")
+    assert drill.checksums_match({"ChecksumSHA256": other}, expected) is False
+
+
+def test_checksum_gate_is_before_download():
+    src = Path(drill.__file__).read_text(encoding="utf-8")
+    assert '"ChecksumAlgorithm": "SHA256"' in src
+    assert 'ChecksumMode="ENABLED"' in src
+    fail_at = src.index("checksum_metadata_mismatch")
+    download_at = src.index('client.get_object(Bucket=bucket, Key=backup_id)')
+    assert fail_at < download_at

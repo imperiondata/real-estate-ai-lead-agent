@@ -64,12 +64,13 @@ production without a pre-restore snapshot.
 ### Command
 
 ```powershell
-python db_restore.py backups/backup_20260617_073805.sql
+python db_restore.py backups/backup_20260617_073805.sql --confirm LOCAL
 ```
 
 ### What it does
 
-`db_restore.py` calls `psql <DATABASE_URL> -f <backup_file>`. The SQL file uses
+`db_restore.py` calls `psql <DATABASE_URL> -v ON_ERROR_STOP=1 -f <backup_file>`
+(only after `--confirm LOCAL` and a local-host check). The SQL file uses
 `--clean` output so it issues `DROP TABLE IF EXISTS` before each `CREATE TABLE`,
 making the restore idempotent.
 
@@ -125,7 +126,19 @@ and `event_logs`, restored cleanly with zero data loss.
 
 ---
 
-## 5. INF-01 S3 proof
+## 5. Current Local Guard Rule (P0 INF01, Oct 2026)
+
+- Local scripts refuse a non-local host and exit non-zero on tool failure.
+- `db_backup.py` exits `1` on `pg_dump` failure (deleting the partial file) and
+  on missing/empty output without `CREATE TABLE` for `clients`.
+- Restore requires `--confirm LOCAL` and runs
+  `psql -v ON_ERROR_STOP=1 -f <file>`; any failure exits `1`.
+- Live dump and restore stay on `live_dr.py` and `LIVE_DATABASE_URL`.
+- Off-site encryption is not done.
+
+---
+
+## 6. INF-01 S3 proof
 
 A local dump followed by a local restore is not the proof. `scripts/prove_inf01_s3_drill.py` dumps the local database, uploads that file with `ChecksumAlgorithm=SHA256`, and refuses to download unless `HeadObject` `ChecksumSHA256` matches the local digest. It then restores into local `inf01_drill` and matches table counts. It refuses a non-local source or restore host. It does not read `LIVE_DATABASE_URL`. It does not print the URL, the AWS key, or row data.
 
@@ -158,7 +171,9 @@ Local Postgres only. Not Render. No new script commit. The script was `2ce644d` 
 
 `HeadObject` `ChecksumSHA256` matched the local digest before download. Sixteen public tables were counted on the source and on `inf01_drill`. The counts matched. Local dump files were deleted. The S3 object and its `.sha256` sidecar were left in the bucket.
 
-## 6. Render Production Notes
+---
+
+## 7. Render Production Notes
 
 Do not set `DATABASE_URL` to the Render URL. `db_backup.py` and `db_restore.py` read that variable and are for the local database only.
 
@@ -176,9 +191,9 @@ Free tier has no dashboard snapshots. The off-box dump is the rollback. A web-se
 
 ---
 
-## 7. Earlier local restore (2026-06-17)
+## 8. Earlier local restore (2026-06-17)
 
-This table is `db_backup.py` / `db_restore.py` only. It is not the INF-01 S3 proof. That proof is section 5.
+This table is `db_backup.py` / `db_restore.py` only. It is not the INF-01 S3 proof. That proof is section 6.
 
 | Step                  | Result |
 |-----------------------|--------|

@@ -109,6 +109,7 @@ def process_ml_followup(
         day_map = {"Day 0": 0, "Day 1": 1, "Day 3": 3, "Day 7": 7}
         current_day = day_map.get(current_stage, 0)
         assigned_agent = {"assigned_agent": lead_data.get("assigned_agent", "ABC Properties Team")}
+
         generated = generate_followup_payload(
             lead_data=lead_data,
             assigned_agent=assigned_agent,
@@ -155,17 +156,33 @@ async def main():
     logger.info("Starting DLQ Replay Job...")
     db = SessionLocal()
     try:
-        pending_events = db.query(DLQEvent).filter(DLQEvent.status == "pending").all()
-        if not pending_events:
+        pending_ids = [
+            row_id
+            for (row_id,) in db.query(DLQEvent.id).filter(DLQEvent.status == "pending").all()
+        ]
+        if not pending_ids:
             logger.info("No pending events in DLQ.")
             return
 
-        logger.info(f"Found {len(pending_events)} pending events. Beginning replay...")
+        logger.info(f"Found {len(pending_ids)} pending events. Beginning replay...")
         success_count = 0
-        
-        for event in pending_events:
+
+        for event_id in pending_ids:
+            # Reload each row under lock; a missing row means another run holds
+            # it or it is no longer pending — skip without sending.
+            event = (
+                db.query(DLQEvent)
+                .filter(DLQEvent.id == event_id, DLQEvent.status == "pending")
+                .with_for_update(skip_locked=True)
+                .first()
+            )
+            if event is None:
+                logger.info(f"Skipping Event ID: {event_id} (locked or no longer pending).")
+                db.rollback()
+                continue
+            logger.info(f"Replaying Event ID: {event.id} | Target: {event.target_endpoint}")
+
             if event.target_endpoint == "ml_followup_scheduler":
-                logger.info(f"Replaying Event ID: {event.id} | Target: {event.target_endpoint}")
                 success = process_ml_followup(
                     event.payload,
                     db,
@@ -182,37 +199,25 @@ async def main():
                     )
                 continue
 
-            claimed = db.query(DLQEvent).filter(
-                DLQEvent.id == event.id,
-                DLQEvent.status == "pending"
-            ).update({"status": "processing"})
-            db.commit()
-
-            if not claimed:
-                logger.info(f"Event ID {event.id} already claimed by another worker. Skipping.")
-                continue
-
-            logger.info(f"Replaying Event ID: {event.id} | Target: {event.target_endpoint}")
             success = False
-            
+
             if event.target_endpoint == "hubspot_crm":
                 success = await process_hubspot_crm(event.payload)
             elif event.target_endpoint == "twilio_outbound":
                 success = process_twilio_outbound(event.payload)
             else:
                 logger.warning(f"Unknown target endpoint: {event.target_endpoint}")
-                
+
             if success:
                 event.status = "resolved"
                 db.commit()
                 logger.info(f"[PASS] Event {event.id} resolved.")
                 success_count += 1
             else:
-                event.status = "failed"
-                db.commit()
-                logger.error(f"[FAIL] Event {event.id} failed again. Marked as failed.")
-                
-        logger.info(f"DLQ Replay complete. {success_count}/{len(pending_events)} events recovered successfully.")
+                db.rollback()
+                logger.error(f"[FAIL] Event {event.id} failed again. Keeping as pending.")
+
+        logger.info(f"DLQ Replay complete. {success_count}/{len(pending_ids)} events recovered successfully.")
     except Exception as e:
         logger.error(f"DLQ Replay Job crashed: {e}")
     finally:

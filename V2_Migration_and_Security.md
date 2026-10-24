@@ -6,7 +6,7 @@ Owner: Aritro. This document aligns to Mayank's tenancy note and to Maitri's Ind
 
 No live schema change is proposed for execution. Piyush banned live database changes until he reviews this package. The SQL below is a proposal. It is not a migration to run.
 
-Four items are marked **pending Mayank**. If he rejects one, only that section changes before Monday's review. The shadow-schema plan does not change unless he forbids it.
+Mayank accepted all four decisions on 25 October 2026. He is updating the ER diagram and the tenancy note to match this plan. Live schema changes stay banned until Piyush reviews the package.
 
 ---
 
@@ -114,7 +114,7 @@ Each current client email becomes a User with one `tenant_membership` owner role
 
 ## 5. Field split
 
-**Pending Mayank.** His leads diagram has no name or phone. This plan keeps them relational. Claim-check and CRM sync read them as columns. They do not move into `industry_dynamic_data`.
+**Accepted.** Name and phone stay standard relational columns on `leads`. Claim-check and CRM sync read them as columns. They do not move into `industry_dynamic_data`.
 
 Global lead columns in `v2`:
 
@@ -146,9 +146,7 @@ Channel and CRM columns that are not industry fields (`source`, `whatsapp_opt_in
 
 ## 6. Credentials
 
-**Pending Mayank.** His ER has no place for the tenant API key or Twilio credentials. WhatsApp ingress is not a user login.
-
-Propose `v2.tenant_credentials`, owned by the tenant, separate from `users`:
+**Accepted.** WhatsApp ingress is not a user login. Define `v2.tenant_credentials`, owned by the tenant, separate from `users`:
 
 ```text
 v2.tenant_credentials
@@ -170,7 +168,7 @@ Unique on `(tenant_id, kind)` for this cut, because each current client has one 
 
 ## 7. Messages stay rows
 
-**Pending Mayank.** His ER stores `conversation.message_history` as JSONB. This migration does not collapse `messages` into that blob.
+**Accepted.** Keep a separate `messages` table with a `tenant_id` foreign key. This migration does not collapse messages into `conversation.message_history`.
 
 Webhook idempotency is `webhook_logs.message_sid`. The history window reads message rows. A single JSON document cannot do either without a rewrite that is outside this cut.
 
@@ -182,9 +180,9 @@ Webhook idempotency is `webhook_logs.message_sid`. The history window reads mess
 
 ## 8. CASCADE to RESTRICT
 
-V2 tenant foreign keys use `ON DELETE RESTRICT`, as in Mayank's note. This cut creates those constraints only on `v2` tables.
+V2 tenant foreign keys will use `ON DELETE RESTRICT`. This cut does not flip that constraint yet. Mayank confirmed the hold: do not apply `RESTRICT` until the app no longer deletes a client and expects children to vanish.
 
-V1 cascade behavior stays until the app no longer deletes a client and expects children to vanish. The contract step that drops V1, or that repoints deletes at an audited archive job, is later. Deleting a tenant in V2 is a background job: soft delete, archive, then purge. It is not an `ON DELETE CASCADE`.
+This cut creates `v2` tables without copying V1's cascade behavior into new tenant deletes. The contract step that drops V1, or that repoints deletes at an audited archive job, is later. Deleting a tenant in V2 is a background job: soft delete, archive, then purge. It is not an `ON DELETE CASCADE`.
 
 ---
 
@@ -194,7 +192,7 @@ Fail closed. A missing tenant context returns no operational rows. It does not m
 
 ### 9.1 Row-level security
 
-**Pending the correction to Mayank's example.** His sample policy is bypassed by the table owner. Render's application role often owns the tables. Without the two rules below, RLS does not meet the P0 isolation bar.
+**Accepted.** `FORCE ROW LEVEL SECURITY` and a non-owner app role are required. The sample policy is bypassed by the table owner. Render's application role often owns the tables. Without the two rules below, RLS does not meet the P0 isolation bar.
 
 - `ENABLE ROW LEVEL SECURITY` and `FORCE ROW LEVEL SECURITY` on every operational table.
 - The application role is not the owner and is not a superuser. It has `SELECT`, `INSERT`, `UPDATE` on the operational tables and nothing else.
@@ -281,13 +279,16 @@ Neo4j is not migrated in place. After the read cut is approved, graph nodes are 
 
 ---
 
-## 12. Pending Mayank
+## 12. Accepted by Mayank
 
-| # | Proposal in this document | If rejected |
+Accepted 25 October 2026. He is updating the ER diagram and the tenancy note to match.
+
+| # | Decision | Status |
 |---|---|---|
-| 1 | Name and phone stay relational columns | Revise section 5 only. Do not move them into JSONB unless he requires it, and then the claim-check plan changes in the same revision |
-| 2 | `v2.tenant_credentials` for API key and Twilio | Revise section 6 only. Ingress auth must still not live on the User row |
-| 3 | Message rows stay the source of truth | Revise section 7 only. Do not collapse them in this cut without a replacement for `message_sid` idempotency |
-| 4 | `FORCE ROW LEVEL SECURITY`, non-owner app role, shadow schema, dual-write, V1 left intact | Revise section 9.1 if he rejects FORCE or the role split. The shadow schema in section 3 stands unless he forbids it |
+| 1 | Name and phone stay relational columns on `leads` | Accepted. Section 5 |
+| 2 | `v2.tenant_credentials` for the API key and Twilio tokens | Accepted. Section 6. Not a User row |
+| 3 | Separate `messages` table with `tenant_id`. Do not collapse into JSONB | Accepted. Section 7 |
+| 4 | `FORCE ROW LEVEL SECURITY`, non-owner app role, shadow `v2` schema, dual-write, `v1_client_id` map. V1 left intact for rollback | Accepted. Sections 3 and 9.1 |
+| 5 | Hold `ON DELETE RESTRICT` until cascading deletes are removed from the app | Accepted. Section 8 |
 
-Industry JSON key names are not pending. They are `location`, `budget`, `property_type`, `intent`, and `visit_date`, from `V2_Industry_Profile.md`, profile `real_estate` version `1`.
+Industry JSON key names are `location`, `budget`, `property_type`, `intent`, and `visit_date`, from `V2_Industry_Profile.md`, profile `real_estate` version `1`.

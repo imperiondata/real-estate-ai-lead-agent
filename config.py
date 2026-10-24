@@ -98,6 +98,15 @@ class Settings(BaseSettings):
     # AWS Secrets Manager
     AWS_REGION: str = ""
     AWS_SECRET_NAME: str = ""
+    # INF-01 drill. Empty is fine. Declared because Settings rejects unknown
+    # .env keys and uvicorn will not start if these are present but missing here.
+    # The drill script reads the environment itself. Do not copy these over
+    # DATABASE_URL or LIVE_DATABASE_URL.
+    S3_BACKUP_BUCKET: str = ""
+    AWS_ACCESS_KEY_ID: str = ""
+    AWS_SECRET_ACCESS_KEY: str = ""
+    KMS_KEY_ARN: str = ""
+    INF01_RESTORE_URL: str = ""
 
     # --- IREIOS 3.0 expansion env vars (wired in later phases) ---
     # Redis Streams event bus (Phase 1)

@@ -35,7 +35,7 @@ Tables that carry `client_id` today:
 
 `webhook_logs` has no `client_id`. That is a V1 gap. V2 gives it `tenant_id`. It is not fixed by a live alter in this package.
 
-Almost every `client_id` foreign key is `ON DELETE CASCADE`. SQLAlchemy relationships also cascade deletes. V2 forbids cascade deletes of tenant data. That flip is a later contract step, not the first migration. See section 8.
+Almost every `client_id` foreign key is `ON DELETE CASCADE`. SQLAlchemy relationships also cascade deletes. This cut keeps that behavior on `v2` so dual-write does not break the app. The flip to `ON DELETE RESTRICT` is a later contract step. See section 8.
 
 There is no Agency, no User separate from Client, no membership table, and no RLS. Auth is an API key, a dashboard JWT, or an admin key. Background jobs open `SessionLocal()` with no tenant session variable.
 
@@ -50,7 +50,7 @@ External contracts that embed the integer id:
 
 ## 2. Target, and what this cut will not do
 
-Mayank's model is Platform, Agency, Tenant, User. Operational rows carry `tenant_id` UUID. Industry-specific lead fields live in `industry_dynamic_data` JSONB, validated against the Industry Profile. RLS uses `app.current_tenant_id`. Tenant foreign keys use `ON DELETE RESTRICT`.
+Mayank's model is Platform, Agency, Tenant, User. Operational rows carry `tenant_id` UUID. Industry-specific lead fields live in `industry_dynamic_data` JSONB, validated against the Industry Profile. RLS uses `app.current_tenant_id`. This cut uses `ON DELETE CASCADE` on `v2` tenant foreign keys. `ON DELETE RESTRICT` waits for the contract step.
 
 This cut does not:
 
@@ -114,7 +114,7 @@ Each current client email becomes a User with one `tenant_membership` owner role
 
 ## 5. Field split
 
-**Accepted.** Name and phone stay standard relational columns on `leads`. Claim-check and CRM sync read them as columns. They do not move into `industry_dynamic_data`.
+**Accepted.** Name and phone stay standard relational columns on `leads`. Claim-check and CRM sync read them as columns. They do not move into `industry_dynamic_data`. They are nullable for this cut. Empty V1 values are stored as null, not as `""` and not as a placeholder. `NOT NULL` waits for the contract step, after unqualified leads have been backfilled.
 
 Global lead columns in `v2`:
 
@@ -146,21 +146,20 @@ Channel and CRM columns that are not industry fields (`source`, `whatsapp_opt_in
 
 ## 6. Credentials
 
-**Accepted.** WhatsApp ingress is not a user login. Define `v2.tenant_credentials`, owned by the tenant, separate from `users`:
+**Accepted.** WhatsApp ingress is not a user login. One `v2.tenant_credentials` row per tenant, separate from `users`. This matches Mayank's one-to-one credential entity.
 
 ```text
 v2.tenant_credentials
-  id                    uuid primary key
-  tenant_id             uuid not null references v2.tenants(id) on delete restrict
-  kind                  text not null   -- api_key | twilio
-  key_hash              text            -- sha-256 of the API key; raw key is not stored
-  twilio_phone_number   text
-  twilio_account_sid    text
-  twilio_auth_token_ref text            -- reference to a secret store, not the raw token in a doc
-  created_at            timestamptz not null default now()
+  id                  uuid primary key
+  tenant_id           uuid not null unique references v2.tenants(id) on delete cascade
+  api_key_hash        text
+  twilio_phone_number text
+  twilio_account_sid  text
+  twilio_secret_ref   text
+  created_at          timestamptz not null default now()
 ```
 
-Unique on `(tenant_id, kind)` for this cut, because each current client has one API key and one Twilio number. The raw Twilio auth token is not copied into git, into this document, or into a new plaintext column if a secret store is available. Until that store exists, the cutover plan must say where the token lives and who can read it. It does not live on the User row.
+`twilio_secret_ref` is a secret-store reference. The raw auth token is not a column, not JSONB, and not in this document. Phone number and account SID stay because webhook routing needs them. They are not the token. The API key is stored only as a hash. The foreign key uses `ON DELETE CASCADE` for this cut, same as the other `v2` tenant keys. The token does not live on the User row.
 
 `X-API-Key` resolves through `tenant_credentials` to `tenant_id`, then through the same request context as a JWT. The handler never trusts a `tenant_id` in the body.
 
@@ -178,11 +177,11 @@ Webhook idempotency is `webhook_logs.message_sid`. The history window reads mess
 
 ---
 
-## 8. CASCADE to RESTRICT
+## 8. CASCADE now, RESTRICT later
 
-V2 tenant foreign keys will use `ON DELETE RESTRICT`. This cut does not flip that constraint yet. Mayank confirmed the hold: do not apply `RESTRICT` until the app no longer deletes a client and expects children to vanish.
+Mayank confirmed this on 26 October 2026. This cut uses `ON DELETE CASCADE` on `v2` tenant foreign keys so the shadow schema matches the ER and dual-write does not break app deletes that expect child rows to disappear. A tenant delete in this cut still drops child rows.
 
-This cut creates `v2` tables without copying V1's cascade behavior into new tenant deletes. The contract step that drops V1, or that repoints deletes at an audited archive job, is later. Deleting a tenant in V2 is a background job: soft delete, archive, then purge. It is not an `ON DELETE CASCADE`.
+`ON DELETE RESTRICT` is the later contract step, after the app no longer deletes a client and expects children to vanish. That step also replaces tenant delete with a background job: soft delete, archive, then purge. It is not part of Tuesday's package, and it is not applied to V1 in this cut.
 
 ---
 
@@ -281,14 +280,14 @@ Neo4j is not migrated in place. After the read cut is approved, graph nodes are 
 
 ## 12. Accepted by Mayank
 
-Accepted 25 October 2026. He is updating the ER diagram and the tenancy note to match.
+Accepted 25 October 2026. Clarified 26 October 2026. He is updating the ER diagram for nullable name and phone, and for `twilio_secret_ref`.
 
 | # | Decision | Status |
 |---|---|---|
-| 1 | Name and phone stay relational columns on `leads` | Accepted. Section 5 |
-| 2 | `v2.tenant_credentials` for the API key and Twilio tokens | Accepted. Section 6. Not a User row |
+| 1 | Name and phone stay relational columns on `leads`, nullable for this cut | Accepted 26 October 2026. Section 5. `NOT NULL` waits for the contract step |
+| 2 | One `v2.tenant_credentials` row per tenant. `api_key_hash` and `twilio_secret_ref`. No raw token | Accepted 26 October 2026. Section 6. Not a User row |
 | 3 | Separate `messages` table with `tenant_id`. Do not collapse into JSONB | Accepted. Section 7 |
 | 4 | `FORCE ROW LEVEL SECURITY`, non-owner app role, shadow `v2` schema, dual-write, `v1_client_id` map. V1 left intact for rollback | Accepted. Sections 3 and 9.1 |
-| 5 | Hold `ON DELETE RESTRICT` until cascading deletes are removed from the app | Accepted. Section 8 |
+| 5 | `ON DELETE CASCADE` on `v2` tenant foreign keys for this cut. `RESTRICT` at the later contract step, after the app stops expecting cascade deletes | Accepted 26 October 2026. Section 8 |
 
 Industry JSON key names are `location`, `budget`, `property_type`, `intent`, and `visit_date`, from `V2_Industry_Profile.md`, profile `real_estate` version `1`.

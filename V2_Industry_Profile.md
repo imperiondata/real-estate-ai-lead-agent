@@ -21,7 +21,7 @@ An Industry Profile is three JSON documents plus a constrained prompt template.
 
 `industry_profiles` rows are versioned. A tenant points at one profile version. Tenant `config_overrides` may change labels, column order, and a threshold inside a range the profile allows. Overrides may not remove a required qualification field or add a free-form key.
 
-Global lead columns are not industry JSON. The engine owns `id`, `tenant_id`, `status`, `created_at`, `name`, and `phone`. Name and phone stay relational. Claim-check and CRM sync read them as columns. That placement is pending Mayank's acceptance of the ER gap. It is not an industry-schema decision.
+Global lead columns are not industry JSON. The engine owns `id`, `tenant_id`, `status`, `created_at`, `name`, and `phone`. Name and phone stay relational. Mayank accepted that placement on 25 October 2026. Claim-check and CRM sync read them as columns. It is not an industry-schema decision.
 
 ---
 

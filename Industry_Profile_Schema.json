@@ -1,0 +1,247 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://imperion.local/industry-profile/meta/1",
+  "title": "Industry Profile",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "key",
+    "version",
+    "status",
+    "qualification_schema",
+    "scoring_rules",
+    "dashboard_config",
+    "pipeline_stages",
+    "base_ai_prompt",
+    "overrides"
+  ],
+  "properties": {
+    "key": { "type": "string", "minLength": 1 },
+    "version": { "type": "integer", "minimum": 1 },
+    "status": { "type": "string", "enum": ["draft", "published"] },
+    "qualification_schema": { "$ref": "#/$defs/qualification_schema" },
+    "scoring_rules": { "$ref": "#/$defs/scoring_rules" },
+    "dashboard_config": { "$ref": "#/$defs/dashboard_config" },
+    "pipeline_stages": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "$ref": "#/$defs/pipeline_stage" }
+    },
+    "base_ai_prompt": { "type": "string", "minLength": 1 },
+    "overrides": { "$ref": "#/$defs/overrides" }
+  },
+  "$defs": {
+    "qualification_schema": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "additionalProperties", "properties", "required", "required_for_booking"],
+      "properties": {
+        "$schema": { "type": "string" },
+        "$id": { "type": "string" },
+        "type": { "const": "object" },
+        "additionalProperties": { "const": false },
+        "properties": { "type": "object" },
+        "required": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "required_for_booking": {
+          "type": "array",
+          "items": { "type": "string" }
+        }
+      }
+    },
+    "scoring_rules": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["engagement", "probability", "temperature", "urgency", "budget_alignment", "manual_review"],
+      "properties": {
+        "engagement": { "type": "object" },
+        "probability": { "type": "object" },
+        "temperature": { "type": "object" },
+        "urgency": { "type": "object" },
+        "budget_alignment": { "type": "object" },
+        "manual_review": { "type": "object" },
+        "inactivity": { "type": "object" },
+        "behavior": { "type": "object" }
+      }
+    },
+    "dashboard_config": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kanban", "card_fields", "badges", "filters"],
+      "properties": {
+        "kanban": { "type": "array", "items": { "type": "string" } },
+        "card_fields": { "type": "array", "items": { "type": "string" } },
+        "badges": { "type": "array", "items": { "type": "string" } },
+        "filters": { "type": "array", "items": { "type": "string" } }
+      }
+    },
+    "pipeline_stage": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["key", "label", "position"],
+      "properties": {
+        "key": { "type": "string", "minLength": 1 },
+        "label": { "type": "string", "minLength": 1 },
+        "position": { "type": "integer", "minimum": 1 }
+      }
+    },
+    "overrides": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["allowed", "ranges"],
+      "properties": {
+        "allowed": { "type": "array", "items": { "type": "string" } },
+        "ranges": { "type": "object" }
+      }
+    }
+  },
+  "examples": [
+    {
+      "key": "real_estate",
+      "version": 1,
+      "status": "published",
+      "qualification_schema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "$id": "industry-profile/real_estate/1/qualification_schema",
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "location": { "type": "string", "minLength": 1 },
+          "budget": { "type": "string", "minLength": 1 },
+          "property_type": { "type": "string", "minLength": 1 },
+          "intent": { "type": "string", "enum": ["buy", "rent", "unknown"] },
+          "visit_date": { "type": "string", "minLength": 1, "format": "date" }
+        },
+        "required": [],
+        "required_for_booking": ["location", "budget", "property_type", "visit_date"]
+      },
+      "scoring_rules": {
+        "engagement": {
+          "fields": ["name", "phone", "budget", "location", "property_type", "visit_date"],
+          "points_per_field": 16,
+          "opt_in_points": 4,
+          "cap": 100
+        },
+        "probability": {
+          "formula": "weighted_blend",
+          "engagement_weight": 0.5,
+          "temperature_weight": 0.5,
+          "temperature_weights": { "hot": 60, "warm": 40, "cold": 15 },
+          "cap": 98
+        },
+        "temperature": {
+          "hot_min_probability": 82,
+          "warm_min_probability": 45,
+          "full_qualify_floor": 88,
+          "field_floors": { "visit_date": 82 }
+        },
+        "urgency": {
+          "high_when": ["visit_date"],
+          "medium_when_all": ["budget", "location"],
+          "else": "low"
+        },
+        "budget_alignment": {
+          "run_when_all": ["budget", "location", "property_type"],
+          "data_source": "tenant_pricing",
+          "no_data_status": "unknown"
+        },
+        "manual_review": { "when_confidence_below": 75 },
+        "inactivity": { "owner": "engine" },
+        "behavior": { "owner": "engine" }
+      },
+      "dashboard_config": {
+        "kanban": ["new", "contacted", "appointment_scheduled", "closed_won", "lost"],
+        "card_fields": ["name", "phone", "location", "budget", "property_type", "visit_date", "lead_temperature"],
+        "badges": ["lead_temperature", "is_negotiating", "requires_manual_review"],
+        "filters": ["lead_temperature", "location", "property_type", "funnel_stage"]
+      },
+      "pipeline_stages": [
+        { "key": "new", "label": "New", "position": 1 },
+        { "key": "contacted", "label": "Contacted", "position": 2 },
+        { "key": "appointment_scheduled", "label": "Appointment Scheduled", "position": 3 },
+        { "key": "closed_won", "label": "Closed Won", "position": 4 },
+        { "key": "lost", "label": "Lost", "position": 5 }
+      ],
+      "base_ai_prompt": "You are qualifying a real-estate lead for {{tenant:name}}. Ask only for missing booking fields. Known location is {{field:location}}. Known budget is {{field:budget}}. Do not invent fields. Do not confirm a visit unless the booking gate has passed.",
+      "overrides": {
+        "allowed": ["scoring_rules.temperature.hot_min_probability", "dashboard_config.card_fields", "dashboard_config.filters"],
+        "ranges": {
+          "scoring_rules.temperature.hot_min_probability": { "min": 70, "max": 90 }
+        }
+      }
+    },
+    {
+      "key": "education",
+      "version": 1,
+      "status": "published",
+      "qualification_schema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "$id": "industry-profile/education/1/qualification_schema",
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "course": { "type": "string", "minLength": 1 },
+          "campus": { "type": "string", "minLength": 1 },
+          "fee_band": { "type": "string", "minLength": 1 },
+          "counselling_date": { "type": "string", "minLength": 1, "format": "date" }
+        },
+        "required": [],
+        "required_for_booking": ["course", "campus", "counselling_date"]
+      },
+      "scoring_rules": {
+        "engagement": {
+          "fields": ["name", "phone", "course", "campus", "counselling_date"],
+          "points_per_field": 20,
+          "opt_in_points": 0,
+          "cap": 100
+        },
+        "probability": {
+          "formula": "weighted_blend",
+          "engagement_weight": 0.6,
+          "temperature_weight": 0.4,
+          "temperature_weights": { "hot": 55, "warm": 35, "cold": 10 },
+          "cap": 95
+        },
+        "temperature": {
+          "hot_min_probability": 80,
+          "warm_min_probability": 50,
+          "full_qualify_floor": 90,
+          "field_floors": {}
+        },
+        "urgency": {
+          "high_when": ["counselling_date"],
+          "medium_when_all": ["course", "campus"],
+          "else": "low"
+        },
+        "budget_alignment": {
+          "run_when_all": ["course", "fee_band"],
+          "data_source": "tenant_catalog",
+          "no_data_status": "unknown"
+        },
+        "manual_review": { "when_confidence_below": 70 }
+      },
+      "dashboard_config": {
+        "kanban": ["enquiry", "contacted", "counselling_booked", "enrolled", "lost"],
+        "card_fields": ["name", "phone", "course", "campus", "counselling_date", "lead_temperature"],
+        "badges": ["lead_temperature", "requires_manual_review"],
+        "filters": ["lead_temperature", "course", "campus", "funnel_stage"]
+      },
+      "pipeline_stages": [
+        { "key": "enquiry", "label": "Enquiry", "position": 1 },
+        { "key": "contacted", "label": "Contacted", "position": 2 },
+        { "key": "counselling_booked", "label": "Counselling Booked", "position": 3 },
+        { "key": "enrolled", "label": "Enrolled", "position": 4 },
+        { "key": "lost", "label": "Lost", "position": 5 }
+      ],
+      "base_ai_prompt": "You are qualifying an education lead for {{tenant:name}}. Course is {{field:course}}. Campus is {{field:campus}}. Do not invent fields. Do not confirm counselling unless the booking gate has passed.",
+      "overrides": {
+        "allowed": ["scoring_rules.temperature.hot_min_probability", "dashboard_config.card_fields"],
+        "ranges": {
+          "scoring_rules.temperature.hot_min_probability": { "min": 65, "max": 85 }
+        }
+      }
+    }
+  ]
+}

@@ -126,7 +126,7 @@ Global lead columns in `v2`:
 - `phone`
 - `created_at`
 
-Industry JSON, validated against Maitri's `real_estate` version `1` schema before write:
+Industry JSON is validated against `real_estate` version `1` in `Industry_Profile_Schema.json` before write. `required` is empty, so a partial object is valid. `required_for_booking` is enforced by the booking gate, not by the insert:
 
 | V1 column | `industry_dynamic_data` key | Required to book |
 |---|---|---|
@@ -136,7 +136,7 @@ Industry JSON, validated against Maitri's `real_estate` version `1` schema befor
 | `intent` | `intent` | no |
 | `visit_date` | `visit_date` | yes |
 
-Backfill omits empty strings. A row that fails the schema is counted and skipped, not inserted as valid. Name and phone are copied to columns, not into the JSON object.
+Backfill copies partial objects and omits empty strings. A missing `visit_date` is not a failure. Quarantine only a wrong type or an unknown key. Name and phone are copied to columns, not into the JSON object. The booking gate still requires name, phone, and every `required_for_booking` key before a visit is confirmed.
 
 Score outputs stay engine columns: `conversion_probability`, `lead_temperature`, `engagement_score`, `urgency_level`, `budget_alignment_status`, `confidence_score`, `requires_manual_review`. They are not industry JSON. Thresholds come from the Industry Profile. This cut does not retune them.
 
@@ -246,7 +246,7 @@ Scheduler jobs that scan every tenant do not run as the app role with the settin
 - Unknown `tenant_id` format: reject.
 - API key hash miss: 401. No query.
 - JWT for tenant A and path id for tenant B: 404 or empty, and no PII in the body.
-- Dual-write to `v2` when the Industry Profile schema rejects the JSON: V1 write may still commit, because V1 is the source of truth during the soak. The `v2` upsert is recorded as a parity failure. It does not partially insert an invalid JSON lead.
+- Dual-write to `v2` when the Industry Profile schema rejects the JSON: V1 write may still commit, because V1 is the source of truth during the soak. The `v2` upsert is recorded as a parity failure. It does not partially insert an invalid JSON lead. A partial lead, including one with no `visit_date`, is valid and is not a parity failure. Invalid means a wrong type or an unknown key.
 - `dlq_events.client_id` null: the replay job does not send and does not invent a tenant. That rule already exists for the SEC02 path. V2 keeps it.
 
 ---

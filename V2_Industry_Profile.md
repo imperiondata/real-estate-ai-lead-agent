@@ -2,199 +2,95 @@
 
 **Phase 1 deliverable: qualification schema, scoring rules, and dashboard config.**
 
-Owner: Maitri. This document defines the Industry Profile shape and one real profile, `real_estate` version `1`. It does not change the database. It does not design tenancy, RLS, or the migration.
+Owner: Maitri. This document is the package narrative. The machine-readable companion is `Industry_Profile_Schema.json`. If they disagree, the JSON is the source of truth for keys, thresholds, and stage ids.
+
+It does not change the database. It does not design tenancy, RLS, or the migration. It does not authorize a live schema change.
 
 The profile is a configuration engine. A prompt cannot add a field, drop a required key, or change a score threshold.
 
 ---
 
-## 1. What an Industry Profile is
+## 1. Envelope
 
-An Industry Profile is three JSON documents plus a constrained prompt template.
+One profile document. Not three loose files.
 
-| Document | Stored on | Job |
-|---|---|---|
-| `qualification_schema` | `industry_profiles.qualification_schema` | JSON Schema for `leads.industry_dynamic_data` |
-| `scoring_rules` | profile JSON, beside the schema | Numeric rules the engine executes |
-| `dashboard_config` | profile JSON, beside the schema | Field ids for columns, cards, filters, and badges |
-| `base_ai_prompt` | `industry_profiles.base_ai_prompt` | Template only. Slots must already exist |
+| Section | Job |
+|---|---|
+| `qualification_schema` | JSON Schema for `leads.industry_dynamic_data`, plus `required_for_booking` |
+| `scoring_rules` | Numeric rules the engine executes |
+| `dashboard_config` | Field ids and stage keys for cards, filters, badges, and Kanban |
+| `pipeline_stages` | `{key, label, position}` for that profile |
+| `base_ai_prompt` | Template only. Slots must already exist |
+| `overrides` | Dot-paths a tenant may change, and numeric ranges |
 
-`industry_profiles` rows are versioned. A tenant points at one profile version. Tenant `config_overrides` may change labels, column order, and a threshold inside a range the profile allows. Overrides may not remove a required qualification field or add a free-form key.
+`key`, `version`, and `status` identify the document. A published version is immutable. A tenant binds one version. Cache by `(key, version)`.
 
-Global lead columns are not industry JSON. The engine owns `id`, `tenant_id`, `status`, `created_at`, `name`, and `phone`. Name and phone stay relational. Mayank accepted that placement on 25 October 2026. Claim-check and CRM sync read them as columns. It is not an industry-schema decision.
+Global columns are not industry JSON. The engine owns `id`, `tenant_id`, `status`, `created_at`, `name`, and `phone`. Name and phone stay relational. Mayank accepted that on 25 October 2026, and nullable-for-this-cut on 26 October 2026.
+
+Mayank's ER still stores `qualification_schema` and `base_ai_prompt` as two columns. This package JSON is the full profile. Those two columns do not yet hold scoring, dashboard, or pipeline. That is a storage gap. It is not an ER rewrite in this package.
 
 ---
 
-## 2. Qualification schema
+## 2. Four validation layers
 
-The application validates `industry_dynamic_data` against `qualification_schema` before insert or update. Validation failure rejects the write. The database does not accept the row and then hope a prompt was well behaved.
+| Layer | Checks | Failure |
+|---|---|---|
+| Profile load | Stage keys exist. Dashboard and scoring ids resolve. Prompt slots resolve. Override paths and ranges exist. Unknown rule keys fail. | Profile does not load |
+| Write | Types, enums, formats, and unknown keys. `required` is empty, so a partial object is valid. | API returns 400. LLM extraction drops the bad key and warns. The rest may store. |
+| Booking gate | Engine requires `name`, `phone`, and every `required_for_booking` key. Code enforces this. The prompt cannot waive it. | Booking tool call is rejected |
+| Backfill | Copy partial objects. Quarantine only a wrong type or an unknown key. A missing visit date is not a failure. | Parity failure only for invalid JSON |
 
-Rules for every profile:
-
-- The document is a JSON Schema.
-- `additionalProperties` is false.
-- A required key must be present and non-empty.
-- Unknown keys are rejected.
-- The prompt cannot declare a new field.
+`additionalProperties` is false on every qualification schema. A prompt cannot declare a new field.
 
 ### 2.1 `real_estate` version `1`
 
-Booking still requires name and phone. Those checks live in the engine, not in this schema.
+`required` is `[]`. `required_for_booking` is `location`, `budget`, `property_type`, `visit_date`. `intent` is `buy`, `rent`, or `unknown`, and is not required to book. `visit_date` uses `format: "date"`. Name and phone are not in this schema.
 
-Industry keys:
+The canonical object is the first entry in `Industry_Profile_Schema.json` `examples`.
 
-| Key | Type | Required to book | Notes |
-|---|---|---|---|
-| `location` | string | yes | Canonical area after the existing location normalizer |
-| `budget` | string | yes | Existing normalizer: lakhs, crores, thousands, per-month |
-| `property_type` | string | yes | Existing extractor |
-| `intent` | string enum `buy`, `rent`, `unknown` | no | Used for budget formatting and scoring. Not part of the booking gate |
-| `visit_date` | string, date | yes | Site visit. Industry field, not a global column |
+### 2.2 `education` version `1`
 
-This matches the current six-field booking gate once name and phone are counted as engine fields: `visit_date`, `location`, `budget`, and `property_type` from this schema, plus `name` and `phone` from columns.
+This is an example profile, not a promise to build an education product. It proves a second profile can load on the same engine.
 
-```json
-{
-  "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "industry-profile/real_estate/1/qualification_schema",
-  "type": "object",
-  "additionalProperties": false,
-  "properties": {
-    "location": { "type": "string", "minLength": 1 },
-    "budget": { "type": "string", "minLength": 1 },
-    "property_type": { "type": "string", "minLength": 1 },
-    "intent": { "type": "string", "enum": ["buy", "rent", "unknown"] },
-    "visit_date": { "type": "string", "minLength": 1 }
-  },
-  "required": ["location", "budget", "property_type", "visit_date"]
-}
-```
+Keys are `course`, `campus`, `fee_band`, and `counselling_date`. `required_for_booking` is `course`, `campus`, and `counselling_date`. Stages are `enquiry`, `contacted`, `counselling_booked`, `enrolled`, and `lost`. Weights, thresholds, cards, and filters differ from real estate. No real-estate key names.
 
-Migration backfill, owned by the migration plan, copies these five V1 columns into `industry_dynamic_data` and no others:
-
-- `location`
-- `budget`
-- `property_type`
-- `intent`
-- `visit_date`
-
-Empty V1 strings are omitted, not written as `""`. A row that fails this schema is not backfilled as valid. It is reported and left for repair. Name and phone are not copied into JSONB.
-
-### 2.2 Stub profile
-
-`field_service` version `1` exists only to prove a second profile can name different keys and still validate. It is not a designed industry and it is not seeded in production.
-
-```json
-{
-  "$id": "industry-profile/field_service/1/qualification_schema",
-  "type": "object",
-  "additionalProperties": false,
-  "properties": {
-    "service_type": { "type": "string", "minLength": 1 },
-    "site_address": { "type": "string", "minLength": 1 },
-    "appointment_date": { "type": "string", "minLength": 1 }
-  },
-  "required": ["service_type", "site_address"]
-}
-```
-
-The same engine validates both documents. No real-estate field name is hardcoded in the validator.
+`field_service` is not in this package.
 
 ---
 
-## 3. Scoring rules
+## 3. Scoring
 
-`scoring_rules` is JSON. The engine reads numbers and field names. It does not parse a paragraph.
+The engine reads numbers and field names from `scoring_rules`. It does not parse a paragraph.
 
-Score results are global engine columns, not industry JSON:
+Profile-configured outputs: `conversion_probability`, `lead_temperature`, `engagement_score`, `urgency_level`, `budget_alignment_status`, `requires_manual_review`.
 
-- `conversion_probability`
-- `lead_temperature`
-- `engagement_score`
-- `urgency_level`
-- `budget_alignment_status`
-- `confidence_score`
-- `requires_manual_review`
+Engine-owned in v1, not profile data: `score`, `confidence_score`, `expected_closure_days`, `response_speed_score`, `inactivity_penalty`. The JSON marks `inactivity` and `behavior` as `owner: "engine"` on the real-estate profile.
 
-The current code has two hot cutoffs. The WhatsApp helper treats probability 70 as hot. `agent.py` treats 82 as hot, with floors when the booking gate is complete or a visit date is set. This profile picks the `agent.py` contract. The helper's 70 cutoff is not the contract.
+`real_estate` v1 keeps the live contract: 16 points per filled completeness field, plus 4 for WhatsApp opt-in, cap 100. Hot at 82. Warm at 45. Full-qualify floor 88. Visit floor 82, stored as `field_floors.visit_date`. Manual review when confidence is below 75. Probability is a weighted blend, engagement 0.5 and temperature 0.5, temperature weights 60/40/15, cap 98. The WhatsApp helper's hot cutoff of 70 is not the contract.
 
-`real_estate` version `1`:
+Budget alignment runs only when its `run_when_all` fields are present. Data comes from tenant pricing or tenant catalog. If that data is missing, status is `unknown`. There is no hardcoded city price table in the profile.
 
-```json
-{
-  "engagement": {
-    "fields": ["name", "phone", "budget", "location", "property_type", "visit_date"],
-    "points_per_field": 16,
-    "opt_in_points": 4,
-    "cap": 100
-  },
-  "temperature": {
-    "hot_min_probability": 82,
-    "warm_min_probability": 45,
-    "full_qualify_floor": 88,
-    "visit_date_floor": 82
-  },
-  "urgency": {
-    "high_when": ["visit_date"],
-    "medium_when_all": ["budget", "location"],
-    "else": "low"
-  },
-  "budget_alignment": {
-    "run_when_all": ["budget", "location", "property_type"],
-    "else": "unknown"
-  },
-  "manual_review": {
-    "when_confidence_below": 75
-  }
-}
-```
-
-Rules:
-
-- Each filled completeness field adds 16 to engagement. WhatsApp opt-in adds 4. Cap is 100.
-- Hot if probability is at least 82, or the booking gate is complete, or `visit_date` is set. The full-qualify floor is 88. The visit floor is 82.
-- Warm if probability is at least 45 and the lead is not hot. Otherwise cold.
-- Urgency is high when `visit_date` is set, medium when budget and location are set, otherwise low.
-- Budget alignment runs only when budget, location, and property type are present. Otherwise the status is `unknown`.
-- `confidence_score` below 75 sets `requires_manual_review`.
-
-A tenant override may move `hot_min_probability` only inside the profile range 70 to 90. It may not remove a completeness field or replace the rule with free text.
+A tenant may change only paths listed in `overrides.allowed`, and only inside `overrides.ranges`. Real-estate hot threshold range is 70 to 90. Education is 65 to 85. An unknown rule key fails profile load.
 
 ---
 
-## 4. Dashboard config
+## 4. Dashboard
 
-`dashboard_config` names field ids. It does not contain SQL or React. The dashboard renders whatever ids the active profile lists, if those ids are either global columns or keys in that profile's qualification schema.
+`dashboard_config.kanban` lists stage keys, not labels. Labels come from `pipeline_stages`. A stage write that is not in the active profile fails. It does not fall back to a global real-estate funnel.
 
-`real_estate` version `1`:
+Card fields, badges, and filters must be a global column, a key in that profile's qualification schema, or a stage key. An unknown id fails profile load. It does not render blank.
 
-```json
-{
-  "kanban": ["New", "Contacted", "Appointment Scheduled", "Closed Won", "Lost"],
-  "card_fields": ["name", "phone", "location", "budget", "property_type", "visit_date", "lead_temperature"],
-  "badges": ["lead_temperature", "is_negotiating", "requires_manual_review"],
-  "filters": ["lead_temperature", "location", "property_type", "funnel_stage"]
-}
-```
+API resolution, when this is implemented later: global columns stay top-level. Industry keys are returned under `attributes.<key>`. The stage is `{key, label}`.
 
-Kanban values are the current `FUNNEL_STAGES`. Temperature badges stay case-sensitive on the client and title-cased at the API boundary, as they are today.
-
-The stub profile uses different card fields (`service_type`, `site_address`, `appointment_date`) and the same renderer. That is the proof this is configuration, not a real-estate screen with a prompt pasted on top.
-
-Tenant overrides may reorder `card_fields` and `filters`. They may not add an id that is absent from the global columns and the qualification schema.
+Real-estate stages match today's funnel: `new`, `contacted`, `appointment_scheduled`, `closed_won`, `lost`. Education uses a different set, listed in the JSON.
 
 ---
 
 ## 5. Prompt rule
 
-`base_ai_prompt` may only be a template. A slot must name a global column or a key in `qualification_schema`. The template cannot:
+Slots are `{{field:<key>}}` and `{{tenant:<column>}}` only. An unknown slot fails profile load. The prompt is advisory. The booking gate is code. The template must not contain a secret, a raw profile dump, or an instruction to skip validation.
 
-- declare a new qualification field
-- change `required`
-- change a score threshold
-- instruct the model to skip validation
-
-If a slot names an unknown field, profile load fails. The tenant does not get a silent free-form prompt.
+The real-estate and education examples are in the JSON.
 
 ---
 
@@ -203,5 +99,8 @@ If a slot names an unknown field, profile load fails. The tenant does not get a 
 - It does not move name or phone into JSONB.
 - It does not collapse messages into `conversation.message_history`.
 - It does not define RLS, API keys, or the Agency model.
-- It does not design the other eight sectors. One real profile and one stub are enough to prove the engine.
-- It does not authorize a live schema change. Piyush reviews the package before any table is altered.
+- It does not design the remaining sectors. One live profile and one example profile are enough.
+- It does not authorize a live schema change.
+- It does not add a validator library, a script, or a test. `python -m json.tool` is the parse check for this package.
+
+`plans/architecture-sprint/` is historical for this package. The V2 markdown and `Industry_Profile_Schema.json` are canonical.

@@ -4,9 +4,9 @@
 
 Owner: Aritro. This document aligns to Mayank's tenancy note and to Maitri's Industry Profile. It does not redraw the ER diagram. It does not design the qualification schema.
 
-No live schema change is proposed for execution. Piyush banned live database changes until he reviews this package. The SQL below is a proposal. It is not a migration to run.
+**Status, 29 October 2026.** Piyush has reviewed the Phase 1 package and frozen the architectural baseline. Implementation may proceed in an isolated environment only. Live database changes remain banned. The SQL in this document is still a proposal, not a migration to execute against Render or local production data.
 
-Mayank accepted all four decisions on 25 October 2026. He is updating the ER diagram and the tenancy note to match this plan. Live schema changes stay banned until Piyush reviews the package.
+Mayank accepted all five decisions on 25 October 2026 and clarified them on 26 October 2026. He is updating the ER diagram and the tenancy note to match this plan. The runtime profile storage is now option B: one `v2.industry_profiles.document` JSONB row plus `v2.tenant_configurations.overrides`. See section 5.1.
 
 ---
 
@@ -82,6 +82,22 @@ Order:
 
 `V2_DUAL_WRITE` defaults off. Turning it on is an application flag, not a schema change, and it still waits for approval of this package. The flag writes the shadow schema only. It never points `DATABASE_URL` at Render and never copies `LIVE_DATABASE_URL` over `DATABASE_URL`.
 
+### 3.1 Parity and dual-write failure
+
+Parity is computed per tenant:
+
+- Row count for `leads` on both sides.
+- SHA-256 over newline-joined `v1_lead_id|name|phone|budget`, sorted ascending by `v1_lead_id`, with null encoded as an empty segment.
+- A count or checksum mismatch blocks the read cut. The report records tenant, counts, both digests, and the first mismatching ids.
+
+Dual-write failure semantics:
+
+- V1 is authoritative during the soak. A `v2` failure never rolls back or blocks the V1 commit.
+- If the Industry Profile schema rejects the JSON, do not partially insert. Record a parity failure with `v1_lead_id`, tenant, and reason.
+- A partial object, including one with no `visit_date`, is valid and is not a parity failure.
+- Invalid means a wrong type or format, or an unknown key.
+- `V2_DUAL_WRITE` uses the same database with schema-qualified `v2` tables. It does not open a second live DSN.
+
 ### Rollback
 
 | Moment | Action | Data loss |
@@ -137,6 +153,43 @@ Industry JSON is validated against `real_estate` version `1` in `Industry_Profil
 | `visit_date` | `visit_date` | yes |
 
 Backfill copies partial objects and omits empty strings. A missing `visit_date` is not a failure. Quarantine only a wrong type or an unknown key. Name and phone are copied to columns, not into the JSON object. The booking gate still requires name, phone, and every `required_for_booking` key before a visit is confirmed.
+
+### 5.1 Profile storage and backfill mapping
+
+**Storage (option B, 29 October 2026).**
+
+```text
+v2.industry_profiles
+  id          uuid primary key
+  key         text not null
+  version     integer not null
+  status      text not null check (status in ('draft','published'))
+  document    jsonb not null
+  created_at  timestamptz not null default now()
+  unique (key, version)
+
+v2.tenant_configurations
+  tenant_id   uuid primary key references v2.tenants(id) on delete cascade
+  profile_id  uuid not null references v2.industry_profiles(id)
+  overrides   jsonb not null default '{}'
+  updated_at  timestamptz not null default now()
+```
+
+`qualification_schema` and `base_ai_prompt` are inside `document`; they are not separate profile columns. A published row is immutable, and a tenant binds one version. This supersedes the two-column ER shape; Mayank's ER update is requested.
+
+**Backfill mapping.**
+
+| V1 column | JSON key | Rule |
+|---|---|---|
+| `budget` | `budget` | Trim. Empty becomes null and the key is omitted. Keep the value as a string; no numeric cast. |
+| `location` | `location` | Trim. Empty becomes null and the key is omitted. |
+| `property_type` | `property_type` | Trim. Empty becomes null and the key is omitted. |
+| `intent` | `intent` | Case-insensitive `buy` and `rent` map to themselves. Blank or any other value maps to `unknown`, which is a valid enum value and is not quarantined. |
+| `visit_date` | `visit_date` | Trim and normalize to `YYYY-MM-DD`. Missing is valid and the key is omitted. An unparsable value is a wrong format and quarantines that key. |
+| `name` | not in JSON | Copy to `v2.leads.name`. Empty becomes null. |
+| `phone` | not in JSON | Copy to `v2.leads.phone`. Empty becomes null. |
+
+A quarantined key is written to `v2.backfill_quarantine` (`v1_lead_id`, `tenant_id`, `key`, `reason`, `raw_value`). The lead row is still inserted with the remaining valid keys. This is different from dual-write, where an invalid object is rejected rather than partially inserted. Backfill parity fails only when a lead row is missing or a normalized valid key disagrees; quarantine counts are reported separately.
 
 Score outputs stay engine columns: `conversion_probability`, `lead_temperature`, `engagement_score`, `urgency_level`, `budget_alignment_status`, `confidence_score`, `requires_manual_review`. They are not industry JSON. Thresholds come from the Industry Profile. This cut does not retune them.
 
@@ -246,7 +299,7 @@ Scheduler jobs that scan every tenant do not run as the app role with the settin
 - Unknown `tenant_id` format: reject.
 - API key hash miss: 401. No query.
 - JWT for tenant A and path id for tenant B: 404 or empty, and no PII in the body.
-- Dual-write to `v2` when the Industry Profile schema rejects the JSON: V1 write may still commit, because V1 is the source of truth during the soak. The `v2` upsert is recorded as a parity failure. It does not partially insert an invalid JSON lead. A partial lead, including one with no `visit_date`, is valid and is not a parity failure. Invalid means a wrong type or an unknown key.
+- Dual-write to `v2` when the Industry Profile schema rejects the JSON: V1 write may still commit, because V1 is the source of truth during the soak. The `v2` upsert is recorded as a parity failure. It does not partially insert an invalid JSON lead. A partial lead, including one with no `visit_date`, is valid and is not a parity failure. Invalid means a wrong type or an unknown key. Backfill quarantine follows section 5.1 and is reported separately; it is not a dual-write parity failure.
 - `dlq_events.client_id` null: the replay job does not send and does not invent a tenant. That rule already exists for the SEC02 path. V2 keeps it.
 
 ---

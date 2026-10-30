@@ -57,6 +57,18 @@ JSON Schema is only the structural layer. The profile loader must also enforce t
 - `inactivity` and `behavior` are optional in the document. When absent, the engine applies its owned defaults; profiles are normalized to one engine contract.
 - `visit_date` and other `format: "date"` values are normalized to `YYYY-MM-DD` before write. An unparsable value is a write failure, not a partial success.
 
+### 2.3 Security boundary (30 October 2026)
+
+Publishing a profile cannot change tenant isolation, API auth, or server-side security controls. This is a closed set, not a warning in the prompt.
+
+`security_boundary` is a const. `locked` is true. `forbidden` is the sorted denylist in `app/industry/profile_guard.py`. The same object is the `const` in `Industry_Profile_Schema.json`. A publish that omits it, unlocks it, or shrinks it does not load.
+
+`overrides.allowed` is a closed enum of scoring and dashboard leaves: hot and warm thresholds, the manual-review floor, and card, filter, and badge id lists. A path outside that enum is rejected. A numeric leaf in `allowed` must have a range, and the published default must sit inside that range.
+
+The loader rejects any other path that normalizes onto the denylist. Case, dots, dashes, and camelCase do not bypass it. `tenant_id`, `api_key_hash`, `rls`, `test_mode`, `twilio_secret`, and the rest of the const are in the set. Stuffing one of those keys inside `scoring_rules` or `overrides.ranges` is still a publish failure. The intersection of `overrides.allowed` and the denylist must be empty.
+
+Proof: `python scripts/validate_industry_profile.py` prints `INDUSTRY_PROFILE_GUARD_OK`. `tests/test_v2_industry_profile_guard.py` rejects each forbidden token. This lock does not implement RLS or API auth. Those stay in `V2_Migration_and_Security.md`.
+
 ### 2.1 `real_estate` version `1`
 
 `required` is `[]`. `required_for_booking` is `location`, `budget`, `property_type`, `visit_date`. `intent` is `buy`, `rent`, or `unknown`, and is not required to book. `visit_date` uses `format: "date"`. Name and phone are not in this schema.
@@ -133,7 +145,7 @@ The real-estate and education examples are in the JSON.
 
 - It does not move name or phone into JSONB.
 - It does not collapse messages into `conversation.message_history`.
-- It does not define RLS, API keys, or the Agency model.
+- It does not define RLS, API keys, or the Agency model. Section 2.3 locks those paths out of a publish. It does not implement them.
 - It does not design the remaining sectors. One live profile and one example profile are enough.
 - It does not authorize a live schema change.
 - It did not add a validator library, a script, or a test in Phase 1. That constraint is superseded as of 29 October 2026: Phase 2 requires the loader validator and tests. `python -m json.tool` remains the minimum parse check.

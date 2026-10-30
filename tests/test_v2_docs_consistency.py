@@ -40,6 +40,7 @@ def test_meta_schema_and_examples_parse():
         "pipeline_stages",
         "base_ai_prompt",
         "overrides",
+        "security_boundary",
     }
     assert set(_examples()) == {"real_estate", "education"}
 
@@ -128,6 +129,26 @@ def test_stale_contradictions_are_removed():
     assert "all four decisions" not in migration_text
     assert "accepted all five decisions" in migration_text
     assert "Live database changes remain banned" in migration_text
+
+
+def test_security_boundary_const_and_rejected_checksum_are_locked():
+    schema = _load_schema()
+    const = schema["$defs"]["security_boundary"]["const"]
+    assert const["locked"] is True
+    assert "tenant_id" in const["forbidden"]
+    assert "api_key" in const["forbidden"]
+    assert "test_mode" in const["forbidden"]
+    allowed_enum = schema["$defs"]["overrides"]["properties"]["allowed"]["items"]["enum"]
+    assert "tenant_id" not in allowed_enum
+    assert "api_key" not in allowed_enum
+
+    migration_text = MIGRATION_DOC.read_text(encoding="utf-8")
+    profile_text = PROFILE_DOC.read_text(encoding="utf-8")
+    assert "v1_lead_id|name|phone|budget" not in migration_text
+    assert "checksum of name, phone, and budget" not in migration_text
+    assert "plans/V2_MIGRATION_DRY_RUN.md" in migration_text
+    assert "security_boundary" in profile_text
+    assert "Publishing a profile cannot change tenant isolation" in profile_text
 
 
 def test_matrix_has_no_shipped_isolation_claim():

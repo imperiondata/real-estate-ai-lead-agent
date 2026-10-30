@@ -13,7 +13,8 @@
     "dashboard_config",
     "pipeline_stages",
     "base_ai_prompt",
-    "overrides"
+    "overrides",
+    "security_boundary"
   ],
   "properties": {
     "key": { "type": "string", "minLength": 1 },
@@ -28,7 +29,8 @@
       "items": { "$ref": "#/$defs/pipeline_stage" }
     },
     "base_ai_prompt": { "type": "string", "minLength": 1 },
-    "overrides": { "$ref": "#/$defs/overrides" }
+    "overrides": { "$ref": "#/$defs/overrides" },
+    "security_boundary": { "$ref": "#/$defs/security_boundary" }
   },
   "$defs": {
     "qualification_schema": {
@@ -87,13 +89,70 @@
         "position": { "type": "integer", "minimum": 1 }
       }
     },
+    "numeric_range": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["min", "max"],
+      "properties": {
+        "min": { "type": "number" },
+        "max": { "type": "number" }
+      }
+    },
     "overrides": {
       "type": "object",
       "additionalProperties": false,
       "required": ["allowed", "ranges"],
       "properties": {
-        "allowed": { "type": "array", "items": { "type": "string" } },
-        "ranges": { "type": "object" }
+        "allowed": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "enum": [
+              "scoring_rules.temperature.hot_min_probability",
+              "scoring_rules.temperature.warm_min_probability",
+              "scoring_rules.manual_review.when_confidence_below",
+              "dashboard_config.card_fields",
+              "dashboard_config.filters",
+              "dashboard_config.badges"
+            ]
+          }
+        },
+        "ranges": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "scoring_rules.temperature.hot_min_probability": { "$ref": "#/$defs/numeric_range" },
+            "scoring_rules.temperature.warm_min_probability": { "$ref": "#/$defs/numeric_range" },
+            "scoring_rules.manual_review.when_confidence_below": { "$ref": "#/$defs/numeric_range" }
+          }
+        }
+      }
+    },
+    "security_boundary": {
+      "const": {
+        "locked": true,
+        "forbidden": [
+          "admin_key",
+          "agency_id",
+          "api_key",
+          "api_key_hash",
+          "bypass",
+          "claim_check",
+          "client_id",
+          "current_tenant_id",
+          "database_url",
+          "dlq",
+          "hashed_password",
+          "jwt",
+          "membership",
+          "rls",
+          "tenant_id",
+          "test_mode",
+          "twilio_auth_token",
+          "twilio_secret",
+          "webhook_signature"
+        ]
       }
     }
   },
@@ -102,6 +161,30 @@
       "key": "real_estate",
       "version": 1,
       "status": "published",
+      "security_boundary": {
+        "locked": true,
+        "forbidden": [
+          "admin_key",
+          "agency_id",
+          "api_key",
+          "api_key_hash",
+          "bypass",
+          "claim_check",
+          "client_id",
+          "current_tenant_id",
+          "database_url",
+          "dlq",
+          "hashed_password",
+          "jwt",
+          "membership",
+          "rls",
+          "tenant_id",
+          "test_mode",
+          "twilio_auth_token",
+          "twilio_secret",
+          "webhook_signature"
+        ]
+      },
       "qualification_schema": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "$id": "industry-profile/real_estate/1/qualification_schema",
@@ -176,6 +259,30 @@
       "key": "education",
       "version": 1,
       "status": "published",
+      "security_boundary": {
+        "locked": true,
+        "forbidden": [
+          "admin_key",
+          "agency_id",
+          "api_key",
+          "api_key_hash",
+          "bypass",
+          "claim_check",
+          "client_id",
+          "current_tenant_id",
+          "database_url",
+          "dlq",
+          "hashed_password",
+          "jwt",
+          "membership",
+          "rls",
+          "tenant_id",
+          "test_mode",
+          "twilio_auth_token",
+          "twilio_secret",
+          "webhook_signature"
+        ]
+      },
       "qualification_schema": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "$id": "industry-profile/education/1/qualification_schema",

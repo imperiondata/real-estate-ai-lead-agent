@@ -76,7 +76,7 @@ Order:
 1. Create `v2` tables. V1 is untouched, so this step is reversible by dropping the schema.
 2. Backfill once from V1.
 3. Turn on dual-write behind `V2_DUAL_WRITE`. New V1 writes also upsert the shadow row. Reads stay on V1.
-4. Compare per-tenant row counts and a checksum of name, phone, and budget. Do not cut reads on a mismatch.
+4. Compare every tenant-scoped table across every mapped column, plus the global `webhook_logs` primary-key set. Do not cut reads on a mismatch. A checksum limited to name, phone, and budget was rejected on 29 October 2026 and is not the gate. The procedure is `plans/V2_MIGRATION_DRY_RUN.md`.
 5. Flip reads to `v2` only after that check passes. Keep dual-write on through the soak.
 6. Stopping V1 writes is a later contract step. It is not in Tuesday's package. It requires a fresh `live_dr.py` dump taken immediately before the stop, and Piyush's approval of that later change.
 
@@ -84,29 +84,35 @@ Order:
 
 ### 3.1 Parity and dual-write failure
 
-Parity is computed per tenant:
+Parity is full-table reconciliation, per tenant, per table. The canonical procedure is `plans/V2_MIGRATION_DRY_RUN.md`. `app/migration/dry_run.py` is the tested rule set. It does not open a database.
 
-- Row count for `leads` on both sides.
-- SHA-256 over newline-joined `v1_lead_id|name|phone|budget`, sorted ascending by `v1_lead_id`, with null encoded as an empty segment.
-- A count or checksum mismatch blocks the read cut. The report records tenant, counts, both digests, and the first mismatching ids.
+- Every table in section 1 is compared, plus `clients` and `webhook_logs`.
+- Each comparison is a row count, the missing and extra primary keys, and a SHA-256 over every mapped column. Null is an empty segment. Rows are sorted by primary key.
+- A mismatch on any mapped column blocks that tenant's read cut. Matching name, phone, and budget is not sufficient. The rejected checksum is not the gate.
+- Secrets are compared as SHA-256. The report does not print them. A null `dlq_events.client_id` is reported and is not assigned to tenant 1.
+- `webhook_logs` is a global `message_sid` set. It has no tenant column, so none is invented.
 
 Dual-write failure semantics:
 
 - V1 is authoritative during the soak. A `v2` failure never rolls back or blocks the V1 commit.
-- If the Industry Profile schema rejects the JSON, do not partially insert. Record a parity failure with `v1_lead_id`, tenant, and reason.
+- One attempt is one aggregate: the parent row plus the child rows that belong to that write. Partial means at least one of those tables wrote and at least one did not. The miss is recorded with tables written, tables missing, error, kind, and `retry_count`.
+- A transient error, including a partial child write, retries the missing tables only. The upsert is idempotent on the V1 primary key. It does not insert a second parent. The cap is 5 attempts, delays 1, 2, 4, 8, and 16 minutes. The sixth miss blocks that tenant's read cut and leaves V1 untouched.
+- If the Industry Profile schema rejects the JSON, write nothing for that aggregate. Do not partially insert. Do not retry. Record a parity failure with `v1_lead_id`, tenant, and reason, and block that tenant's read cut.
 - A partial object, including one with no `visit_date`, is valid and is not a parity failure.
 - Invalid means a wrong type or format, or an unknown key.
 - `V2_DUAL_WRITE` uses the same database with schema-qualified `v2` tables. It does not open a second live DSN.
 
 ### Rollback
 
+The tested procedure is `rollback()` in `app/migration/dry_run.py`, executed by `tests/test_v2_migration_dry_run.py` on an in-memory fixture. It turns dual-write off, points reads at V1, and drops the shadow namespace. The V1 fixture is unchanged. No socket is opened. A throwaway local Postgres run of the same steps is the Nov 1 drill, not this package.
+
 | Moment | Action | Data loss |
 |---|---|---|
-| Before the read cut | Turn `V2_DUAL_WRITE` off. Drop schema `v2` if required | None. V1 was never rewritten |
-| After the read cut, dual-write still on | Flip reads back to V1 | None. V1 is still receiving writes |
+| Before the read cut | `rollback()`: turn `V2_DUAL_WRITE` off and drop the shadow namespace | None. V1 was never rewritten |
+| After the read cut, dual-write still on | `rollback()`: flip reads back to V1, then drop the shadow namespace | None. V1 is still receiving writes |
 | After V1 writes have stopped | Not this package. Restore from the pre-stop `live_dr.py` dump | Only if the dump is missing |
 
-The local INF-01 drill is not the rollback for a Render cut. Live rollback uses `live_dr.py` and `LIVE_DATABASE_URL` only.
+The local INF-01 drill is not the rollback for a Render cut. Live rollback uses `live_dr.py` and `LIVE_DATABASE_URL` only. `assert_isolated_dsn` refuses a Render host and refuses a DSN equal to `LIVE_DATABASE_URL`.
 
 ---
 

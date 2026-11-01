@@ -76,7 +76,7 @@ Order:
 1. Create `v2` tables. V1 is untouched, so this step is reversible by dropping the schema.
 2. Backfill once from V1.
 3. Turn on dual-write behind `V2_DUAL_WRITE`. New V1 writes also upsert the shadow row. Reads stay on V1.
-4. Compare every tenant-scoped table across every mapped column, plus the global `webhook_logs` primary-key set. Do not cut reads on a mismatch. A checksum limited to name, phone, and budget was rejected on 29 October 2026 and is not the gate. The procedure is `plans/V2_MIGRATION_DRY_RUN.md`.
+4. Compare every tenant-scoped table across every mapped column, plus the global `webhook_logs` primary-key set. Do not cut reads on a mismatch. A checksum limited to name, phone, and budget was rejected on 29 October 2026 and is not the gate. The procedure is `plans/V2_MIGRATION_DRY_RUN.md`. It was executed once, against throwaway local Postgres, on 1 November 2026. Raw output: `plans/evidence/NOV1_ISOLATED_DRILL.log`.
 5. Flip reads to `v2` only after that check passes. Keep dual-write on through the soak.
 6. Stopping V1 writes is a later contract step. It is not in Tuesday's package. It requires a fresh `live_dr.py` dump taken immediately before the stop, and Piyush's approval of that later change.
 
@@ -85,6 +85,8 @@ Order:
 ### 3.1 Parity and dual-write failure
 
 Parity is full-table reconciliation, per tenant, per table. The canonical procedure is `plans/V2_MIGRATION_DRY_RUN.md`. `app/migration/dry_run.py` is the tested rule set. It does not open a database.
+
+The rule set was executed against throwaway local Postgres on 1 November 2026 (`app/migration/isolated_drill.py`, `scripts/run_v2_isolated_drill.py`). The raw log is `plans/evidence/NOV1_ISOLATED_DRILL.log`. It shows tenant 1 reconciling, tenant 2 failing on `funnel_stage` while the rejected name/phone/budget checksum still matches, and three injected crashes where the failure row is durable and the retry is idempotent. That run did not execute row-level security, and it did not touch V1 or Render.
 
 - Every table in section 1 is compared, plus `clients` and `webhook_logs`.
 - Each comparison is a row count, the missing and extra primary keys, and a SHA-256 over every mapped column. Null is an empty segment. Rows are sorted by primary key.
@@ -250,7 +252,9 @@ Fail closed. A missing tenant context returns no operational rows. It does not m
 
 ### 9.1 Row-level security
 
-**Accepted.** `FORCE ROW LEVEL SECURITY` and a non-owner app role are required. The sample policy is bypassed by the table owner. Render's application role often owns the tables. Without the two rules below, RLS does not meet the P0 isolation bar.
+**Design accepted 25 October 2026. Not shipped.** V1 has no `agency_id`, no tenant session variable, and no RLS: its auth is an API key, a dashboard JWT, or an admin key, and background jobs open `SessionLocal()` with no tenant setting. Render runs V1 and therefore enforces nothing below. The 1 November isolated drill did not execute RLS either. Nothing in this section is a claim about the running system.
+
+`FORCE ROW LEVEL SECURITY` and a non-owner app role are required for V2. The sample policy is bypassed by the table owner. Render's application role often owns the tables. Without the two rules below, RLS does not meet the P0 isolation bar.
 
 - `ENABLE ROW LEVEL SECURITY` and `FORCE ROW LEVEL SECURITY` on every operational table.
 - The application role is not the owner and is not a superuser. It has `SELECT`, `INSERT`, `UPDATE` on the operational tables and nothing else.

@@ -1,13 +1,15 @@
 # V2 Migration Dry-Run Plan
 
-**Date:** 30 October 2026
+**Date:** 30 October 2026, executed 1 November 2026
 **Owner:** Aritro
-**Audience:** Mayank, for the Oct 30 evidence package
-**Status:** Documented procedure. Tested in memory. No live DDL. No Render connection.
+**Audience:** Mayank, for the 2 November staging demo package
+**Status:** Rules tested in memory, and executed once against throwaway local Postgres on 1 November 2026. No live DDL. No Render connection.
 
-Piyush rejected the selected-field checksum (`v1_lead_id|name|phone|budget`) on 29 October 2026. That rule is withdrawn. Parity is full-table reconciliation. The tested procedure is `app/migration/dry_run.py`, proved by `tests/test_v2_migration_dry_run.py`. The module imports no database driver.
+Piyush rejected the selected-field checksum (`v1_lead_id|name|phone|budget`) on 29 October 2026. That rule is withdrawn. Parity is full-table reconciliation. The rules live in `app/migration/dry_run.py`, which imports no database driver. The 1 November execution is `app/migration/isolated_drill.py` and `scripts/run_v2_isolated_drill.py`.
 
-This is not the Nov 1 isolated Postgres drill. It does not create schema `v2`, does not set `V2_DUAL_WRITE`, and does not read `LIVE_DATABASE_URL`.
+The execution used a throwaway database `v2_nov1_drill` on `127.0.0.1`. It did not open `realestate_db`, did not read `LIVE_DATABASE_URL`, and did not create schema `v2` in any shared database. Its raw output is `plans/evidence/NOV1_ISOLATED_DRILL.log`, reproduced in section 6.
+
+This drill does not execute row-level security, agency boundaries, or foreign-key enforcement. Those are not claimed here.
 
 ---
 
@@ -120,7 +122,7 @@ The same function covers the two moments in this package:
 | After the read cut, dual-write still on | `rollback()`: reads flip back to V1, then drop the shadow namespace | None. V1 is still receiving writes. |
 | After V1 writes have stopped | Not this package. Restore from the pre-stop `live_dr.py` dump using `LIVE_DATABASE_URL` only | Only if that dump is missing. |
 
-The local INF-01 drill is not this rollback. A throwaway local Postgres execution of the same procedure is the Nov 1 isolated run. It is not claimed today.
+The local INF-01 drill is not this rollback. The 1 November isolated run executed the reconciliation and the failure-injection half against throwaway local Postgres (section 6). It did not execute `rollback()` against Postgres. That step remains in-memory only.
 
 ---
 
@@ -131,5 +133,48 @@ The local INF-01 drill is not this rollback. A throwaway local Postgres executio
 | Dry-run rules | `pytest tests/test_v2_migration_dry_run.py -q` | passed |
 | Profile lock, separate owner | `pytest tests/test_v2_industry_profile_guard.py -q` | passed |
 | Doc consistency | `pytest tests/test_v2_docs_consistency.py -q` | passed |
+| Isolated drill (1 November) | `python scripts/run_v2_isolated_drill.py` | `NOV1_DRILL_PASS` |
 
 No live database changes were made for this plan.
+
+---
+
+## 6. Executed isolated run, 1 November 2026
+
+Command: `python scripts/run_v2_isolated_drill.py`. The script creates `v2_nov1_drill` on `127.0.0.1`, runs the drill, writes the log, and drops the database. Raw output is `plans/evidence/NOV1_ISOLATED_DRILL.log`.
+
+```text
+NOV1_DRILL_START
+engine=postgres host=127.0.0.1 database=v2_nov1_drill
+live_database_used=false
+render_used=false
+app_database_touched=false
+RLS_STATUS v1_render=not_shipped isolated_execution=not_this_run production_claim=false
+RECONCILE tenant=1 ok=true v1_count=2 v2_count=2 missing=[] extra=[] mismatches=[]
+REJECTED_CHECKSUM_WOULD_MATCH tenant=1 true
+RECONCILE tenant=2 ok=false v1_count=1 v2_count=1 missing=[] extra=[] mismatches=[{'pk': 3, 'column': 'funnel_stage', 'v1': 'New', 'v2': 'Lost'}]
+REJECTED_CHECKSUM_WOULD_MATCH tenant=2 true
+CRASH phase=before_v1 failure_id=1 visible_to_new_connection=true seen_phase=before_v1 seen_status=open v1_count=0 v2_count=0
+RETRY phase=before_v1 status=resolved v1_count=1 v2_count=1 duplicate=false
+CRASH phase=after_v1_before_v2 failure_id=2 visible_to_new_connection=true seen_phase=after_v1_before_v2 seen_status=open v1_count=1 v2_count=0
+RETRY phase=after_v1_before_v2 status=resolved v1_count=1 v2_count=1 duplicate=false
+CRASH phase=after_both failure_id=3 visible_to_new_connection=true seen_phase=after_both seen_status=open v1_count=1 v2_count=1
+RETRY phase=after_both status=resolved v1_count=1 v2_count=1 duplicate=false
+NOV1_DRILL_PASS
+```
+
+What each block shows:
+
+| Line | Meaning |
+|---|---|
+| `RECONCILE tenant=1 ok=true` | Every digested Lead column matches for tenant 1. |
+| `RECONCILE tenant=2 ok=false` | Tenant 2 differs on `funnel_stage` only, at `v1_lead_id` 3 (`New` against `Lost`). The read cut for tenant 2 is blocked. |
+| `REJECTED_CHECKSUM_WOULD_MATCH tenant=2 true` | The checksum rejected on 29 October would have passed this tenant. Full-column reconciliation is what catches it. |
+| `CRASH ... visible_to_new_connection=true` | The failure row was committed before the simulated crash and is visible on a second connection in all three phases. |
+| `CRASH ... before_v1 ... v1_count=0 v2_count=0` | Crash before any write. Nothing but the failure record survived. |
+| `CRASH ... after_v1_before_v2 ... v1_count=1 v2_count=0` | Crash between the V1 and V2 writes. The V1 row survived and the V2 row is missing. |
+| `CRASH ... after_both ... v1_count=1 v2_count=1` | Crash after both writes but before resolve. Both rows survived and the failure stayed `open`. |
+| `RETRY ... status=resolved ... v1_count=1 v2_count=1 duplicate=false` | Retry filled only what was missing, then a second retry wrote nothing. One V1 row and one V2 row in every phase. |
+
+Not executed by this run: row-level security, agency scope, composite foreign keys, and the `rollback()` procedure. `RLS_STATUS` in the header records that V1 and Render have no RLS and that this drill did not execute it. No production claim is made.
+

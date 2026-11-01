@@ -31,6 +31,9 @@ __pycache__/
 app.log
 *.log
 
+# Evidence logs are deliverables for the staging package
+!plans/evidence/*.log
+
 # IDE settings
 .vscode/
 .idea/

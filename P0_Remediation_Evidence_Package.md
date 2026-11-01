@@ -4,7 +4,7 @@
 **Scope Definition:** This package exclusively covers P0 (Phase 1) remediation. P1 items (Outbox, Scheduler, V2 RLS, V1-to-V2 Migration) remain in the "Proposed/In Progress" state and are strictly isolated to Phase 2.
 
 ### 1. PR Links, Commits, and Code Diffs
-* **553ad8f** (Backend): Patches RAG fail-open (SEC-01) and DLQ tenant attribution/concurrency locks (SEC-02). Enforces (agency_id, tenant_id) isolation at the data layer.
+* **553ad8f** (Backend): Patches RAG fail-open (SEC-01) and DLQ tenant attribution/concurrency locks (SEC-02). Tenant scoping is enforced per request and per job by explicit `client_id`/`tenant_id` filters; V1 has no `agency_id` column and no RLS, so this commit does not enforce `(agency_id, tenant_id)` isolation at the data layer. That boundary is V2 design only (`V2_Migration_and_Security.md` section 9.1, not shipped).
 * **7e81b1d** (Frontend): Secures EventSource by replacing URL query params with HttpOnly JWT cookies.
 * **1c2a7ab** (Frontend): Secures fetch in sales-copilot via HttpOnly JWT cookies.
 

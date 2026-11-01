@@ -1,0 +1,17 @@
+NOV1_DRILL_START
+engine=postgres host=127.0.0.1 database=v2_nov1_drill
+live_database_used=false
+render_used=false
+app_database_touched=false
+RLS_STATUS v1_render=not_shipped isolated_execution=not_this_run production_claim=false
+RECONCILE tenant=1 ok=true v1_count=2 v2_count=2 missing=[] extra=[] mismatches=[]
+REJECTED_CHECKSUM_WOULD_MATCH tenant=1 true
+RECONCILE tenant=2 ok=false v1_count=1 v2_count=1 missing=[] extra=[] mismatches=[{'pk': 3, 'column': 'funnel_stage', 'v1': 'New', 'v2': 'Lost'}]
+REJECTED_CHECKSUM_WOULD_MATCH tenant=2 true
+CRASH phase=before_v1 failure_id=1 visible_to_new_connection=true seen_phase=before_v1 seen_status=open v1_count=0 v2_count=0
+RETRY phase=before_v1 status=resolved v1_count=1 v2_count=1 duplicate=false
+CRASH phase=after_v1_before_v2 failure_id=2 visible_to_new_connection=true seen_phase=after_v1_before_v2 seen_status=open v1_count=1 v2_count=0
+RETRY phase=after_v1_before_v2 status=resolved v1_count=1 v2_count=1 duplicate=false
+CRASH phase=after_both failure_id=3 visible_to_new_connection=true seen_phase=after_both seen_status=open v1_count=1 v2_count=1
+RETRY phase=after_both status=resolved v1_count=1 v2_count=1 duplicate=false
+NOV1_DRILL_PASS

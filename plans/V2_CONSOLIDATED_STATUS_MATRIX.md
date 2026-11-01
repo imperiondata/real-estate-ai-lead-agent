@@ -1,6 +1,7 @@
 # V2 Consolidated Status Matrix
 
 **Date:** 29 October 2026
+**Updated:** 1 November 2026 (evidence index only; M-16 status unchanged)
 **Owner:** Maitri (Industry Profile) with Aritro (Migration)
 **Audience:** Piyush
 **Purpose:** Reconcile the Phase 1 documents with the current code and lock the decisions that Phase 2 implementation depends on.
@@ -54,7 +55,7 @@
 | M-13 | Mayank accepted "all four decisions"; dates mix 25 and 26 October. | `V2_Migration_and_Security.md:9`, `:281-291` | Five decisions are listed in section 12. | `Fixed 29 Oct` | Aritro | Text now says five decisions and uses "accepted 25 October 2026; clarified 26 October 2026". |
 | M-14 | Industry keys are strings; `intent` is `buy|rent|unknown`; `visit_date` has `format: date`. | `Industry_Profile_Schema.json:105-118` | V1 stores `budget`, `intent`, `visit_date` as free-text strings (`models.py:86-91`). | `Target-only` | Aritro | Backfill mapping is defined in `V2_Migration_and_Security.md` section 5.1: trim, empty to null, intent mapping, date normalization, quarantine only wrong type/format or unknown key. |
 | M-15 | Name and phone are relational and nullable for this cut. | `V2_Migration_and_Security.md:117`; `V2_Industry_Profile.md:28` | `models.Lead.name` and `.phone` are already nullable (`models.py:84-85`). | `Aligned` | Aritro | Backfill copies empty values as null, never `""`. |
-| M-16 | `FORCE ROW LEVEL SECURITY`, a non-owner app role, and `app.current_tenant_id` isolate tenants. | `V2_Migration_and_Security.md:192-216` | No RLS or tenant session variable exists in V1. | `Target-only` | Tenancy/Security owner | Do not claim isolation is shipped. Design is accepted; implementation is out of this docs pass. |
+| M-16 | `FORCE ROW LEVEL SECURITY`, a non-owner app role, and `app.current_tenant_id` isolate tenants. | `V2_Migration_and_Security.md:192-216` | No RLS or tenant session variable exists in V1. | `Target-only` | Tenancy/Security owner | Do not claim isolation is shipped. Design accepted 25 October; V1 and Render enforce nothing. The 1 November drill did not execute RLS. |
 | M-17 | The evidence package needs CI run URLs and commit SHAs. | Oct 30 requirement | There is no `.github/workflows` in the repo. V2 commits are local only. | `Blocked` | CI/evidence owner | Add a minimal workflow or record local pytest output and state that no CI URL exists. Push a PR before Oct 30. |
 | M-18 | `schema.json` is a repository artifact. | Repo root | `schema.json` is an untracked 5.3 MB UTF-16 opencode session export, not a DB schema. It contains prior conversation text. | `Blocked` | Evidence owner | Move it outside the repo or ignore it. Do not commit or submit it. |
 | M-19 | `webhook_logs` has no `client_id` in V1; V2 adds `tenant_id`. | `V2_Migration_and_Security.md:36`, `:176` | V1 table has no tenant column. | `Target-only` | Aritro | Create `v2.webhook_logs.tenant_id` in the shadow schema only. No live alter. |
@@ -128,9 +129,9 @@ v2.tenant_configurations
 | Matrix | Complete (this file) | `plans/V2_CONSOLIDATED_STATUS_MATRIX.md` |
 | Profile JSON parse check | Passed: `python -m json.tool Industry_Profile_Schema.json` | `Industry_Profile_Schema.json` |
 | Docs consistency test | Passed: `pytest tests/test_v2_docs_consistency.py -q` (9 passed) | `tests/test_v2_docs_consistency.py` |
-| Commit SHAs | Base `bafa585`; docs commit pending | Git |
+| Commit SHAs | Base `bafa585`; Oct 30 docs commit `aed2fd6`; 1 Nov drill commit is the HEAD of `remediation/p0-security-fixes` | Git |
 | CI run URL | Not available: no workflow in repo | N/A |
-| Isolated migration dry-run | Not in this pass; due Oct 30 | N/A |
+| Isolated migration dry-run | Passed 1 Nov: `NOV1_DRILL_PASS`; tenant 2 mismatch reported, three crash phases durable and idempotent. RLS not executed. | `plans/evidence/NOV1_ISOLATED_DRILL.log` |
 | Live database changes | None | N/A |
 
 ---

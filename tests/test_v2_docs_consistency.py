@@ -158,7 +158,11 @@ def test_matrix_has_no_shipped_isolation_claim():
     assert "No live database changes" in matrix_text
     assert "Target-only" in matrix_text
     assert ".github/workflows/v2-isolation.yml" in matrix_text
-    assert "run url pending first push" in matrix_text.lower()
+    assert (
+        "https://github.com/imperiondata/real-estate-ai-lead-agent/actions/runs/41316092168"
+        in matrix_text
+    )
+    assert "run url pending first push" not in matrix_text.lower()
     assert "no CI workflow" not in matrix_text.lower()
 
     assert "Design accepted 25 October 2026. Not shipped." in migration_text

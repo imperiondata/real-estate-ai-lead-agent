@@ -314,7 +314,7 @@ Scheduler jobs that scan every tenant do not run as the app role with the settin
 
 ### 9.5 Executed isolation proof, 1 November 2026
 
-`python scripts/run_v2_isolation_drill.py` executed the policy shape against a throwaway `v2_isolation_drill` database on `127.0.0.1`. Raw output is `plans/evidence/ISOLATION_DRILL.log`; the pass line is `ISOLATION_DRILL_PASS`.
+`python scripts/run_v2_isolation_drill.py` executed the policy shape against a throwaway `v2_isolation_drill` database on `127.0.0.1`. Raw output is `plans/evidence/ISOLATION_DRILL.log`; the pass line is `ISOLATION_DRILL_PASS`. The GitHub workflow `v2-isolation` also passed at `bf456fe`: https://github.com/imperiondata/real-estate-ai-lead-agent/actions/runs/41316092168.
 
 The run proves three things only:
 

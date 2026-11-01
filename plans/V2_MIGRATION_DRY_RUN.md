@@ -135,6 +135,7 @@ The local INF-01 drill is not this rollback. The 1 November isolated run execute
 | Doc consistency | `pytest tests/test_v2_docs_consistency.py -q` | passed |
 | Isolated drill (1 November) | `python scripts/run_v2_isolated_drill.py` | `NOV1_DRILL_PASS` |
 | Isolation policy shape (1 November) | `pytest tests/test_v2_agency_isolation.py -q` | `ISOLATION_DRILL_PASS` |
+| Isolation CI workflow | GitHub Actions `v2-isolation` at `bf456fe` | Passed: https://github.com/imperiondata/real-estate-ai-lead-agent/actions/runs/41316092168 |
 
 No live database changes were made for this plan.
 

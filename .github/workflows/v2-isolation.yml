@@ -1,0 +1,45 @@
+name: v2-isolation
+
+on:
+  push:
+    paths:
+      - "app/migration/isolation_drill.py"
+      - "scripts/run_v2_isolation_drill.py"
+      - "tests/test_v2_agency_isolation.py"
+      - ".github/workflows/v2-isolation.yml"
+  pull_request:
+    paths:
+      - "app/migration/isolation_drill.py"
+      - "scripts/run_v2_isolation_drill.py"
+      - "tests/test_v2_agency_isolation.py"
+      - ".github/workflows/v2-isolation.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  isolation:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:18
+        env:
+          POSTGRES_USER: realestate
+          POSTGRES_PASSWORD: localpass
+          POSTGRES_DB: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U realestate -d postgres"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - name: Install test dependencies
+        run: python -m pip install --upgrade pip psycopg2-binary==2.9.12 pytest==9.1.1
+      - name: Run isolation proofs
+        run: pytest tests/test_v2_agency_isolation.py -q

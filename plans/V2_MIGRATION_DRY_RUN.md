@@ -134,6 +134,7 @@ The local INF-01 drill is not this rollback. The 1 November isolated run execute
 | Profile lock, separate owner | `pytest tests/test_v2_industry_profile_guard.py -q` | passed |
 | Doc consistency | `pytest tests/test_v2_docs_consistency.py -q` | passed |
 | Isolated drill (1 November) | `python scripts/run_v2_isolated_drill.py` | `NOV1_DRILL_PASS` |
+| Isolation policy shape (1 November) | `pytest tests/test_v2_agency_isolation.py -q` | `ISOLATION_DRILL_PASS` |
 
 No live database changes were made for this plan.
 
@@ -177,4 +178,6 @@ What each block shows:
 | `RETRY ... status=resolved ... v1_count=1 v2_count=1 duplicate=false` | Retry filled only what was missing, then a second retry wrote nothing. One V1 row and one V2 row in every phase. |
 
 Not executed by this run: row-level security, agency scope, composite foreign keys, and the `rollback()` procedure. `RLS_STATUS` in the header records that V1 and Render have no RLS and that this drill did not execute it. No production claim is made.
+
+A separate run, `python scripts/run_v2_isolation_drill.py`, executed the V2 policy shape on `v2_isolation_drill` and wrote `plans/evidence/ISOLATION_DRILL.log`. That run is not part of the reconciliation log above, and it does not change what this log proves.
 

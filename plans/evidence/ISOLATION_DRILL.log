@@ -1,0 +1,20 @@
+ISOLATION_DRILL_START
+engine=postgres host=127.0.0.1 database=v2_isolation_drill
+live_database_used=false
+render_used=false
+app_database_touched=false
+production_claim=false
+v1_render_rls=not_shipped
+RLS_FLAGS leads_enabled=True leads_forced=True app_bypassrls=false app_is_owner=false
+OWNER_FORCE rows_without_setting=0
+TENANT_RLS a1_rows=2 a2_rows=1 b1_rows=1 missing_setting_rows=0
+RLS_BAD_SETTING error=22P02 rows_returned=0
+CROSS_AGENCY agency_a_tenants=['A1', 'A2'] agency_b_tenants=['B1']
+AGENCY_ADMIN_IMPERSONATION requested_other_agency resolved=None
+AGENCY_ADMIN_PII select=denied sqlstate=42501
+AGENCY_ADMIN_AGGREGATE own=3 other_when_setting_switched=1 missing_setting=0
+AGENCY_ADMIN_RESTRICTION pii=denied insert_leads=not_granted operational_owner=tenant
+FK_SAME_TENANT insert=accepted
+FK_CROSS_TENANT insert=rejected sqlstate=23503
+FK_LEAD_SESSION insert=rejected sqlstate=23503
+ISOLATION_DRILL_PASS

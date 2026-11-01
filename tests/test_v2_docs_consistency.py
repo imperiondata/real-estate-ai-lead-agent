@@ -153,6 +153,15 @@ def test_security_boundary_const_and_rejected_checksum_are_locked():
 
 def test_matrix_has_no_shipped_isolation_claim():
     matrix_text = MATRIX_DOC.read_text(encoding="utf-8")
+    migration_text = MIGRATION_DOC.read_text(encoding="utf-8")
+
     assert "No live database changes" in matrix_text
     assert "Target-only" in matrix_text
-    assert "no CI workflow" in matrix_text.lower() or "no `.github/workflows`" in matrix_text
+    assert ".github/workflows/v2-isolation.yml" in matrix_text
+    assert "run url pending first push" in matrix_text.lower()
+    assert "no CI workflow" not in matrix_text.lower()
+
+    assert "Design accepted 25 October 2026. Not shipped." in migration_text
+    assert "ISOLATION_DRILL.log" in migration_text
+    assert "v2_isolation_drill" in migration_text
+    assert "Render enforces RLS" not in migration_text

@@ -252,7 +252,7 @@ Fail closed. A missing tenant context returns no operational rows. It does not m
 
 ### 9.1 Row-level security
 
-**Design accepted 25 October 2026. Not shipped.** V1 has no `agency_id`, no tenant session variable, and no RLS: its auth is an API key, a dashboard JWT, or an admin key, and background jobs open `SessionLocal()` with no tenant setting. Render runs V1 and therefore enforces nothing below. The 1 November isolated drill did not execute RLS either. Nothing in this section is a claim about the running system.
+**Design accepted 25 October 2026. Not shipped.** V1 has no `agency_id`, no tenant session variable, and no RLS: its auth is an API key, a dashboard JWT, or an admin key, and background jobs open `SessionLocal()` with no tenant setting. Render runs V1 and therefore enforces nothing below. The 1 November migration drill did not execute RLS. A separate 1 November isolation drill executed the policy shape on `v2_isolation_drill`; V1, Render, and `realestate_db` were not changed. Nothing in this section is a claim about the running system.
 
 `FORCE ROW LEVEL SECURITY` and a non-owner app role are required for V2. The sample policy is bypassed by the table owner. Render's application role often owns the tables. Without the two rules below, RLS does not meet the P0 isolation bar.
 
@@ -311,6 +311,18 @@ Scheduler jobs that scan every tenant do not run as the app role with the settin
 - JWT for tenant A and path id for tenant B: 404 or empty, and no PII in the body.
 - Dual-write to `v2` when the Industry Profile schema rejects the JSON: V1 write may still commit, because V1 is the source of truth during the soak. The `v2` upsert is recorded as a parity failure. It does not partially insert an invalid JSON lead. A partial lead, including one with no `visit_date`, is valid and is not a parity failure. Invalid means a wrong type or an unknown key. Backfill quarantine follows section 5.1 and is reported separately; it is not a dual-write parity failure.
 - `dlq_events.client_id` null: the replay job does not send and does not invent a tenant. That rule already exists for the SEC02 path. V2 keeps it.
+
+### 9.5 Executed isolation proof, 1 November 2026
+
+`python scripts/run_v2_isolation_drill.py` executed the policy shape against a throwaway `v2_isolation_drill` database on `127.0.0.1`. Raw output is `plans/evidence/ISOLATION_DRILL.log`; the pass line is `ISOLATION_DRILL_PASS`.
+
+The run proves three things only:
+
+- Cross-agency isolation: Agency A owns tenants A1 and A2; Agency B owns B1. The app role sees 2 leads for A1, 1 for A2, 1 for B1, and 0 when no tenant setting is present. A bad UUID fails with `22P02` instead of falling open.
+- Agency-administrator restriction: the agency role reads tenant names for its own agency, resolves another agency's tenant to null, cannot select lead name or phone (`42501`), and can obtain only aggregate counts through the `SECURITY DEFINER` count function.
+- Tenant-consistent foreign keys: a lead or message whose `(tenant_id, session_id)` pair points at another tenant's session is rejected with `23503`; a same-tenant insert is accepted.
+
+The fixture is synthetic and is not the section 4 backfill. The run does not change V1, Render, or `realestate_db`, and M-16 remains target-only. It does not prove delete behavior and does not change section 8.
 
 ---
 

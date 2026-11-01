@@ -1,7 +1,7 @@
 # V2 Consolidated Status Matrix
 
 **Date:** 29 October 2026
-**Updated:** 1 November 2026 (evidence index only; M-16 status unchanged)
+**Updated:** 1 November 2026 (isolation evidence index; M-16 status unchanged)
 **Owner:** Maitri (Industry Profile) with Aritro (Migration)
 **Audience:** Piyush
 **Purpose:** Reconcile the Phase 1 documents with the current code and lock the decisions that Phase 2 implementation depends on.
@@ -55,8 +55,8 @@
 | M-13 | Mayank accepted "all four decisions"; dates mix 25 and 26 October. | `V2_Migration_and_Security.md:9`, `:281-291` | Five decisions are listed in section 12. | `Fixed 29 Oct` | Aritro | Text now says five decisions and uses "accepted 25 October 2026; clarified 26 October 2026". |
 | M-14 | Industry keys are strings; `intent` is `buy|rent|unknown`; `visit_date` has `format: date`. | `Industry_Profile_Schema.json:105-118` | V1 stores `budget`, `intent`, `visit_date` as free-text strings (`models.py:86-91`). | `Target-only` | Aritro | Backfill mapping is defined in `V2_Migration_and_Security.md` section 5.1: trim, empty to null, intent mapping, date normalization, quarantine only wrong type/format or unknown key. |
 | M-15 | Name and phone are relational and nullable for this cut. | `V2_Migration_and_Security.md:117`; `V2_Industry_Profile.md:28` | `models.Lead.name` and `.phone` are already nullable (`models.py:84-85`). | `Aligned` | Aritro | Backfill copies empty values as null, never `""`. |
-| M-16 | `FORCE ROW LEVEL SECURITY`, a non-owner app role, and `app.current_tenant_id` isolate tenants. | `V2_Migration_and_Security.md:192-216` | No RLS or tenant session variable exists in V1. | `Target-only` | Tenancy/Security owner | Do not claim isolation is shipped. Design accepted 25 October; V1 and Render enforce nothing. The 1 November drill did not execute RLS. |
-| M-17 | The evidence package needs CI run URLs and commit SHAs. | Oct 30 requirement | There is no `.github/workflows` in the repo. V2 commits are local only. | `Blocked` | CI/evidence owner | Add a minimal workflow or record local pytest output and state that no CI URL exists. Push a PR before Oct 30. |
+| M-16 | `FORCE ROW LEVEL SECURITY`, a non-owner app role, and `app.current_tenant_id` isolate tenants. | `V2_Migration_and_Security.md:192-216` | No RLS or tenant session variable exists in V1. | `Target-only` | Tenancy/Security owner | Do not claim isolation is shipped. Design accepted 25 October; V1 and Render enforce nothing. The 1 November migration drill did not execute RLS. The separate policy-shape run is `plans/evidence/ISOLATION_DRILL.log`; it is not a V1 or Render change. |
+| M-17 | The evidence package needs CI run URLs and commit SHAs. | Oct 30 requirement | `.github/workflows/v2-isolation.yml` is present; V2 commits are on the remediation branch. | `Partial` | CI/evidence owner | Workflow added; GitHub run URL is not attached until the push produces a run. Local `pytest tests/test_v2_agency_isolation.py -q` passes. |
 | M-18 | `schema.json` is a repository artifact. | Repo root | `schema.json` is an untracked 5.3 MB UTF-16 opencode session export, not a DB schema. It contains prior conversation text. | `Blocked` | Evidence owner | Move it outside the repo or ignore it. Do not commit or submit it. |
 | M-19 | `webhook_logs` has no `client_id` in V1; V2 adds `tenant_id`. | `V2_Migration_and_Security.md:36`, `:176` | V1 table has no tenant column. | `Target-only` | Aritro | Create `v2.webhook_logs.tenant_id` in the shadow schema only. No live alter. |
 | M-20 | One scoring contract. | `V2_Industry_Profile.md:63-69` | Two scoring paths exist: `whatsapp_agent.score_lead` (`:160-203`) and `app.intelligence.lead_scoring.calculate_lead_score` called from `agent.py:1453`. | `Contradicts` | Maitri | Add one profile adapter and mark the non-profile path legacy, or converge both before staging. |
@@ -98,9 +98,9 @@ v2.tenant_configurations
 | Dependency | Impact | Owner | Needed by |
 |---|---|---|---|
 | Mayank ER update for `industry_profiles.document` | ER no longer matches the frozen decision | Mayank | Oct 30 |
-| No CI workflow in repo | No CI run URL can be produced | CI/evidence owner | Oct 30 |
+| CI workflow added, run URL pending first push | No GitHub run URL in the matrix yet | CI/evidence owner | Nov 2 |
 | `jsonschema` not installed in the venv or `requirements.lock` | Validator must be stdlib or add a dependency deliberately | Maitri | Oct 30 |
-| `remediation/p0-security-fixes` not pushed | Commit SHAs have no public reference | CI/evidence owner | Oct 30 |
+| `remediation/p0-security-fixes` pushed to the production remote | Commit SHAs have a remote reference | CI/evidence owner | Done |
 | `schema.json` / `v2 plan.md` untracked at repo root | Session text could leak into the package | Evidence owner | Oct 29 |
 | RLS implementation owner | Staging isolation proof is a dependency | Tenancy/Security owner | Nov 1 |
 
@@ -128,10 +128,11 @@ v2.tenant_configurations
 |---|---|---|
 | Matrix | Complete (this file) | `plans/V2_CONSOLIDATED_STATUS_MATRIX.md` |
 | Profile JSON parse check | Passed: `python -m json.tool Industry_Profile_Schema.json` | `Industry_Profile_Schema.json` |
-| Docs consistency test | Passed: `pytest tests/test_v2_docs_consistency.py -q` (9 passed) | `tests/test_v2_docs_consistency.py` |
-| Commit SHAs | Base `bafa585`; Oct 30 docs commit `aed2fd6`; 1 Nov drill commit is the HEAD of `remediation/p0-security-fixes` | Git |
-| CI run URL | Not available: no workflow in repo | N/A |
+| Docs consistency test | Passed: `pytest tests/test_v2_docs_consistency.py -q` (10 passed) | `tests/test_v2_docs_consistency.py` |
+| Commit SHAs | Base `bafa585`; Oct 30 docs commit `aed2fd6`; 1 Nov drill `15b854c`; isolation proof commit is the HEAD of `remediation/p0-security-fixes` | Git |
+| CI run URL | Workflow added; run URL pending first push | `.github/workflows/v2-isolation.yml` |
 | Isolated migration dry-run | Passed 1 Nov: `NOV1_DRILL_PASS`; tenant 2 mismatch reported, three crash phases durable and idempotent. RLS not executed. | `plans/evidence/NOV1_ISOLATED_DRILL.log` |
+| Isolated agency-isolation proof | Passed 1 Nov: `ISOLATION_DRILL_PASS`; cross-agency isolation, agency-admin restrictions, and tenant-consistent FKs. Policy shape only; no V1 or Render change. | `plans/evidence/ISOLATION_DRILL.log` |
 | Live database changes | None | N/A |
 
 ---

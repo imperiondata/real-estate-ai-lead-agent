@@ -1,7 +1,7 @@
 # V2 Consolidated Status Matrix
 
 **Date:** 29 October 2026
-**Updated:** 1 November 2026 (isolation evidence and CI run recorded; M-16 status unchanged)
+**Updated:** 2 November 2026 (gap register added; 2 November staging demo scrubbed; M-16 unchanged)
 **Owner:** Maitri (Industry Profile) with Aritro (Migration)
 **Audience:** Piyush
 **Purpose:** Reconcile the Phase 1 documents with the current code and lock the decisions that Phase 2 implementation depends on.
@@ -32,6 +32,8 @@
 | `Decided` | Cross-document decision made; implementation follows. |
 | `Superseded` | A Phase 1 constraint that no longer applies in Phase 2. |
 | `Blocked` | Cannot close until an external dependency or evidence exists. |
+| `Proposed` | Approved target or design; not implemented or shipped. |
+| `Scrubbed` | Scheduled gate removed from this cycle; not an environment-config issue. |
 | `Fixed 29 Oct` | Documentation contradiction corrected in this pass. |
 
 ---
@@ -102,7 +104,17 @@ v2.tenant_configurations
 | `jsonschema` not installed in the venv or `requirements.lock` | Validator must be stdlib or add a dependency deliberately | Maitri | Oct 30 |
 | `remediation/p0-security-fixes` pushed to the production remote | Commit SHAs have a remote reference | CI/evidence owner | Done |
 | `schema.json` / `v2 plan.md` untracked at repo root | Session text could leak into the package | Evidence owner | Oct 29 |
-| RLS implementation owner | Staging isolation proof is a dependency | Tenancy/Security owner | Nov 1 |
+| Engine-level RLS implementation (Phase 2) | Policy-shape drill is evidence only; no V1 or Render enforcement | Maitri | Phase 2 (no date) |
+
+### 5.1 Gap register
+
+| Gap | Classification | Owner | Closure | Risk | Notes |
+|---|---|---|---|---|---|
+| Engine-level RLS implementation | `Proposed` | Maitri | Phase 2, no date | Moderate | `M-16` remains `Target-only`; V1 and Render enforce nothing; `plans/evidence/ISOLATION_DRILL.log` is policy-shape evidence only |
+| KMS, HIPAA, PCI controls | `Proposed` | Mayank | Q1 2027 | High | Compliance gaps; not shipped |
+| Live migration and read cutover | `Blocked` | Aritro | Blocked; no date | High | No staging-pilot claim; `V2_DUAL_WRITE=false` |
+
+The `v2-isolation` workflow ran one test only. It did not run data-layer isolation, profile lockdown, or dual-write suites.
 
 ---
 
@@ -130,7 +142,7 @@ v2.tenant_configurations
 | Profile JSON parse check | Passed: `python -m json.tool Industry_Profile_Schema.json` | `Industry_Profile_Schema.json` |
 | Docs consistency test | Passed: `pytest tests/test_v2_docs_consistency.py -q` (10 passed) | `tests/test_v2_docs_consistency.py` |
 | Commit SHAs | Base `bafa585`; Oct 30 docs commit `aed2fd6`; 1 Nov drill `15b854c`; isolation proof `bf456fe`; docs update is the HEAD of `remediation/p0-security-fixes` | Git |
-| CI run URL | Isolation passed: https://github.com/imperiondata/real-estate-ai-lead-agent/actions/runs/41316092168 (`v2-isolation`, `bf456fe`). Full-suite workflow is `.github/workflows/v2-full-suite.yml`; its run URL is recorded after that run is green. | `.github/workflows/v2-isolation.yml` |
+| CI run URL | Isolation passed: https://github.com/imperiondata/real-estate-ai-lead-agent/actions/runs/41316092168 (`v2-isolation`, `bf456fe`). One test only; not the 479-test table; does not cover data-layer isolation, profile lockdown, or dual-write. Full-suite workflow is `.github/workflows/v2-full-suite.yml`; it remains red and is not cited as a pass. | `.github/workflows/v2-isolation.yml` |
 | Isolated migration dry-run | Passed 1 Nov: `NOV1_DRILL_PASS`; tenant 2 mismatch reported, three crash phases durable and idempotent. RLS not executed. | `plans/evidence/NOV1_ISOLATED_DRILL.log` |
 | Isolated agency-isolation proof | Passed 1 Nov: `ISOLATION_DRILL_PASS`; cross-agency isolation, agency-admin restrictions, and tenant-consistent FKs. Policy shape only; no V1 or Render change. | `plans/evidence/ISOLATION_DRILL.log` |
 | Reliability drill | Passed 2 Nov: `RELIABILITY_DRILL_PASS`; update, delete, concurrent writes, new-connection read-back, retry, and SQL rollback. Not a V1 or Render change. | `plans/evidence/NOV2_RELIABILITY_DRILL.log` |
@@ -144,9 +156,9 @@ v2.tenant_configurations
 |---|---|---|
 | 30 October 2026 | Technical evidence package: SHAs, PR/CI URLs, test output, migration dry-run plan | Maitri + Aritro + CI owner |
 | 1 November 2026 | Isolated integration run: profile engine, backfill, parity, rollback gates | Maitri + Aritro |
-| 2 November 2026 | End-to-end staging demo | Team |
+| 2 November 2026 | End-to-end staging demo — `Scrubbed`. Reason: widget, locked-profile scorer, and tenant email are not in the running build. Not an environment-config issue. | Team |
 
-**Demo acceptance:** partial lead is storable; booking is blocked until `required_for_booking` passes; switching `real_estate` to `education` changes stages and scoring; parity check is green; tenant B cannot read tenant A.
+**Demo acceptance (not demonstrated; 2 November demo scrubbed):** partial lead is storable; booking is blocked until `required_for_booking` passes; switching `real_estate` to `education` changes stages and scoring; parity check is green; tenant B cannot read tenant A.
 
 ---
 

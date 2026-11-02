@@ -40,8 +40,11 @@ jobs:
       DATABASE_URL: postgresql://realestate:localpass@127.0.0.1:5432/realestate_db
       REDIS_URL: redis://127.0.0.1:6379/0
       TEST_MODE: "true"
-      # Throwaway runner value so auth.py can import. Not a production secret.
+      # Throwaway runner values. Not production secrets.
+      # ADMIN_API_KEY must be set before pytest imports settings. An empty
+      # value makes /api/v1/lifecycle/events return 500 before the 404 check.
       JWT_SECRET_KEY: ci-only-not-a-production-secret
+      ADMIN_API_KEY: ci-only-not-a-production-secret
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5

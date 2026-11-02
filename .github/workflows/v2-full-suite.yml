@@ -47,17 +47,19 @@ jobs:
           python-version: "3.13"
       - name: Install test dependencies
         run: python -m pip install --upgrade pip -r requirements.txt "moto>=5" pytest
-      - name: Create schema on the throwaway service database
-        run: python -c "import models; from database import engine; models.Base.metadata.create_all(bind=engine)"
+      - name: Create schema and the tenant row the suite expects
+        run: python scripts/ci_bootstrap_db.py
       - name: Run the suite
         run: |
           set +e
-          python -m pytest tests -q --tb=short --continue-on-collection-errors --junitxml=pytest-report.xml > pytest-run.txt 2>&1
+          python -m pytest tests -q --tb=line --junitxml=pytest-report.xml > pytest-run.txt 2>&1
           code=$?
-          tail -n 40 pytest-run.txt | while IFS= read -r line; do
-            clean=$(printf '%s' "$line" | tr '\r' ' ' | cut -c1-180)
-            echo "::error::$clean"
-          done
+          if [ "$code" -ne 0 ]; then
+            tail -n 30 pytest-run.txt | while IFS= read -r line; do
+              clean=$(printf '%s' "$line" | tr '\r' ' ' | cut -c1-180)
+              echo "::error::$clean"
+            done
+          fi
           exit $code
       - name: Prove the 27 V2 tests passed in this run
         if: always()

@@ -130,9 +130,10 @@ v2.tenant_configurations
 | Profile JSON parse check | Passed: `python -m json.tool Industry_Profile_Schema.json` | `Industry_Profile_Schema.json` |
 | Docs consistency test | Passed: `pytest tests/test_v2_docs_consistency.py -q` (10 passed) | `tests/test_v2_docs_consistency.py` |
 | Commit SHAs | Base `bafa585`; Oct 30 docs commit `aed2fd6`; 1 Nov drill `15b854c`; isolation proof `bf456fe`; docs update is the HEAD of `remediation/p0-security-fixes` | Git |
-| CI run URL | Passed: https://github.com/imperiondata/real-estate-ai-lead-agent/actions/runs/41316092168 (`v2-isolation`, `bf456fe`) | `.github/workflows/v2-isolation.yml` |
+| CI run URL | Isolation passed: https://github.com/imperiondata/real-estate-ai-lead-agent/actions/runs/41316092168 (`v2-isolation`, `bf456fe`). Full-suite workflow is `.github/workflows/v2-full-suite.yml`; its run URL is recorded after that run is green. | `.github/workflows/v2-isolation.yml` |
 | Isolated migration dry-run | Passed 1 Nov: `NOV1_DRILL_PASS`; tenant 2 mismatch reported, three crash phases durable and idempotent. RLS not executed. | `plans/evidence/NOV1_ISOLATED_DRILL.log` |
 | Isolated agency-isolation proof | Passed 1 Nov: `ISOLATION_DRILL_PASS`; cross-agency isolation, agency-admin restrictions, and tenant-consistent FKs. Policy shape only; no V1 or Render change. | `plans/evidence/ISOLATION_DRILL.log` |
+| Reliability drill | Passed 2 Nov: `RELIABILITY_DRILL_PASS`; update, delete, concurrent writes, new-connection read-back, retry, and SQL rollback. Not a V1 or Render change. | `plans/evidence/NOV2_RELIABILITY_DRILL.log` |
 | Live database changes | None | N/A |
 
 ---

@@ -122,7 +122,7 @@ The same function covers the two moments in this package:
 | After the read cut, dual-write still on | `rollback()`: reads flip back to V1, then drop the shadow namespace | None. V1 is still receiving writes. |
 | After V1 writes have stopped | Not this package. Restore from the pre-stop `live_dr.py` dump using `LIVE_DATABASE_URL` only | Only if that dump is missing. |
 
-The local INF-01 drill is not this rollback. The 1 November isolated run executed the reconciliation and the failure-injection half against throwaway local Postgres (section 6). It did not execute `rollback()` against Postgres. That step remains in-memory only.
+The local INF-01 drill is not this rollback. The 1 November isolated run executed the reconciliation and the failure-injection half against throwaway local Postgres (section 6). It did not execute rollback against Postgres. The 2 November reliability run did (section 7). That run drops schema `v2` with SQL. It does not claim that `rollback()` opened a socket.
 
 ---
 
@@ -136,6 +136,7 @@ The local INF-01 drill is not this rollback. The 1 November isolated run execute
 | Isolated drill (1 November) | `python scripts/run_v2_isolated_drill.py` | `NOV1_DRILL_PASS` |
 | Isolation policy shape (1 November) | `pytest tests/test_v2_agency_isolation.py -q` | `ISOLATION_DRILL_PASS` |
 | Isolation CI workflow | GitHub Actions `v2-isolation` at `bf456fe` | Passed: https://github.com/imperiondata/real-estate-ai-lead-agent/actions/runs/41316092168 |
+| Reliability drill (2 November) | `python scripts/run_v2_reliability_drill.py` | `RELIABILITY_DRILL_PASS` |
 
 No live database changes were made for this plan.
 
@@ -181,4 +182,48 @@ What each block shows:
 Not executed by this run: row-level security, agency scope, composite foreign keys, and the `rollback()` procedure. `RLS_STATUS` in the header records that V1 and Render have no RLS and that this drill did not execute it. No production claim is made.
 
 A separate run, `python scripts/run_v2_isolation_drill.py`, executed the V2 policy shape on `v2_isolation_drill` and wrote `plans/evidence/ISOLATION_DRILL.log`. That run is not part of the reconciliation log above, and it does not change what this log proves.
+
+---
+
+## 7. Executed reliability run, 2 November 2026
+
+Command: `python scripts/run_v2_reliability_drill.py`. The script creates `v2_nov2_reliability` on `127.0.0.1`, runs the proofs, writes the log, and drops the database. Raw output is `plans/evidence/NOV2_RELIABILITY_DRILL.log`. This is not the 1 November reconciliation log, and it does not change that log.
+
+```text
+RELIABILITY_DRILL_START
+engine=postgres host=127.0.0.1 database=v2_nov2_reliability
+live_database_used=false
+render_used=false
+app_database_touched=false
+production_claim=false
+process_restart=new_connection_after_commit
+UPDATE_BOTH ok=true
+UPDATE_V2_ONLY ok=false column=funnel_stage
+DELETE_BOTH v1_count=0 v2_count=0
+DELETE_V2_ONLY missing=[4]
+CONCURRENT_DISTINCT ids=2 rows=2
+CONCURRENT_SAME_ID rows=1
+RESTART update_visible_to_new_connection=true delete_visible_to_new_connection=true
+RETRY_INSERT duplicate=false v1_count=1 v2_count=1
+RETRY_UPDATE value_stable=true rows=1
+RETRY_DELETE resurrected=false v1_count=0 v2_count=0
+ROLLBACK schema_v2=absent v1_checksum_unchanged=true
+RELIABILITY_DRILL_PASS
+```
+
+| Line | Meaning |
+|---|---|
+| `UPDATE_BOTH ok=true` | The same `funnel_stage` change was applied to V1 and the shadow. Reconciliation passed. |
+| `UPDATE_V2_ONLY ok=false` | A shadow-only change is reported. The column is `funnel_stage`. |
+| `DELETE_BOTH` | The lead is gone from both sides. |
+| `DELETE_V2_ONLY missing=[4]` | Deleting only the shadow row reports primary key 4 as missing. |
+| `CONCURRENT_DISTINCT` | Two connections inserted two ids. Both rows are visible. |
+| `CONCURRENT_SAME_ID rows=1` | Two connections inserted the same id. `ON CONFLICT DO NOTHING` left one row. |
+| `RESTART` | The update and the delete were read back on a new connection. This is not a Postgres server restart. |
+| `RETRY_INSERT` | A second insert did not add a row. |
+| `RETRY_UPDATE` | Applying the same update twice left one row and the same value. |
+| `RETRY_DELETE` | Deleting twice left zero rows. The second delete did not resurrect the lead. |
+| `ROLLBACK` | `DROP SCHEMA v2 CASCADE` removed the shadow. The V1 checksum was the same before and after. |
+
+Not claimed by this run: row-level security, a live read cut, or a restart of the Postgres process that also serves `realestate_db`.
 

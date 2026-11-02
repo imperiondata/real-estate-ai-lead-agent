@@ -106,7 +106,7 @@ Dual-write failure semantics:
 
 ### Rollback
 
-The tested procedure is `rollback()` in `app/migration/dry_run.py`, executed by `tests/test_v2_migration_dry_run.py` on an in-memory fixture. It turns dual-write off, points reads at V1, and drops the shadow namespace. The V1 fixture is unchanged. No socket is opened. A throwaway local Postgres run of the same steps is the Nov 1 drill, not this package.
+The tested procedure is `rollback()` in `app/migration/dry_run.py`, executed by `tests/test_v2_migration_dry_run.py` on an in-memory fixture. It turns dual-write off, points reads at V1, and drops the shadow namespace. The V1 fixture is unchanged. No socket is opened. On 2 November 2026 the same outcome was executed as SQL on throwaway database `v2_nov2_reliability`: `DROP SCHEMA v2 CASCADE` left the V1 checksum unchanged and removed the shadow schema. Raw output is `plans/evidence/NOV2_RELIABILITY_DRILL.log`. That run did not touch Render or `realestate_db`, and it is not a live cutover.
 
 | Moment | Action | Data loss |
 |---|---|---|

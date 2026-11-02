@@ -168,4 +168,7 @@ def test_matrix_has_no_shipped_isolation_claim():
     assert "Design accepted 25 October 2026. Not shipped." in migration_text
     assert "ISOLATION_DRILL.log" in migration_text
     assert "v2_isolation_drill" in migration_text
+    assert "NOV2_RELIABILITY_DRILL.log" in migration_text
+    assert "v2_nov2_reliability" in migration_text
     assert "Render enforces RLS" not in migration_text
+    assert "Target-only" in matrix_text.split("M-16", 1)[1].split("M-17", 1)[0]

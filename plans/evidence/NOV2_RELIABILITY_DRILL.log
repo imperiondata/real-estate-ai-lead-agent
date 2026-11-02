@@ -1,0 +1,19 @@
+RELIABILITY_DRILL_START
+engine=postgres host=127.0.0.1 database=v2_nov2_reliability
+live_database_used=false
+render_used=false
+app_database_touched=false
+production_claim=false
+process_restart=new_connection_after_commit
+UPDATE_BOTH ok=true
+UPDATE_V2_ONLY ok=false column=funnel_stage
+DELETE_BOTH v1_count=0 v2_count=0
+DELETE_V2_ONLY missing=[4]
+CONCURRENT_DISTINCT ids=2 rows=2
+CONCURRENT_SAME_ID rows=1
+RESTART update_visible_to_new_connection=true delete_visible_to_new_connection=true
+RETRY_INSERT duplicate=false v1_count=1 v2_count=1
+RETRY_UPDATE value_stable=true rows=1
+RETRY_DELETE resurrected=false v1_count=0 v2_count=0
+ROLLBACK schema_v2=absent v1_checksum_unchanged=true
+RELIABILITY_DRILL_PASS

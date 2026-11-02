@@ -6,11 +6,18 @@ DATABASE_URL at the GitHub Postgres service before calling it.
 
 from __future__ import annotations
 
+import sys
+from pathlib import Path
+
 from sqlalchemy import text
 
-import models
-from database import engine
-from tests.conftest import ensure_test_client
+ROOT = Path(__file__).resolve().parent.parent
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+
+import models  # noqa: E402
+from database import engine  # noqa: E402
+from tests.conftest import ensure_test_client  # noqa: E402
 
 
 def main() -> None:

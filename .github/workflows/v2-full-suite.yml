@@ -48,7 +48,17 @@ jobs:
       - name: Install test dependencies
         run: python -m pip install --upgrade pip -r requirements.txt "moto>=5" pytest
       - name: Create schema and the tenant row the suite expects
-        run: python scripts/ci_bootstrap_db.py
+        run: |
+          set +e
+          python scripts/ci_bootstrap_db.py > bootstrap.txt 2>&1
+          code=$?
+          if [ "$code" -ne 0 ]; then
+            cat bootstrap.txt | while IFS= read -r line; do
+              clean=$(printf '%s' "$line" | tr '\r' ' ' | cut -c1-180)
+              echo "::error::$clean"
+            done
+          fi
+          exit $code
       - name: Run the suite
         run: |
           set +e

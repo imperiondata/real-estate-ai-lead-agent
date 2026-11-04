@@ -1,0 +1,17 @@
+PROCESS_RESTART_DRILL_START
+engine=postgres host=127.0.0.1 database=v2_process_restart
+live_database_used=false
+render_used=false
+app_database_touched=false
+production_claim=false
+code_path=app.migration.process_restart_worker
+not_a_new_connection_in_the_same_process=true
+live_dual_write_flag=false
+chat_path_unchanged=true
+V1_SUCCESS_V2_FAILURE killed_pid=5464 readback_pid=21296 pids_differ=true process_killed=true v1_count=1 v2_count=0
+V1_SUCCESS_V2_FAILURE_RETRY duplicate=false v1_count=1 v2_count=1
+V2_SUCCESS_V1_FAILURE order=injected production_order=v1_then_v2 killed_pid=11688 readback_pid=4724 pids_differ=true process_killed=true v1_count=0 v2_count=1
+V2_SUCCESS_V1_FAILURE_RETRY duplicate=false v1_count=1 v2_count=1
+PARTIAL_COMMIT v1_committed=true v2_rolled_back=true failure_visible_to_new_process=true readback_pid=9016
+RETRY_PARTIAL duplicate=false v1_count=1 v2_count=1
+PROCESS_RESTART_DRILL_PASS

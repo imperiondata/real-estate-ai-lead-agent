@@ -116,6 +116,8 @@ The tested procedure is `rollback()` in `app/migration/dry_run.py`, executed by 
 
 The local INF-01 drill is not the rollback for a Render cut. Live rollback uses `live_dr.py` and `LIVE_DATABASE_URL` only. `assert_isolated_dsn` refuses a Render host and refuses a DSN equal to `LIVE_DATABASE_URL`.
 
+On 4 November 2026 the line `process_restart=new_connection_after_commit` in `plans/evidence/NOV2_RELIABILITY_DRILL.log` was rejected: a second connection is not an application-process restart. That 2 November log is unchanged and still records only the new-connection read-back it performed. The separate run `python scripts/run_v2_process_restart_drill.py` kills an application process running `app.migration.process_restart_worker` with `terminate()` after the worker commits one side and the `dual_write_failures` row, then reads that row back from a second operating-system process with a different PID and retries the missing side with an idempotent upsert. It ran on throwaway database `v2_process_restart` on `127.0.0.1`; it did not use Render, did not open `realestate_db`, and is not a live cutover. Raw output is `plans/evidence/NOV4_PROCESS_RESTART.log`.
+
 ---
 
 ## 4. Identity map

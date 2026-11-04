@@ -118,6 +118,15 @@ async def _emit_turn_events(
     await _publish_bus_event("conversation.updated", client_id, str(lead_id), base)
     if _is_lead_qualified(lead):
         await _publish_bus_event("lead.qualified", client_id, str(lead_id), base)
+    if is_new_lead and db is not None:
+        try:
+            from app.services.tenant_delivery import deliver_tenant_lead
+            from models import Client
+            client = db.query(Client).filter(Client.id == client_id).first()
+            if client is not None:
+                deliver_tenant_lead(db, client, lead, scoped_session_id)
+        except Exception:
+            logger.exception("tenant delivery failed")
 
 
 async def _send_whatsapp_via_ee(

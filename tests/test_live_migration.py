@@ -31,6 +31,17 @@ def get_base_db_url() -> str:
     return raw
 
 
+def to_sqlalchemy_url(url: str) -> str:
+    """SQLAlchemy 2.0.51 treats a plain postgresql:// URL as the psycopg v3 driver.
+
+    This repo installs psycopg2-binary only. database.py rewrites the app engine
+    the same way. psycopg2.connect must keep the plain URL.
+    """
+    if url.startswith("postgresql://"):
+        return url.replace("postgresql://", "postgresql+psycopg2://", 1)
+    return url
+
+
 def get_admin_url(base_url: str) -> str:
     # Use base_url as the administrative connection to manage test databases
     return base_url
@@ -77,7 +88,7 @@ def isolated_pg_database():
     base_url = get_base_db_url()
     admin_url = get_admin_url(base_url)
     create_isolated_database(admin_url, ISOLATED_DB_NAME)
-    isolated_url = get_isolated_url(base_url, ISOLATED_DB_NAME)
+    isolated_url = to_sqlalchemy_url(get_isolated_url(base_url, ISOLATED_DB_NAME))
 
     # Initialize base schema
     engine = create_engine(isolated_url)

@@ -2,6 +2,12 @@
 
 from datetime import datetime
 
+from app.industry.profile_loader import HOT_PATH, load_profile, resolve_threshold
+
+
+def _hot_min_probability():
+    return resolve_threshold(load_profile("real_estate", 1), HOT_PATH)
+
 
 # ==========================================
 # BUILD ANALYTICS SNAPSHOT
@@ -242,7 +248,7 @@ def generate_performance_metrics(analytics):
 
         metrics["priority"] = "critical"
 
-    elif probability >= 70:
+    elif probability >= _hot_min_probability():
 
         metrics["priority"] = "high"
 

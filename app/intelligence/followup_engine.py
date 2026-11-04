@@ -13,6 +13,11 @@ from app.intelligence.followup_ab_testing import (
 from app.intelligence.push_wait_engine import (
     decide_push_vs_wait
 )
+from app.industry.profile_loader import HOT_PATH, load_profile, resolve_threshold
+
+
+def _hot_min_probability():
+    return resolve_threshold(load_profile("real_estate", 1), HOT_PATH)
 
 
 # ==========================================
@@ -170,7 +175,7 @@ def generate_followup_sequence(
     # DAY 7
     # ==========================================
 
-    if probability >= 70:
+    if probability >= _hot_min_probability():
 
         day_7_message = (
             "Inventory is becoming limited for "

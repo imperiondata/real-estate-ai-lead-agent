@@ -31,6 +31,13 @@ from models import Lead, Message, Session
 from sqlalchemy.orm import Session as DBSession
 
 from app.automation_engine.engine import submit as ae_submit
+from app.industry.profile_loader import (
+    HOT_PATH,
+    WARM_PATH,
+    classify_temperature,
+    load_profile,
+    resolve_threshold,
+)
 
 logger = logging.getLogger("whatsapp_agent_v3")
 
@@ -157,30 +164,66 @@ def generate_floorplan(lead: Lead) -> str:
     )
 
 
-def score_lead(lead: Lead) -> dict:
+def _tenant_override(overrides: Optional[dict], path: str):
+    if not overrides:
+        return None
+    if path in overrides:
+        return overrides[path]
+    return overrides.get(path.rsplit(".", 1)[-1])
+
+
+def score_lead(lead: Lead, tenant_overrides: Optional[dict] = None) -> dict:
     """Compute lead scores and persist them on the lead row.
 
-    Pure-ish heuristic (no LLM) so it is fast and deterministic:
-      * engagement_score: +1 per filled core field, capped at 100
-      * conversion_probability: weighted blend of completeness + temperature
-      * lead_temperature: hot/warm/cold from probability
-      * urgency_level: high/medium/low from visit intent / recency
-      * budget_alignment_status: aligned / unknown / mismatch
+    Profile-driven (no LLM) so it is fast and deterministic. The published
+    ``real_estate`` v1 profile is the source of truth for the engagement cap,
+    probability blend, hot/warm cuts, and the full-qualify / visit floors.
     """
+    profile = load_profile("real_estate", 1)
+    rules = profile["scoring_rules"]
+    engagement_rules = rules["engagement"]
+    probability_rules = rules["probability"]
+    temperature_rules = rules["temperature"]
+
     core = [lead.name, lead.phone, lead.budget, lead.location, lead.property_type, lead.visit_date]
     filled = sum(1 for c in core if c)
-    engagement = min(100, filled * 16 + (lead.whatsapp_opt_in and 4 or 0))
+    engagement = min(
+        engagement_rules["cap"],
+        filled * engagement_rules["points_per_field"]
+        + (lead.whatsapp_opt_in and engagement_rules["opt_in_points"] or 0),
+    )
 
     temp = (lead.lead_temperature or "cold").lower()
-    temp_weight = {"hot": 60, "warm": 40, "cold": 15}.get(temp, 15)
-    prob = min(98, int(engagement * 0.5 + temp_weight * 0.5))
+    weights = probability_rules["temperature_weights"]
+    temp_weight = weights.get(temp, weights.get("cold", 15))
+    prob = min(
+        probability_rules["cap"],
+        int(
+            engagement * probability_rules["engagement_weight"]
+            + temp_weight * probability_rules["temperature_weight"]
+        ),
+    )
 
-    if prob >= 70:
-        temperature = "hot"
-    elif prob >= 45:
-        temperature = "warm"
-    else:
-        temperature = "cold"
+    # The weighted blend caps below the hot threshold on its own. The profile
+    # floors are part of the contract: fully-qualified leads floor at 88, a
+    # present visit_date floors at 82.
+    if all(core):
+        prob = max(prob, temperature_rules["full_qualify_floor"])
+    elif lead.visit_date:
+        prob = max(
+            prob,
+            (temperature_rules.get("field_floors") or {}).get(
+                "visit_date", temperature_rules["hot_min_probability"]
+            ),
+        )
+
+    hot_min = resolve_threshold(
+        profile, HOT_PATH, _tenant_override(tenant_overrides, HOT_PATH)
+    )
+    warm_min = resolve_threshold(
+        profile, WARM_PATH, _tenant_override(tenant_overrides, WARM_PATH)
+    )
+    temperature = classify_temperature(prob, hot_min, warm_min)
 
     if lead.visit_date:
         urgency = "high"

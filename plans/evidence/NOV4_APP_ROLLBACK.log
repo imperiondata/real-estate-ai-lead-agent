@@ -1,0 +1,11 @@
+APP_ROLLBACK_START
+engine=postgres host=127.0.0.1 database=v2_app_rollback
+live_database_used=false
+SEED v1_lead_id=1 v1_checksum=c61cc0b5604ec169fe7f6b3288b9aa578457989439de0f00812b242505e593a8 shadow_schema=present
+APP_ROLLBACK read_source=v1 dual_write=false shadow_tables=0
+SCHEMA_DROP v2_absent=true
+APP_READ status=ok http_equivalent=200
+V1_INTEGRITY checksum_unchanged=true row_present=true
+V1_SERIALIZED name='Rollback Proof' temperature='Hot'
+V2_DUAL_WRITE off=true env=false
+APP_ROLLBACK_PASS

@@ -3,8 +3,13 @@
 import React, { useState, useRef, useEffect } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-import { Bot, User, Send, Loader2, Database, BarChart3 } from 'lucide-react';
-import { simulateSSEStream, ChatMessage } from '@/lib/api/mockChatService';
+import { Bot, User, Send } from 'lucide-react';
+
+type ChatMessage = {
+  id: string;
+  role: 'user' | 'assistant';
+  content: string;
+};
 
 export default function AIChatPage() {
   const [messages, setMessages] = useState<ChatMessage[]>([
@@ -13,6 +18,16 @@ export default function AIChatPage() {
   const [input, setInput] = useState('');
   const [isTyping, setIsTyping] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const sessionIdRef = useRef('');
+
+  useEffect(() => {
+    if (!sessionIdRef.current) {
+      sessionIdRef.current =
+        typeof crypto !== 'undefined' && crypto.randomUUID
+          ? crypto.randomUUID()
+          : `web-${Date.now()}`;
+    }
+  }, []);
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -23,44 +38,43 @@ export default function AIChatPage() {
   }, [messages]);
 
   const handleSend = async () => {
-    if (!input.trim()) return;
-    
+    if (!input.trim() || isTyping) return;
+
     const userMessage: ChatMessage = { id: Date.now().toString(), role: 'user', content: input };
     setMessages(prev => [...prev, userMessage]);
     setInput('');
     setIsTyping(true);
 
-    // Placeholder for AI response
     const assistantId = (Date.now() + 1).toString();
     setMessages(prev => [...prev, { id: assistantId, role: 'assistant', content: '' }]);
 
-    // Stream handler
-    const onToken = (token: string) => {
-      setMessages(prev => 
-        prev.map(msg => msg.id === assistantId ? { ...msg, content: msg.content + token } : msg)
+    try {
+      const res = await fetch('/api/chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          session_id: sessionIdRef.current,
+          message: userMessage.content,
+        }),
+      });
+      const data = await res.json().catch(() => null);
+      if (!res.ok) {
+        throw new Error(data?.error || 'Chat request failed.');
+      }
+      const reply = typeof data?.reply === 'string' && data.reply
+        ? data.reply
+        : 'No reply received.';
+      setMessages(prev =>
+        prev.map(msg => msg.id === assistantId ? { ...msg, content: reply } : msg)
       );
-    };
-
-    const onToolCall = (tool: string, status: 'running' | 'completed') => {
-      setMessages(prev => 
-        prev.map(msg => msg.id === assistantId ? { ...msg, toolCall: { tool, status } } : msg)
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Chat request failed.';
+      setMessages(prev =>
+        prev.map(msg => msg.id === assistantId ? { ...msg, content: message } : msg)
       );
-    };
-
-    await simulateSSEStream(userMessage.content, onToken, onToolCall);
-    setIsTyping(false);
-  };
-
-  const renderToolCall = (toolCall: { tool: string; status: 'running' | 'completed' }) => {
-    const isRunning = toolCall.status === 'running';
-    const Icon = toolCall.tool === 'AnalyticsAgent' ? BarChart3 : Database;
-    
-    return (
-      <div className={`flex items-center gap-2 text-sm font-medium p-3 rounded-lg mb-3 ${isRunning ? 'bg-blue-900/20 text-blue-400 border border-blue-900/50' : 'bg-gray-800/50 text-gray-400 border border-gray-700'}`}>
-        {isRunning ? <Loader2 className="w-4 h-4 animate-spin" /> : <Icon className="w-4 h-4" />}
-        {isRunning ? `Calling ${toolCall.tool}...` : `${toolCall.tool} Execution Complete`}
-      </div>
-    );
+    } finally {
+      setIsTyping(false);
+    }
   };
 
   return (
@@ -86,16 +100,10 @@ export default function AIChatPage() {
             </div>
             
             <div className={`flex flex-col ${msg.role === 'user' ? 'items-end' : 'items-start'}`}>
-              {/* Tool Call State */}
-              {msg.role === 'assistant' && msg.toolCall && renderToolCall(msg.toolCall)}
-              
-              {/* Message Bubble */}
               {msg.content && (
                 <div className={`p-4 rounded-2xl ${msg.role === 'user' ? 'bg-indigo-600 text-white rounded-tr-sm' : 'bg-[#15151a] border border-gray-800 text-gray-200 rounded-tl-sm'}`}>
                   <div className="prose prose-invert prose-sm max-w-none">
-                    <ReactMarkdown 
-                      remarkPlugins={[remarkGfm]}
-                    >
+                    <ReactMarkdown remarkPlugins={[remarkGfm]}>
                       {msg.content}
                     </ReactMarkdown>
                   </div>
@@ -104,7 +112,7 @@ export default function AIChatPage() {
             </div>
           </div>
         ))}
-        {isTyping && !messages[messages.length - 1]?.toolCall && !messages[messages.length - 1]?.content && (
+        {isTyping && !messages[messages.length - 1]?.content && (
           <div className="flex gap-4 max-w-3xl mr-auto">
             <div className="w-8 h-8 rounded-full bg-blue-600/20 flex items-center justify-center shrink-0">
               <Bot className="w-5 h-5 text-blue-400" />

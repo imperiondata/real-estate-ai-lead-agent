@@ -126,6 +126,7 @@ v2.tenant_configurations
 | M-18: `schema.json` session export at repo root | `Blocked` | Evidence owner | Low | Move outside the repo or ignore | Before evidence submission | Do not commit or submit it |
 | M-19: `webhook_logs.tenant_id` | `Target-only` | Aritro | Low | Add `v2.webhook_logs.tenant_id` in the shadow schema only | Aritro migration closure | No live alter |
 | M-20: two scoring paths | `Contradicts` | Maitri | High | One profile adapter; mark the non-profile path legacy | 5 Nov 2026 (scorer SHA) | `score_lead` is the v3 path; `lead_scoring` stays legacy |
+| Analytics recommended-action and follow-up priority still use >= 70 | `Contradicts` | Maitri | Low | Leave for a later pass. The profile has no key for these bands. | Phase 2, no date | analytics_engine.py recommended-action cut and followup_engine.py priority cut. Not the hot threshold. Not part of the scorer proof. |
 | Full-suite CI | `green` at `7b837cf` | Aritro | High | Full-suite check passed at `7b837cf`; feature-branch push unblocked; merge to `remediation/p0-security-fixes` still gated | [run 41849180162](https://github.com/imperiondata/real-estate-ai-lead-agent/actions/runs/41849180162) | Do not cite `41491790059` or `41488336104`; do not assert a test count |
 | 2 November staging demo | `Scrubbed` | Team | High | No action this cycle | n/a (scrubbed) | Widget, locked scorer, and tenant email were not in the running build; not an environment-config miss |
 | KMS, HIPAA, PCI controls | `Proposed` | Mayank | High | Compliance controls program | Q1 2027 | Not shipped |
@@ -163,7 +164,7 @@ The `v2-isolation` workflow ran one test only. It did not run data-layer isolati
 | Isolated migration dry-run | Passed 1 Nov: `NOV1_DRILL_PASS`; tenant 2 mismatch reported, three crash phases durable and idempotent. RLS not executed. | `plans/evidence/NOV1_ISOLATED_DRILL.log` |
 | Isolated agency-isolation proof | Passed 1 Nov: `ISOLATION_DRILL_PASS`; cross-agency isolation, agency-admin restrictions, and tenant-consistent FKs. Policy shape only; no V1 or Render change. | `plans/evidence/ISOLATION_DRILL.log` |
 | Reliability drill | Passed 2 Nov: `RELIABILITY_DRILL_PASS`; update, delete, concurrent writes, new-connection read-back, retry, and SQL rollback. Not a V1 or Render change. | `plans/evidence/NOV2_RELIABILITY_DRILL.log` |
-| Application rollback proof | Passed 4 Nov: `APP_ROLLBACK_PASS`; dual-write off, reads on V1, shadow schema dropped, V1 row read through the app ORM + serializer, checksum unchanged. Throwaway local DB only. | `plans/evidence/NOV4_APP_ROLLBACK.log` |
+| Application rollback proof | Passed 4 Nov: `APP_ROLLBACK_PASS`; dual-write off, reads on V1, shadow schema dropped, checksum unchanged. The V1 row was read through `serialize_lead` after the shadow schema was dropped. No HTTP server was started. Throwaway local DB only. | `plans/evidence/NOV4_APP_ROLLBACK.log` |
 | Scorer RCA (82 unreachable / v3 used 70) | 4 Nov: profile-driven cuts + floors; 44 targeted tests; DB proof 88/hot and 72/warm; `/ai-chat` + `/widget` wiring proven. Live LLM reply hit upstream Gemini `503`. | `plans/evidence/NOV4_SCORER_RCA.md` |
 | Live database changes | None | N/A |
 

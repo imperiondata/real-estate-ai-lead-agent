@@ -53,7 +53,8 @@ follow-up high-priority cuts repeated the same literal.
 - Targeted suites: 44 passed (`scorer`, `guard`, `docs`, `e5`, `e4`,
   migration dry run).
 - App rollback proof: `APP_ROLLBACK_PASS`
-  (`plans/evidence/NOV4_APP_ROLLBACK.log`).
+  (`plans/evidence/NOV4_APP_ROLLBACK.log`). The V1 row was read through
+  `serialize_lead` after the shadow schema was dropped. No HTTP server was started.
 - UI wiring: `/ai-chat` and `/widget` return 200; `/api/chat` forwards to
   `/api/v1/chat` with `X-API-Key` and returns `status=success`, `client_id=1`.
   The live reply in this run was the fallback because Gemini returned
@@ -62,7 +63,7 @@ follow-up high-priority cuts repeated the same literal.
 
 ## Out of scope / residual risk
 
-- Legacy `agent.py:1503` still uses a literal 70; it is not the v3 path.
+- Legacy `agent.py:1503` is already `if prob >= 82`. That path is not the v3 scorer and was not the staging 70. Do not describe it as a remaining 70.
 - `analytics_engine.py:273` and `followup_engine.py:211` are different cuts and
   were intentionally left unchanged.
 - Profile loading reads the JSON file per call; a DB-backed store and caching

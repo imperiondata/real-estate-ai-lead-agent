@@ -207,7 +207,7 @@ def run() -> list[str]:
         except Exception as exc:  # noqa: BLE001 - the log must record the failure
             lines.append(f"APP_READ status=error error={type(exc).__name__}: {exc}")
             raise
-        lines.append("APP_READ status=ok http_equivalent=200")
+        lines.append("APP_READ status=ok path=serialize_lead http_server_started=false")
         lines.append(
             "V1_INTEGRITY "
             f"checksum_unchanged={str(before == after).lower()} row_present=true"

@@ -224,6 +224,31 @@ def assert_override_safe(overrides: dict, document: dict) -> None:
             raise ProfileGuardError("range_violation", f"{path} is numeric and has no range")
 
 
+def validate_override_value(document: dict, path: str, value: Any) -> Any:
+    """Reject a tenant override value outside the published schema range.
+
+    ``assert_override_safe`` validates that a document's declared range contains
+    its own default. This function validates a *tenant value* for an allowed
+    numeric leaf: unknown paths, non-numeric values, and values below ``min`` or
+    above ``max`` are rejected. A rejected value must not change the score.
+    """
+    overrides = document.get("overrides")
+    if not isinstance(overrides, dict):
+        raise ProfileGuardError("override_missing", "overrides missing")
+    if path not in (overrides.get("allowed") or []):
+        raise ProfileGuardError("override_not_allowed", str(path))
+    if path not in NUMERIC_OVERRIDE_PATHS:
+        raise ProfileGuardError("override_not_numeric", str(path))
+    bounds = (overrides.get("ranges") or {}).get(path)
+    if not isinstance(bounds, dict) or "min" not in bounds or "max" not in bounds:
+        raise ProfileGuardError("range_violation", f"{path} has no range")
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        raise ProfileGuardError("override_not_numeric", str(path))
+    if not bounds["min"] <= value <= bounds["max"]:
+        raise ProfileGuardError("range_violation", f"{path} value outside range")
+    return value
+
+
 def allowed_forbidden_intersection(document: dict) -> set[str]:
     hits = set()
     for path in document.get("overrides", {}).get("allowed", []):

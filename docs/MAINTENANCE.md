@@ -502,7 +502,7 @@ Structured logs use `request_id` / `tenant_id` contextvars when set.
 | Symptom | Check |
 |---------|--------|
 | App won’t start | `.env`, Postgres up, `pip check`, traceback on import |
-| EventBus errors | Redis container, `EVENT_STREAM_*` |
+| EventBus errors | Redis container, `EVENT_STREAM_*`. One `EventBus read failed; retrying` warning is a transient `XREADGROUP` timeout — the consumer stays up and publish still works. `EventBus consume loop crashed` means the loop exited and `_running` is false until process restart. |
 | No WA send | `TEST_MODE`, Twilio creds, EE WhatsAppExecutor logs, DLQ |
 | CRM not updating | bus `crm_automation`, `crm_sync_status`, DLQ `hubspot_crm` |
 | Graph empty | `NEO4J_URI`, `project_leads_to_neo4j.py`, writer logs |

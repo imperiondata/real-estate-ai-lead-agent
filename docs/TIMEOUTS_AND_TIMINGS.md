@@ -177,9 +177,11 @@ SMS does **not** use the WA race/interim pattern; it awaits `process_unified_lea
 
 | Timing | Value | Description | Location |
 |--------|-------|-------------|----------|
-| Handler task drain on stop | **2.0s** | `wait_for` per task | `event_bus_client.py` ~117 |
-| Pending XREAD reclaim | block **10ms**, count **10**, outer wait **2s** | startup reclaim | `event_bus_client.py` ~208–212 |
-| Live XREAD | block **250ms**, count **10** | main consumer loop | `event_bus_client.py` ~221 |
+| Handler task drain on stop | **2.0s** | `wait_for` per task | `event_bus_client.py` ~128 |
+| Pending XREAD reclaim | block **10ms**, count **10**, outer wait **2s** | startup reclaim | `event_bus_client.py` ~242 |
+| Live XREAD | block **250ms**, count **10** | main consumer loop | `event_bus_client.py` ~253 |
+| Consumer socket timeout | **None** | Blocking `XREADGROUP` must not die on redis-py's 5s default. Publisher client keeps the 5s default so publish still fails loud. | `event_bus_client.py` `start` ~101 |
+| Read-failure retry | **1.0s** | `_READ_RETRY_DELAY`. Timeout/disconnect logs `EventBus read failed; retrying` and continues. Does **not** clear `_running`. | `event_bus_client.py` ~44, ~266–277 |
 | SSE heartbeat | **15s** | `: ping` | `app/api/events.py` `HEARTBEAT_SEC` ~39, ~127 |
 | SSE queue max | **1000** | drop on full | `events.py` `SSE_QUEUE_MAX` ~40 |
 

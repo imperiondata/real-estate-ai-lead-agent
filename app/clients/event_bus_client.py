@@ -39,6 +39,10 @@ class EventBusClient:
     at-least-once delivery even across restarts.
     """
 
+    # Pause after a transient XREADGROUP failure. The loop stays up; publish
+    # keeps using the separate writer client. Do not treat this as a crash.
+    _READ_RETRY_DELAY = 1.0
+
     def __init__(
         self,
         stream: Optional[str] = None,
@@ -88,7 +92,14 @@ class EventBusClient:
         """Idempotently connect, create the consumer group, start the loop."""
         if self._running:
             return
-        self._redis = aioredis.from_url(self.redis_url, decode_responses=True)
+        # Consumer blocks on XREADGROUP. redis-py 8 defaults socket_timeout to
+        # 5s, which raises "Timeout reading from ..." when BLOCK outlives that
+        # cap (common with the Docker-on-Windows port proxy). None waits for
+        # Redis's own BLOCK reply. Publisher keeps the default so a dead Redis
+        # still fails loud on publish.
+        self._redis = aioredis.from_url(
+            self.redis_url, decode_responses=True, socket_timeout=None
+        )
         # Dedicated client for publish so a blocking consumer read never
         # contends on the same connection/pool as a writer.
         self._pub_redis = aioredis.from_url(self.redis_url, decode_responses=True)
@@ -248,7 +259,22 @@ class EventBusClient:
     async def _consume_loop(self) -> None:
         try:
             while self._running:
-                entries = await self._fetch_entries()
+                try:
+                    entries = await self._fetch_entries()
+                except asyncio.CancelledError:
+                    raise
+                except (asyncio.TimeoutError, aioredis.RedisError) as exc:
+                    # Transient read (socket timeout, disconnect). redis-py
+                    # already dropped the socket; the next XREADGROUP
+                    # reconnects from the pool. Do not clear _running —
+                    # publish must keep working on _pub_redis.
+                    logger.warning(
+                        "EventBus read failed; retrying: %s %r",
+                        type(exc).__name__,
+                        exc,
+                    )
+                    await asyncio.sleep(self._READ_RETRY_DELAY)
+                    continue
                 if not entries:
                     continue
                 for msg_id, fields in entries:

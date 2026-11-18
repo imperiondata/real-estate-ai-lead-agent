@@ -143,6 +143,112 @@ def test_handler_failure_does_not_kill_loop():
     asyncio.run(run())
 
 
+def test_read_timeout_retries_without_stopping_bus():
+    """A blocking XREADGROUP timeout must not kill the consumer or publish."""
+    import json
+
+    import redis.asyncio as aioredis
+
+    async def run():
+        bus = EventBusClient(stream="s", group="g", consumer="c")
+        bus._running = True
+        bus._drained_pending = True
+        bus._READ_RETRY_DELAY = 0
+
+        seen = []
+        bus.subscribe("lead.created", lambda e: seen.append(e))
+        envelope = {
+            "event_id": "e1",
+            "event_type": "lead.created",
+            "tenant_id": "Client_1",
+            "entity_id": "1",
+            "payload": {"lead_id": 1, "tenant_id": "Client_1"},
+        }
+        published = []
+
+        class FakeRedis:
+            def __init__(self):
+                self.calls = 0
+
+            async def xreadgroup(self, group, consumer, streams, count=None, block=None):
+                self.calls += 1
+                if self.calls == 1:
+                    raise aioredis.TimeoutError("Timeout reading from localhost:6379")
+                if self.calls == 2:
+                    return [("s", [("1-0", {"data": json.dumps(envelope)})])]
+                await asyncio.Future()
+
+            async def xack(self, stream, group, msg_id):
+                return 1
+
+        class FakePub:
+            async def xadd(self, stream, fields):
+                published.append(fields)
+                return "9-0"
+
+        bus._redis = FakeRedis()
+        bus._pub_redis = FakePub()
+
+        task = asyncio.create_task(bus._consume_loop())
+        try:
+            for _ in range(50):
+                if seen and bus._redis.calls >= 2:
+                    break
+                await asyncio.sleep(0.01)
+            assert bus._running is True, "read timeout cleared _running"
+            assert len(seen) == 1, seen
+            assert seen[0]["event_id"] == "e1"
+            eid = await bus.publish("lead.created", "Client_1", "1", {"lead_id": 1})
+            assert eid
+            assert published, "publish was rejected after a transient read timeout"
+            assert bus._running is True
+        finally:
+            task.cancel()
+            with pytest.raises(asyncio.CancelledError):
+                await task
+
+    asyncio.run(run())
+
+
+def test_consumer_socket_timeout_disabled_publisher_keeps_default(monkeypatch):
+    """Blocking consumer waits on Redis BLOCK; publisher keeps the 5s default."""
+    created = []
+
+    class Fake:
+        async def xgroup_create(self, *args, **kwargs):
+            return None
+
+        async def aclose(self):
+            return None
+
+        async def close(self):
+            return None
+
+        async def xreadgroup(self, *args, **kwargs):
+            await asyncio.Future()
+
+    def fake_from_url(url, **kwargs):
+        created.append(kwargs)
+        return Fake()
+
+    monkeypatch.setattr("app.clients.event_bus_client.aioredis.from_url", fake_from_url)
+
+    async def run():
+        bus = EventBusClient(stream="s", group="g", redis_url="redis://127.0.0.1:6399/0")
+        await bus.start()
+        try:
+            assert bus._running is True
+        finally:
+            await bus.stop()
+
+    asyncio.run(run())
+    assert len(created) == 2, created
+    assert created[0].get("socket_timeout") is None
+    assert "socket_timeout" not in created[1]
+    assert created[0]["decode_responses"] is True
+    assert created[1]["decode_responses"] is True
+
+
 # ---------------------------------------------------------------------- #
 # Task 1.3 — Agent registry (pure, no Redis)
 # ---------------------------------------------------------------------- #

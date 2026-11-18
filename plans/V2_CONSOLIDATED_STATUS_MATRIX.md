@@ -1,7 +1,7 @@
 # V2 Consolidated Status Matrix
 
 **Date:** 29 October 2026
-**Updated:** 4 November 2026 (profile loader + scorer floors; app rollback proof; gap register expanded; full-suite green at `7b837cf`; M-16 Target-only)
+**Updated:** 18 November 2026 (`/sales-copilot` classified Partially Implemented; static summary UI and cross-origin timeline cookie)
 **Owner:** Maitri (Industry Profile) with Aritro (Migration)
 **Audience:** Piyush
 **Purpose:** Reconcile the Phase 1 documents with the current code and lock the decisions that Phase 2 implementation depends on.
@@ -131,6 +131,7 @@ v2.tenant_configurations
 | 2 November staging demo | `Scrubbed` | Team | High | No action this cycle | n/a (scrubbed) | Widget, locked scorer, and tenant email were not in the running build; not an environment-config miss |
 | KMS, HIPAA, PCI controls | `Proposed` | Mayank | High | Compliance controls program | Q1 2027 | Not shipped |
 | Live migration and read cutover | `Blocked` | Aritro | High | Approval plus cutover plan | Blocked; no date | No staging-pilot claim; `V2_DUAL_WRITE=false` |
+| `/sales-copilot` timeline and summary UI | `Partially Implemented` | Maitri | Medium | Same-origin timeline fetch, or a proxy that forwards the HttpOnly `jwt` cookie. Replace the static summary panel with the selected lead. | Before evidence close | Timeline request exists (`GET /api/v1/events/leads/{id}/timeline`) and reads `lead_id` from the query, falling back to `1`. The summary panel is a static John Doe placeholder, including the 92 score and the draft copy. The filter labels are static. The browser calls `NEXT_PUBLIC_API_URL` on another origin, so the login cookie is not sent and the Event Timeline stays empty. Not a `TEST_MODE` failure. Do not cite this page as a TENANT DELIVERY proof. |
 
 The `v2-isolation` workflow ran one test only. It did not run data-layer isolation, profile lockdown, or dual-write suites.
 

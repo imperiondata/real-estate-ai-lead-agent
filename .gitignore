@@ -176,4 +176,21 @@ temp_mount/
 # Local audit & review reports (do not commit)
 P0_FINAL_REMEDIATION_REPORT.md
 *.dump
-dump.rdb
+dump.rdb
+
+# Local recording sheets, session dumps, and personal notes (never commit)
+/ARITRO_RECORDING_COMMANDS.md
+/MAITRI_*.md
+/Maitri_Shah_Resume.md
+/P0_PII_AND_GRAPH_EXECUTION.md
+/P0_SEC02_INF01_EXECUTION.md
+/Unified_AI_Revenue_Automation_Platform_Technical_Architecture.md
+/isolation and migration.md
+/v2 plan.md
+/recording.md
+/nov_1.txt
+/p0_test_log.txt
+/schema.json
+
+# Next sometimes writes a build tree named after a mangled Windows path
+frontend/C*

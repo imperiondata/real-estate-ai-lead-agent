@@ -16,8 +16,6 @@
 # next.js
 /.next/
 /out/
-# Accidental output rooted at a mangled absolute path (C∶Users…)
-/C*
 
 # production
 /build

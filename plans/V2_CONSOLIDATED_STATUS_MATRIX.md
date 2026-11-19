@@ -1,14 +1,13 @@
 # V2 Consolidated Status Matrix
 
 **Date:** 29 October 2026
-**Updated:** 18 November 2026 (`/sales-copilot` classified Partially Implemented; static summary UI and cross-origin timeline cookie)
+**Updated:** 20 November 2026 (unified head `143c92e6415af8045c230670a8170bd436e18ab8` merged via PR #4 on `remediation/p0-security-fixes`; full-suite CI passed at run 42046238418: 520 passed, 3 skipped, 0 failed; `/sales-copilot` classified Partially Implemented)
 **Owner:** Maitri (Industry Profile) with Aritro (Migration)
 **Audience:** Piyush
 **Purpose:** Reconcile the Phase 1 documents with the current code and lock the decisions that Phase 2 implementation depends on.
 
 **Baseline for code checks:** `bafa585` (`docs(v2): add Industry Profile Schema json`).
-**Branch:** `remediation/p0-security-fixes` (54 commits ahead of `origin/main` at the time of writing; not yet pushed).
-**Work branch:** `remediation/profile-scorer` (rebased onto `7b837cf`; feature branch, not merged to `remediation/p0-security-fixes`).
+**Branch:** `remediation/p0-security-fixes` (unified head `143c92e6415af8045c230670a8170bd436e18ab8`; PR #4 merged).
 
 ---
 
@@ -35,6 +34,7 @@
 | `Blocked` | Cannot close until an external dependency or evidence exists. |
 | `Proposed` | Approved target or design; not implemented or shipped. |
 | `Scrubbed` | Scheduled gate removed from this cycle; not an environment-config issue. |
+| `CI-Tested on 143c92e` | Verified and passing in full-suite CI run 42046238418 on merged unified head 143c92e. |
 | `Fixed 29 Oct` | Documentation contradiction corrected in this pass. |
 
 ---
@@ -45,12 +45,12 @@
 |---|---|---|---|---|---|---|
 | M-01 | The profile is one full envelope, but Mayank's ER stores `qualification_schema` and `base_ai_prompt` as two columns and the document calls this a "storage gap". | `V2_Industry_Profile.md:19-30` | No profile table or loader exists. | `Decided` | Maitri + Aritro | Runtime profile is one `industry_profiles.document` JSONB row per `(key, version)`. Tenant overrides live in `tenant_configurations.overrides`. Two-column storage is superseded. Mayank ER update requested. |
 | M-02 | `Industry_Profile_Schema.json` is a meta-schema with `examples`, not a runtime profile instance. | `Industry_Profile_Schema.json:100-246` | No seeded `real_estate/1` or `education/1` profile exists. | `Target-only` | Maitri | Seed both profiles from the `examples` array. `FileProfileStore` first; `DbProfileStore` for the isolated `v2` schema later. |
-| M-03 | Hot threshold is 82. | `V2_Industry_Profile.md:69`; `Industry_Profile_Schema.json:135` | `app/agents/whatsapp_agent.py:178` uses `>= 70`; `app/intelligence/analytics_engine.py:245` and `app/intelligence/followup_engine.py:173` also use 70. | `Contradicts` | Maitri | 82 is canonical. The 70 cutoffs are implementation gaps to remove behind the profile engine. |
-| M-04 | Warm is 45, full-qualify floor is 88, visit floor is 82. | `V2_Industry_Profile.md:69`; `Industry_Profile_Schema.json:134-139` | `score_lead` uses 45 for warm, but does not apply the 88 full-qualify floor or 82 visit floor. | `Partial` | Maitri | Scoring reads `temperature.*` from the profile. |
+| M-03 | Hot threshold is 82. | `V2_Industry_Profile.md:69`; `Industry_Profile_Schema.json:135` | `score_lead` in `app/agents/whatsapp_agent.py` is profile-driven; uses 82 hot cut from `real_estate` v1; literal 70 removed. | `CI-Tested on 143c92e` | Maitri | 82 is canonical and profile-driven. Verified in CI run 42046238418 on `143c92e`. |
+| M-04 | Warm is 45, full-qualify floor is 88, visit floor is 82. | `V2_Industry_Profile.md:69`; `Industry_Profile_Schema.json:134-139` | `score_lead` applies profile cuts and floors: 45 warm cut, 88 full-qualify floor, and 82 visit floor. | `CI-Tested on 143c92e` | Maitri | Scoring reads `temperature.*` from profile. Verified in CI run 42046238418 on `143c92e`. |
 | M-05 | `score` is engine-owned scoring data. | `V2_Industry_Profile.md:67` | `models.Lead.score` is a String defaulting to `"Low"` (`models.py:90`); numeric outputs are separate columns. | `Contradicts` | Maitri | Keep `Lead.score` as a legacy display field. Profile scoring writes `conversion_probability`, `lead_temperature`, `engagement_score`, `urgency_level`, and `budget_alignment_status`. |
 | M-06 | The profile has no hardcoded city price table; budget alignment uses tenant pricing/catalog and returns `unknown` when data is missing. | `V2_Industry_Profile.md:71`; `Industry_Profile_Schema.json:145-149` | `app/intelligence/budget_alignment.py:61-80` uses `PUNE_LOCATIONS` from `app/data_manager.py`. | `Contradicts` | Maitri | Target is tenant `PricingRule`/`InventoryUnit`. No Pune table in the profile. Treat the current lookup as a known deviation. |
 | M-07 | Kanban uses stage keys from `pipeline_stages`; unknown stage writes fail. | `V2_Industry_Profile.md:79-85`; `Industry_Profile_Schema.json:154-166` | `agent.FUNNEL_STAGES` is label-based (`agent.py:122`); `main.py:1661` validates against it; `frontend/src/app/(dashboard)/crm/KanbanBoard.tsx:8` hardcodes the same labels; `main.py:944` writes `"New"`. | `Contradicts` | Maitri | Profile keys are canonical. Publish the legacy label-to-key map and reject unknown stages. Frontend follows the profile or the API exposes stages. |
-| M-08 | Unknown rule keys fail profile load; override paths and ranges are validated. | `V2_Industry_Profile.md:38`; `Industry_Profile_Schema.json:90-98` | The meta-schema leaves `scoring_rules` sub-objects unconstrained (`:54-67`) and `overrides.ranges` untyped (`:96`). | `Partial` | Maitri | JSON Schema alone is not sufficient. The loader validator enforces nested rule keys, numeric bounds, stage uniqueness, dashboard ids, prompt slots, and override paths/ranges. |
+| M-08 | Unknown rule keys fail profile load; override paths and ranges are validated. | `V2_Industry_Profile.md:38`; `Industry_Profile_Schema.json:90-98` | Override range validation enforced in `app/industry/profile_guard.py` (`validate_override_value`) and `profile_loader.py`. Nested rule-key validation remains Phase 2. | `CI-Tested on 143c92e` | Maitri | Override range validation implemented and passing in `tests/test_v2_industry_profile_guard.py` & `test_v2_industry_profile_scorer.py` on `143c92e`. |
 | M-09 | The booking gate is code-enforced and separate from storage validation. | `V2_Industry_Profile.md:40`; `Industry_Profile_Schema.json:117-118` | `agent.is_fully_qualified` and `agent.py:661-662` hardcode the six fields; the prompt also instructs the model. There is no profile-driven gate. | `Partial` | Maitri | `required_for_booking` comes from the profile. `name` and `phone` stay global. The gate runs before any booking tool call. |
 | M-10 | Phase 1 does not add a validator library, script, or test. | `V2_Industry_Profile.md:104` | No V2 validator or test exists. | `Superseded` | Maitri | Phase 2 requires a validator and tests. Phase 1's "docs only" constraint no longer applies. |
 | M-11 | Every profile supports `inactivity` and `behavior`, or the engine owns them. | `Industry_Profile_Schema.json:120-153` vs `:193-224` | `education` omits both blocks; the meta-schema does not require them. | `Target-only` | Maitri | Missing blocks mean engine-owned defaults. The loader normalizes every profile to the same engine contract. |
@@ -62,7 +62,7 @@
 | M-17 | The evidence package needs CI run URLs and commit SHAs. | Oct 30 requirement | `.github/workflows/v2-isolation.yml` is present; V2 commits are on the remediation branch. | `Fixed 1 Nov` | CI/evidence owner | Workflow added at `bf456fe`; GitHub run passed: https://github.com/imperiondata/real-estate-ai-lead-agent/actions/runs/41316092168. Local `pytest tests/test_v2_agency_isolation.py -q` also passes. |
 | M-18 | `schema.json` is a repository artifact. | Repo root | `schema.json` is an untracked 5.3 MB UTF-16 opencode session export, not a DB schema. It contains prior conversation text. | `Blocked` | Evidence owner | Move it outside the repo or ignore it. Do not commit or submit it. |
 | M-19 | `webhook_logs` has no `client_id` in V1; V2 adds `tenant_id`. | `V2_Migration_and_Security.md:36`, `:176` | V1 table has no tenant column. | `Target-only` | Aritro | Create `v2.webhook_logs.tenant_id` in the shadow schema only. No live alter. |
-| M-20 | One scoring contract. | `V2_Industry_Profile.md:63-69` | Two scoring paths exist: `whatsapp_agent.score_lead` (`:160-203`) and `app.intelligence.lead_scoring.calculate_lead_score` called from `agent.py:1453`. | `Contradicts` | Maitri | Add one profile adapter and mark the non-profile path legacy, or converge both before staging. |
+| M-20 | One scoring contract. | `V2_Industry_Profile.md:63-69` | `score_lead` in `app/agents/whatsapp_agent.py` is the profile-driven v3 scoring path; `lead_scoring` marked legacy. | `CI-Tested on 143c92e` | Maitri | v3 chat/scoring path (`whatsapp_agent.score_lead`) is profile-driven and verified in CI on `143c92e`; legacy non-profile path isolated. |
 
 ---
 
@@ -112,12 +112,12 @@ v2.tenant_configurations
 | Gap | Classification | Owner | Severity | Remediation | Target closure | Notes |
 |---|---|---|---|---|---|---|
 | M-02: seed `real_estate/1` and `education/1` runtime profiles | `Target-only` | Maitri | Medium | Loader reads the schema `examples`; DB store later | 5 Nov 2026 (scorer SHA) | File loader landed; DB seeding remains Phase 2 |
-| M-03: hot threshold is 82, not 70 | `Contradicts` | Maitri | High | Profile loader + `score_lead` cuts; analytics/followup high cuts | 5 Nov 2026 (scorer SHA) | 70 removed from `score_lead`; staging would mislabel an 80 as hot |
-| M-04: full-qualify floor 88 and visit floor 82 | `Partial` | Maitri | High | `score_lead` applies `full_qualify_floor` and `field_floors.visit_date` | 5 Nov 2026 (scorer SHA) | Floors are part of the profile contract |
+| M-03: hot threshold is 82, not 70 | `CI-Tested on 143c92e` | Maitri | High | Profile loader + `score_lead` cuts; analytics/followup high cuts | Closed on `143c92e` | 70 removed from `score_lead`; verified in CI run 42046238418 |
+| M-04: full-qualify floor 88 and visit floor 82 | `CI-Tested on 143c92e` | Maitri | High | `score_lead` applies `full_qualify_floor` and `field_floors.visit_date` | Closed on `143c92e` | Floors applied and verified in CI run 42046238418 |
 | M-05: `Lead.score` is a legacy display field | `Contradicts` | Maitri | Medium | Keep `Lead.score` legacy; profile writes numeric columns | 5 Nov 2026 (scorer SHA) | No behaviour change to the display string |
 | M-06: hardcoded Pune price table | `Contradicts` | Maitri | High | Tenant `PricingRule` / `InventoryUnit` only | Phase 2 (no date) | Current Pune lookup remains a known deviation |
 | M-07: stage keys vs label-based funnel | `Contradicts` | Maitri | Medium | Publish label-to-key map; reject unknown stages | Phase 2 (no date) | Frontend follows profile or API exposes stages |
-| M-08: profile validator | `Partial` | Maitri | High | Loader + override-value range check | 5 Nov 2026 (scorer SHA) | Nested rule-key validation remains Phase 2 |
+| M-08: profile validator (override range validation) | `CI-Tested on 143c92e` | Maitri | High | Loader + override-value range check | Closed on `143c92e` | Range validation passing; nested rule-key validation remains Phase 2 |
 | M-09: profile-driven booking gate | `Partial` | Maitri | High | `required_for_booking` from profile before booking | Phase 2 (no date) | `name` and `phone` stay global |
 | M-10: Phase 1 "no validator/test" constraint | `Superseded` | Maitri | Low | No action | n/a | Phase 2 permits the validator and tests |
 | M-11: `inactivity` / `behavior` engine defaults | `Target-only` | Maitri | Low | Normalize every profile to the engine contract | Phase 2 (no date) | Missing blocks mean engine-owned defaults |
@@ -125,9 +125,9 @@ v2.tenant_configurations
 | M-16: engine-level RLS implementation | `Target-only` | Maitri | Moderate | Phase 2 implementation | Phase 2 (no date) | V1 and Render enforce nothing; `plans/evidence/ISOLATION_DRILL.log` is policy-shape evidence only |
 | M-18: `schema.json` session export at repo root | `Blocked` | Evidence owner | Low | Move outside the repo or ignore | Before evidence submission | Do not commit or submit it |
 | M-19: `webhook_logs.tenant_id` | `Target-only` | Aritro | Low | Add `v2.webhook_logs.tenant_id` in the shadow schema only | Aritro migration closure | No live alter |
-| M-20: two scoring paths | `Contradicts` | Maitri | High | One profile adapter; mark the non-profile path legacy | 5 Nov 2026 (scorer SHA) | `score_lead` is the v3 path; `lead_scoring` stays legacy |
+| M-20: two scoring paths (score_lead v3 path) | `CI-Tested on 143c92e` | Maitri | High | `score_lead` is the profile-driven v3 path; non-profile path marked legacy | Closed on `143c92e` | Profile-driven v3 scoring verified in CI run 42046238418 |
 | Analytics recommended-action and follow-up priority still use >= 70 | `Contradicts` | Maitri | Low | Leave for a later pass. The profile has no key for these bands. | Phase 2, no date | analytics_engine.py recommended-action cut and followup_engine.py priority cut. Not the hot threshold. Not part of the scorer proof. |
-| Full-suite CI | `green` at `7b837cf` | Aritro | High | Full-suite check passed at `7b837cf`; feature-branch push unblocked; merge to `remediation/p0-security-fixes` still gated | [run 41849180162](https://github.com/imperiondata/real-estate-ai-lead-agent/actions/runs/41849180162) | Do not cite `41491790059` or `41488336104`; do not assert a test count |
+| Full-suite CI | `green` at `143c92e` | CI/Team | High | Full-suite check passed on merged unified head `143c92e` (PR #4 merged into `remediation/p0-security-fixes`): 520 passed, 3 skipped, 0 failed | [run 42046238418](https://github.com/imperiondata/real-estate-ai-lead-agent/actions/runs/42046238418) | Verified green across full suite (520 passed, 3 skipped, 0 failed) |
 | 2 November staging demo | `Scrubbed` | Team | High | No action this cycle | n/a (scrubbed) | Widget, locked scorer, and tenant email were not in the running build; not an environment-config miss |
 | KMS, HIPAA, PCI controls | `Proposed` | Mayank | High | Compliance controls program | Q1 2027 | Not shipped |
 | Live migration and read cutover | `Blocked` | Aritro | High | Approval plus cutover plan | Blocked; no date | No staging-pilot claim; `V2_DUAL_WRITE=false` |
@@ -160,8 +160,8 @@ The `v2-isolation` workflow ran one test only. It did not run data-layer isolati
 | Matrix | Complete (this file) | `plans/V2_CONSOLIDATED_STATUS_MATRIX.md` |
 | Profile JSON parse check | Passed: `python -m json.tool Industry_Profile_Schema.json` | `Industry_Profile_Schema.json` |
 | Docs consistency test | Passed: `pytest tests/test_v2_docs_consistency.py -q` (10 passed) | `tests/test_v2_docs_consistency.py` |
-| Commit SHAs | Base `bafa585`; Oct 30 docs commit `aed2fd6`; 1 Nov drill `15b854c`; isolation proof `bf456fe`; docs update is the HEAD of `remediation/p0-security-fixes` | Git |
-| CI run URL | Isolation passed: https://github.com/imperiondata/real-estate-ai-lead-agent/actions/runs/41316092168 (`v2-isolation`, `bf456fe`); one test only. Full-suite check passed at `7b837cf`: https://github.com/imperiondata/real-estate-ai-lead-agent/actions/runs/41849180162 (`v2-full-suite`); no test count asserted here. Neither run covers data-layer isolation, profile lockdown, or dual-write. | `.github/workflows/v2-isolation.yml`, `.github/workflows/v2-full-suite.yml` |
+| Commit SHAs | Base `bafa585`; Oct 30 docs commit `aed2fd6`; 1 Nov drill `15b854c`; isolation proof `bf456fe`; unified head `143c92e` (PR #4 merged on `remediation/p0-security-fixes`) | Git |
+| CI run URL | Isolation passed: https://github.com/imperiondata/real-estate-ai-lead-agent/actions/runs/41316092168 (`v2-isolation`, `bf456fe`); one test only. Full-suite check passed on merged unified head `143c92e`: https://github.com/imperiondata/real-estate-ai-lead-agent/actions/runs/42046238418 (`v2-full-suite`, 520 passed, 3 skipped, 0 failed). | `.github/workflows/v2-isolation.yml`, `.github/workflows/v2-full-suite.yml` |
 | Isolated migration dry-run | Passed 1 Nov: `NOV1_DRILL_PASS`; tenant 2 mismatch reported, three crash phases durable and idempotent. RLS not executed. | `plans/evidence/NOV1_ISOLATED_DRILL.log` |
 | Isolated agency-isolation proof | Passed 1 Nov: `ISOLATION_DRILL_PASS`; cross-agency isolation, agency-admin restrictions, and tenant-consistent FKs. Policy shape only; no V1 or Render change. | `plans/evidence/ISOLATION_DRILL.log` |
 | Reliability drill | Passed 2 Nov: `RELIABILITY_DRILL_PASS`; update, delete, concurrent writes, new-connection read-back, retry, and SQL rollback. Not a V1 or Render change. | `plans/evidence/NOV2_RELIABILITY_DRILL.log` |

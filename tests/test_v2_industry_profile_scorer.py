@@ -7,6 +7,7 @@ the full-qualify floor is 88, and the visit floor is 82.
 
 from __future__ import annotations
 
+import copy
 import inspect
 
 import pytest
@@ -129,3 +130,40 @@ def test_score_lead_honors_valid_override_and_ignores_invalid():
 def test_score_lead_no_longer_contains_the_literal_70_threshold():
     source = inspect.getsource(score_lead)
     assert "70" not in source
+    assert "88" not in source
+
+
+def test_note_boundaries_for_the_82_cut_and_floors():
+    """Boundaries cited by plans/evidence/SCORING_MATH_PROOF.md."""
+    assert classify_temperature(81, 82, 45) == "warm"
+    assert classify_temperature(82, 82, 45) == "hot"
+
+    visit_floor = _profile()["scoring_rules"]["temperature"]["field_floors"]["visit_date"]
+    visit_only = score_lead(_visit_only())
+    assert visit_only["conversion_probability"] == visit_floor
+    assert visit_only["lead_temperature"] == "hot"
+
+    partial = score_lead(_partial())
+    assert partial["conversion_probability"] == 72
+    assert partial["lead_temperature"] == "warm"
+
+
+def test_full_qualify_floor_is_loaded_not_hardcoded(monkeypatch):
+    """88 is the published profile value. A different loaded floor must win."""
+    base = _profile()
+    raised = copy.deepcopy(base)
+    raised["scoring_rules"]["temperature"]["full_qualify_floor"] = 90
+    monkeypatch.setattr("app.agents.whatsapp_agent.load_profile", lambda *_a, **_k: raised)
+
+    raised_score = score_lead(_fully_qualified())
+    assert raised_score["conversion_probability"] == 90
+    assert raised_score["conversion_probability"] != 88
+    assert raised_score["lead_temperature"] == "hot"
+
+    bare = copy.deepcopy(base)
+    del bare["scoring_rules"]["temperature"]["full_qualify_floor"]
+    monkeypatch.setattr("app.agents.whatsapp_agent.load_profile", lambda *_a, **_k: bare)
+
+    blend = score_lead(_fully_qualified())
+    assert blend["conversion_probability"] == 80
+    assert blend["lead_temperature"] == "warm"

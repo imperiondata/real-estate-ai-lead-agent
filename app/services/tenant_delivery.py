@@ -10,6 +10,10 @@ When ``settings.TEST_MODE`` is true no SMTP connection and no HTTP request is
 made, even if the real callables are passed in. The row is written with
 ``agent_type=recorded``.
 
+Only ``sent`` and ``recorded`` suppress a later send. A failed row stays for
+audit and does not block a retry. Transient failures are retried up to
+``MAX_DELIVERY_ATTEMPTS`` inside the call. Permanent failures are not retried.
+
 Transport callables are injectable for tests:
 
 - ``email_sender(to, subject, body)``
@@ -21,6 +25,8 @@ from __future__ import annotations
 import json
 import logging
 import smtplib
+import time
+import urllib.error
 import urllib.request
 from email.message import EmailMessage
 from typing import Callable, Optional
@@ -42,11 +48,23 @@ AGENT_SMTP_UNCONFIGURED = "smtp_unconfigured"
 AGENT_WEBHOOK_FAILED = "webhook_failed"
 AGENT_EMAIL_FAILED = "email_failed"
 
+COMPLETED_AGENTS = frozenset({AGENT_SENT, AGENT_RECORDED})
+MAX_DELIVERY_ATTEMPTS = 3
 EMAIL_SUBJECT = "New lead"
 WEBHOOK_TIMEOUT_SECONDS = 5
+_LOOPBACK_HOSTS = frozenset({"127.0.0.1", "localhost", "::1"})
 
 EmailSender = Callable[[str, str, str], None]
 WebhookPoster = Callable[[str, dict], None]
+Sleeper = Callable[[float], None]
+
+
+class PermanentDeliveryError(Exception):
+    """Non-retryable transport failure. HTTP 4xx (except 408/429) and SMTP 5xx."""
+
+
+class TransientDeliveryError(Exception):
+    """Retryable transport failure. Connection loss, timeout, SMTP 4xx, HTTP 5xx."""
 
 
 def _targets(client) -> tuple[Optional[str], Optional[str]]:
@@ -77,6 +95,10 @@ def _smtp_configured() -> bool:
     )
 
 
+def _is_loopback(host: str) -> bool:
+    return (host or "").strip().lower() in _LOOPBACK_HOSTS
+
+
 def _email_body(lead) -> str:
     return "\n".join(
         [
@@ -100,14 +122,17 @@ def _webhook_payload(client_id: int, lead) -> dict:
 
 
 def _default_email_sender(to: str, subject: str, body: str) -> None:
+    host = settings.SMTP_HOST
     message = EmailMessage()
     message["Subject"] = subject
     message["From"] = settings.SMTP_USER
     message["To"] = to
     message.set_content(body)
-    with smtplib.SMTP(settings.SMTP_HOST, settings.SMTP_PORT, timeout=5) as server:
-        server.starttls()
-        server.login(settings.SMTP_USER, settings.SMTP_PASS)
+    with smtplib.SMTP(host, settings.SMTP_PORT, timeout=5) as server:
+        # A loopback sink is the local proof only. Any other host still uses TLS.
+        if not _is_loopback(host):
+            server.starttls()
+            server.login(settings.SMTP_USER, settings.SMTP_PASS)
         server.send_message(message)
 
 
@@ -122,6 +147,55 @@ def _default_webhook_poster(url: str, payload: dict) -> None:
         response.read(1)
 
 
+def is_transient(exc: BaseException) -> bool:
+    """True when another attempt might succeed. Permanent 4xx/5xx return False."""
+    if isinstance(exc, PermanentDeliveryError):
+        return False
+    if isinstance(exc, TransientDeliveryError):
+        return True
+    if isinstance(exc, urllib.error.HTTPError):
+        return exc.code in (408, 429) or exc.code >= 500
+    if isinstance(exc, smtplib.SMTPResponseException):
+        return 400 <= int(exc.smtp_code) < 500
+    if isinstance(
+        exc,
+        (
+            TimeoutError,
+            ConnectionError,
+            urllib.error.URLError,
+            OSError,
+            smtplib.SMTPServerDisconnected,
+            smtplib.SMTPConnectError,
+        ),
+    ):
+        return True
+    # An unclassified drop is retried. Callers that mean "do not retry" raise
+    # PermanentDeliveryError or an HTTP/SMTP permanent response.
+    return True
+
+
+def _send_with_retry(
+    operation: Callable[[], None],
+    *,
+    max_attempts: int,
+    retry_sleep: float,
+    sleeper: Sleeper,
+) -> None:
+    attempts = max(1, int(max_attempts))
+    for attempt in range(1, attempts + 1):
+        try:
+            operation()
+            return
+        except Exception as exc:
+            if not is_transient(exc) or attempt >= attempts:
+                raise
+            logger.warning(
+                "tenant delivery transient failure; retrying attempt=%s", attempt
+            )
+            if retry_sleep:
+                sleeper(retry_sleep)
+
+
 def _already_recorded(db, client_id: int, session_id: str, action_type: str) -> bool:
     return (
         db.query(EventLog.id)
@@ -130,6 +204,22 @@ def _already_recorded(db, client_id: int, session_id: str, action_type: str) -> 
             EventLog.session_id == session_id,
             EventLog.event_type == EVENT_TYPE,
             EventLog.action_type == action_type,
+        )
+        .first()
+        is not None
+    )
+
+
+def _already_succeeded(db, client_id: int, session_id: str, action_type: str) -> bool:
+    """True only after a completed send. A failed row does not count."""
+    return (
+        db.query(EventLog.id)
+        .filter(
+            EventLog.client_id == client_id,
+            EventLog.session_id == session_id,
+            EventLog.event_type == EVENT_TYPE,
+            EventLog.action_type == action_type,
+            EventLog.agent_type.in_(tuple(COMPLETED_AGENTS)),
         )
         .first()
         is not None
@@ -154,6 +244,9 @@ def deliver_tenant_lead(
     *,
     email_sender: Optional[EmailSender] = None,
     webhook_poster: Optional[WebhookPoster] = None,
+    max_attempts: int = MAX_DELIVERY_ATTEMPTS,
+    retry_sleep: float = 0.0,
+    sleeper: Optional[Sleeper] = None,
 ) -> list[str]:
     """Deliver to the tenant's own targets and record the outcome. Never raises."""
     client_id = getattr(client, "id", None)
@@ -161,6 +254,7 @@ def deliver_tenant_lead(
         return []
 
     test_mode = bool(getattr(settings, "TEST_MODE", False))
+    pause = sleeper or time.sleep
     rows: list[EventLog] = []
     try:
         email, webhook = _targets(client)
@@ -173,7 +267,7 @@ def deliver_tenant_lead(
                 return [ACTION_SKIPPED]
             return []
 
-        if email and not _already_recorded(db, client_id, session_id, ACTION_EMAIL):
+        if email and not _already_succeeded(db, client_id, session_id, ACTION_EMAIL):
             if test_mode:
                 agent_type = AGENT_RECORDED
             else:
@@ -184,20 +278,30 @@ def deliver_tenant_lead(
                     agent_type = AGENT_SMTP_UNCONFIGURED
                 else:
                     try:
-                        sender(email, EMAIL_SUBJECT, _email_body(lead))
+                        _send_with_retry(
+                            lambda: sender(email, EMAIL_SUBJECT, _email_body(lead)),
+                            max_attempts=max_attempts,
+                            retry_sleep=retry_sleep,
+                            sleeper=pause,
+                        )
                         agent_type = AGENT_SENT
                     except Exception:
                         logger.exception("tenant email delivery failed")
                         agent_type = AGENT_EMAIL_FAILED
             rows.append(_row(client_id, session_id, ACTION_EMAIL, agent_type))
 
-        if webhook and not _already_recorded(db, client_id, session_id, ACTION_WEBHOOK):
+        if webhook and not _already_succeeded(db, client_id, session_id, ACTION_WEBHOOK):
             if test_mode:
                 agent_type = AGENT_RECORDED
             else:
                 try:
                     poster = webhook_poster or _default_webhook_poster
-                    poster(webhook, _webhook_payload(client_id, lead))
+                    _send_with_retry(
+                        lambda: poster(webhook, _webhook_payload(client_id, lead)),
+                        max_attempts=max_attempts,
+                        retry_sleep=retry_sleep,
+                        sleeper=pause,
+                    )
                     agent_type = AGENT_SENT
                 except Exception:
                     logger.exception("tenant webhook delivery failed")

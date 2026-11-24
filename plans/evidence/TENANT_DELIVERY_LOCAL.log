@@ -1,0 +1,16 @@
+TENANT_DELIVERY_LOCAL_START
+staging_claim=false
+render_used=false
+live_database_used=false
+test_mode=false
+smtp_bind=127.0.0.1:61345
+http_bind=127.0.0.1:61346
+SMTP_RECEIPT attempt=1 code=451
+SMTP_RECEIPT attempt=2 code=250
+HTTP_RECEIPT attempt=1 status=503
+HTTP_RECEIPT attempt=2 status=200
+replay_smtp_receipts=0
+replay_http_receipts=0
+replay_receipts=0
+key_absent_from_client=true
+TENANT_DELIVERY_LOCAL_PASS

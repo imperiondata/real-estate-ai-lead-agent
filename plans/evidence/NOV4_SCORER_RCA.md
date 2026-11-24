@@ -69,3 +69,4 @@ follow-up high-priority cuts repeated the same literal.
 - Profile loading reads the JSON file per call; a DB-backed store and caching
   are Phase 2 work.
 - Full-suite check at `7b837cf` is green; merge to `remediation/p0-security-fixes` remains gated. The Render branch name still blocks deploy.
+- Dynamic-floor proof, 24 November 2026: `plans/evidence/SCORING_MATH_PROOF.md` and `plans/evidence/SCORING_MATH_PROOF.log`. This RCA is not that proof.

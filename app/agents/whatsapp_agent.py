@@ -204,11 +204,13 @@ def score_lead(lead: Lead, tenant_overrides: Optional[dict] = None) -> dict:
         ),
     )
 
-    # The weighted blend caps below the hot threshold on its own. The profile
-    # floors are part of the contract: fully-qualified leads floor at 88, a
-    # present visit_date floors at 82.
+    # The weighted blend caps below the hot threshold on its own. A present
+    # floor is read from the loaded profile. A missing floor leaves the blend.
+    qualify_floor = temperature_rules.get("full_qualify_floor")
     if all(core):
-        prob = max(prob, temperature_rules["full_qualify_floor"])
+        # A missing floor leaves the blend. Do not also apply the visit floor.
+        if qualify_floor is not None:
+            prob = max(prob, qualify_floor)
     elif lead.visit_date:
         prob = max(
             prob,

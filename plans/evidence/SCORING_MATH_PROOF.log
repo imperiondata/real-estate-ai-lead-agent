@@ -1,0 +1,30 @@
+============================= test session starts =============================
+platform win32 -- Python 3.13.5, pytest-9.1.1, pluggy-1.6.0 -- C:\Users\hp\Desktop\IDS Work\real-estate-ai-lead-agent\.venv\Scripts\python.exe
+cachedir: .pytest_cache
+rootdir: C:\Users\hp\Desktop\IDS Work\real-estate-ai-lead-agent
+configfile: pytest.ini
+plugins: anyio-4.13.0
+collecting ... collected 20 items
+
+tests/test_v2_industry_profile_scorer.py::test_profile_key_version_and_defaults PASSED [  5%]
+tests/test_v2_industry_profile_scorer.py::test_classification_at_the_locked_thresholds PASSED [ 10%]
+tests/test_v2_industry_profile_scorer.py::test_tenant_override_85_is_honored PASSED [ 15%]
+tests/test_v2_industry_profile_scorer.py::test_tenant_override_69_and_91_are_rejected PASSED [ 20%]
+tests/test_v2_industry_profile_scorer.py::test_unknown_override_path_is_rejected PASSED [ 25%]
+tests/test_v2_industry_profile_scorer.py::test_score_lead_applies_profile_floors PASSED [ 30%]
+tests/test_v2_industry_profile_scorer.py::test_score_lead_honors_valid_override_and_ignores_invalid PASSED [ 35%]
+tests/test_v2_industry_profile_scorer.py::test_score_lead_no_longer_contains_the_literal_70_threshold PASSED [ 40%]
+tests/test_v2_industry_profile_scorer.py::test_note_boundaries_for_the_82_cut_and_floors PASSED [ 45%]
+tests/test_v2_industry_profile_scorer.py::test_full_qualify_floor_is_loaded_not_hardcoded PASSED [ 50%]
+tests/test_v2_docs_consistency.py::test_meta_schema_and_examples_parse PASSED [ 55%]
+tests/test_v2_docs_consistency.py::test_partial_leads_are_valid_but_booking_keys_are_separate PASSED [ 60%]
+tests/test_v2_docs_consistency.py::test_scoring_contract_values PASSED   [ 65%]
+tests/test_v2_docs_consistency.py::test_dashboard_stage_keys_resolve PASSED [ 70%]
+tests/test_v2_docs_consistency.py::test_prompt_slots_resolve PASSED      [ 75%]
+tests/test_v2_docs_consistency.py::test_override_paths_exist_and_ranges_are_bounded PASSED [ 80%]
+tests/test_v2_docs_consistency.py::test_documents_use_the_option_b_storage_decision PASSED [ 85%]
+tests/test_v2_docs_consistency.py::test_stale_contradictions_are_removed PASSED [ 90%]
+tests/test_v2_docs_consistency.py::test_security_boundary_const_and_rejected_checksum_are_locked PASSED [ 95%]
+tests/test_v2_docs_consistency.py::test_matrix_has_no_shipped_isolation_claim PASSED [100%]
+
+============================= 20 passed in 2.45s ==============================

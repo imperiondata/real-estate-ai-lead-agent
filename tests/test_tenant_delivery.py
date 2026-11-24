@@ -7,6 +7,9 @@ every transport callable is an injected spy. Rows created here are deleted in a
 
 from __future__ import annotations
 
+import io
+import smtplib
+import urllib.error
 import uuid
 
 import pytest
@@ -299,20 +302,136 @@ def test_transport_failures_are_recorded_not_raised(monkeypatch):
         session = _session(db, client, "fail")
         lead = _lead(db, client, session, "fail")
 
-        def boom(*_args):
+        calls = {"email": 0, "webhook": 0}
+
+        def boom_email(*_args):
+            calls["email"] += 1
+            raise RuntimeError("transport down")
+
+        def boom_webhook(*_args):
+            calls["webhook"] += 1
             raise RuntimeError("transport down")
 
         recorded = deliver_tenant_lead(
-            db, client, lead, session.id, email_sender=boom, webhook_poster=boom
+            db,
+            client,
+            lead,
+            session.id,
+            email_sender=boom_email,
+            webhook_poster=boom_webhook,
         )
 
         assert recorded == ["tenant_email", "tenant_webhook"]
+        assert calls == {"email": 3, "webhook": 3}
         rows = db.query(EventLog).filter(EventLog.client_id == client.id).all()
         agents = {row.action_type: row.agent_type for row in rows}
         assert agents == {
             "tenant_email": "email_failed",
             "tenant_webhook": "webhook_failed",
         }
+        assert len(rows) == 2
+    finally:
+        _wipe(db, client_ids)
+
+
+def test_transient_failure_retries_then_succeeds_once(monkeypatch):
+    monkeypatch.setattr(settings, "TEST_MODE", False)
+    db = SessionLocal()
+    client_ids: list[int] = []
+    try:
+        client = _client(db, "flaky", {"notify_email": "flaky@tenant.test"})
+        client_ids = [client.id]
+        session = _session(db, client, "flaky")
+        lead = _lead(db, client, session, "flaky")
+
+        calls = {"n": 0}
+
+        def flaky(*_args):
+            calls["n"] += 1
+            if calls["n"] == 1:
+                raise TimeoutError("temporary")
+
+        recorded = deliver_tenant_lead(
+            db, client, lead, session.id, email_sender=flaky
+        )
+        replay = deliver_tenant_lead(
+            db, client, lead, session.id, email_sender=flaky
+        )
+
+        assert recorded == ["tenant_email"]
+        assert replay == []
+        assert calls["n"] == 2
+        rows = db.query(EventLog).filter(EventLog.client_id == client.id).all()
+        assert len(rows) == 1
+        assert rows[0].agent_type == "sent"
+    finally:
+        _wipe(db, client_ids)
+
+
+def test_permanent_4xx_is_not_retried(monkeypatch):
+    monkeypatch.setattr(settings, "TEST_MODE", False)
+    db = SessionLocal()
+    client_ids: list[int] = []
+    try:
+        client = _client(
+            db, "perm", {"webhook_url": "https://tenant.test/permanent"}
+        )
+        client_ids = [client.id]
+        session = _session(db, client, "perm")
+        lead = _lead(db, client, session, "perm")
+
+        calls = {"n": 0}
+
+        def permanent(url, _payload):
+            calls["n"] += 1
+            raise urllib.error.HTTPError(
+                url, 400, "bad request", hdrs=None, fp=io.BytesIO(b"")
+            )
+
+        recorded = deliver_tenant_lead(
+            db, client, lead, session.id, webhook_poster=permanent
+        )
+
+        assert recorded == ["tenant_webhook"]
+        assert calls["n"] == 1
+        rows = db.query(EventLog).filter(EventLog.client_id == client.id).all()
+        assert len(rows) == 1
+        assert rows[0].agent_type == "webhook_failed"
+    finally:
+        _wipe(db, client_ids)
+
+
+def test_failed_row_does_not_block_a_later_send(monkeypatch):
+    monkeypatch.setattr(settings, "TEST_MODE", False)
+    db = SessionLocal()
+    client_ids: list[int] = []
+    try:
+        client = _client(db, "later", {"notify_email": "later@tenant.test"})
+        client_ids = [client.id]
+        session = _session(db, client, "later")
+        lead = _lead(db, client, session, "later")
+
+        def always_down(*_args):
+            raise smtplib.SMTPResponseException(550, b"rejected")
+
+        first = deliver_tenant_lead(
+            db, client, lead, session.id, email_sender=always_down
+        )
+        sender = Spy("email")
+        second = deliver_tenant_lead(
+            db, client, lead, session.id, email_sender=sender
+        )
+
+        assert first == ["tenant_email"]
+        assert second == ["tenant_email"]
+        assert len(sender.calls) == 1
+        rows = (
+            db.query(EventLog)
+            .filter(EventLog.client_id == client.id)
+            .order_by(EventLog.id)
+            .all()
+        )
+        assert [row.agent_type for row in rows] == ["email_failed", "sent"]
     finally:
         _wipe(db, client_ids)
 

@@ -34,8 +34,11 @@ A fully filled lead with WhatsApp opt-in and temperature `hot`:
 
 ```text
 qualify_floor = temperature_rules.get("full_qualify_floor")
-if all(core) and qualify_floor is not None:
-    prob = max(prob, qualify_floor)
+if all(core):
+    if qualify_floor is not None:
+        prob = max(prob, qualify_floor)
+elif lead.visit_date:
+    prob = max(prob, loaded visit floor)
 ```
 
 For the published profile, `qualify_floor` is 88, so `max(80, 88) = 88`, then classified hot because `88 >= 82`.

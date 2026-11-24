@@ -118,6 +118,8 @@ The local INF-01 drill is not the rollback for a Render cut. Live rollback uses 
 
 On 4 November 2026 the line `process_restart=new_connection_after_commit` in `plans/evidence/NOV2_RELIABILITY_DRILL.log` was rejected: a second connection is not an application-process restart. That 2 November log is unchanged and still records only the new-connection read-back it performed. The separate run `python scripts/run_v2_process_restart_drill.py` kills an application process running `app.migration.process_restart_worker` with `terminate()` after the worker commits one side and the `dual_write_failures` row, then reads that row back from a second operating-system process with a different PID and retries the missing side with an idempotent upsert. It ran on throwaway database `v2_process_restart` on `127.0.0.1`; it did not use Render, did not open `realestate_db`, and is not a live cutover. Raw output is `plans/evidence/NOV4_PROCESS_RESTART.log`.
 
+On 24 November 2026 the same path was documented with the live flag observed, not hardcoded. `scripts/run_v2_process_restart_drill.py` still starts `app.migration.process_restart_drill`, which starts `python -m app.migration.process_restart_worker`. Global `V2_DUAL_WRITE` stays false. The worker sets `store.dual_write = True` only on `v2_process_restart`. `v2_success_v1_failure` is an injected skip of the V1 write. It is unreachable when writes follow `production_upsert_order`, which commits V1 before V2. `rollback()` is unchanged. The note is `plans/evidence/DUAL_WRITE_CALL_PATH.md`. The new raw log is `plans/evidence/DUAL_WRITE_CALL_PATH.log`. The 4 November log is unchanged.
+
 ---
 
 ## 4. Identity map
@@ -325,6 +327,14 @@ The run proves three things only:
 - Tenant-consistent foreign keys: a lead or message whose `(tenant_id, session_id)` pair points at another tenant's session is rejected with `23503`; a same-tenant insert is accepted.
 
 The fixture is synthetic and is not the section 4 backfill. The run does not change V1, Render, or `realestate_db`, and M-16 remains target-only. It does not prove delete behavior and does not change section 8.
+
+### 9.6 Canonical tenant setting, 24 November 2026
+
+The only session variable is `app.current_tenant_id`. `app.tenant_id` and `app.current_client_id` are not used. `app.migration.tenant_context.set_current_tenant_id` sets it with `set_config('app.current_tenant_id', value, true)`. A missing value is rejected by the helper. It is not replaced with tenant 1. An invalid value is passed through so the policy cast fails closed.
+
+The isolated drill calls that helper. V1 `SessionLocal` does not. `database.py` and `main.py` do not call it. V1 still filters by `client_id`. This is not a live schema change, and it is not applied on Render.
+
+The 24 November re-run is `plans/evidence/RLS_CANONICAL_TENANT.log`. It keeps the 1 November log, `plans/evidence/ISOLATION_DRILL.log`, as the earlier policy-shape run on `v2_isolation_drill`. The new log adds `rolsuper=false`, `relforcerowsecurity=true`, and app privileges limited to `SELECT`, `INSERT`, and `UPDATE`. M-16 remains target-only. V1 and Render still enforce nothing.
 
 ---
 

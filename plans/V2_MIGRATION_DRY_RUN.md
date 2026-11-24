@@ -229,3 +229,5 @@ Not claimed by this run: row-level security, a live read cut, or a restart of th
 
 On 4 November 2026 the 2 November line `process_restart=new_connection_after_commit` was rejected, and `plans/evidence/NOV2_RELIABILITY_DRILL.log` is unchanged. A separate run, `python scripts/run_v2_process_restart_drill.py`, kills an application process running `app.migration.process_restart_worker` and reads the committed failure row back from a second process with a different PID, then retries the missing side once. It uses throwaway `v2_process_restart` on `127.0.0.1`; it is not Render, not `realestate_db`, and not a live cutover. Raw output is `plans/evidence/NOV4_PROCESS_RESTART.log`.
 
+The 24 November call-path note is `plans/evidence/DUAL_WRITE_CALL_PATH.md`. The drill prints the observed `V2_DUAL_WRITE` value. The worker still forces dual-write only on `v2_process_restart`. `v2_success_v1_failure` is injected and is not the production V1-then-V2 order. The new log is `plans/evidence/DUAL_WRITE_CALL_PATH.log`. `rollback()` is unchanged.
+

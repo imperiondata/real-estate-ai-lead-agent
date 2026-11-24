@@ -1,6 +1,8 @@
 # Unified AI Revenue Automation Platform (PaaS)
 ## System Architecture & Service Boundaries Document (Schema V2)
 
+**Historical.** This sprint note is not the V2 security contract. The canonical tenant session variable is `app.current_tenant_id`, set by `app.migration.tenant_context.set_current_tenant_id`. See `V2_Migration_and_Security.md` section 9.6. Do not use `app.current_client_id` or `app.tenant_id`.
+
 | Field | Detail |
 | :--- | :--- |
 | **Document ID** | ARCH-SPEC-V2.0 |
@@ -164,7 +166,7 @@ The system is decomposed into five distinct core microservice boundaries:
      ```sql
      CREATE POLICY client_isolation_policy ON leads
      FOR ALL TO application_role
-     USING (client_id = current_setting('app.current_client_id')::uuid);
+     USING (client_id = current_setting('app.current_tenant_id', true)::uuid);
      ```
   3. **Deterministic Business Rules**: Stage validation, required contact fields, duplicate lead detection, lead assignment algorithms (round-robin, performance-weighted).
   4. **Domain Event Publication**: Publishes atomic events to the Event Bus upon entity creation, update, or stage transition (e.g., `lead.created`, `lead.qualified`, `lead.stage_updated`).

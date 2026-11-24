@@ -21,6 +21,7 @@ import psycopg2
 from psycopg2 import sql
 
 from app.migration.dry_run import assert_isolated_dsn
+from app.migration.tenant_context import TENANT_GUC, set_current_tenant_id
 
 ADMIN_DSN = "postgresql://realestate:localpass@127.0.0.1:5432/postgres"
 DRILL_DB = "v2_isolation_drill"
@@ -380,7 +381,10 @@ def _seed(conn) -> None:
 def _apply_context(cur, role: str, settings: dict | None) -> None:
     cur.execute(sql.SQL("SET LOCAL ROLE {}").format(sql.Identifier(role)))
     for key, value in (settings or {}).items():
-        cur.execute("SELECT set_config(%s, %s, true)", (key, value))
+        if key == TENANT_GUC:
+            set_current_tenant_id(cur, value)
+        else:
+            cur.execute("SELECT set_config(%s, %s, true)", (key, value))
 
 
 def _run(role: str, settings: dict | None, query: str, params=None, *, fetch: bool):
@@ -448,9 +452,10 @@ def _proof_lines(names: RoleNames) -> list[str]:
         raise DrillError("could not read RLS flags for v2.leads")
     enabled, forced, table_owner = flags[0]
     app_attrs = _plain_fetch(
-        "SELECT rolbypassrls FROM pg_roles WHERE rolname = %s", (names.app,)
+        "SELECT rolsuper, rolbypassrls FROM pg_roles WHERE rolname = %s",
+        (names.app,),
     )
-    app_bypass = app_attrs[0][0] if app_attrs else None
+    app_super, app_bypass = app_attrs[0] if app_attrs else (None, None)
     app_is_owner = table_owner == names.app
     lines.append(
         "RLS_FLAGS leads_enabled={} leads_forced={} app_bypassrls={} "
@@ -459,6 +464,33 @@ def _proof_lines(names: RoleNames) -> list[str]:
             forced,
             str(app_bypass).lower(),
             str(app_is_owner).lower(),
+        )
+    )
+    privileges = _plain_fetch(
+        "SELECT has_table_privilege(%s, 'v2.leads', 'SELECT'), "
+        "has_table_privilege(%s, 'v2.leads', 'INSERT'), "
+        "has_table_privilege(%s, 'v2.leads', 'UPDATE'), "
+        "has_table_privilege(%s, 'v2.leads', 'DELETE'), "
+        "has_table_privilege(%s, 'v2.leads', 'TRUNCATE')",
+        (names.app, names.app, names.app, names.app, names.app),
+    )
+    select_priv, insert_priv, update_priv, delete_priv, truncate_priv = privileges[0]
+    lines.append(
+        "RLS_ROLE rolsuper={} rolbypassrls={} app_is_owner={} "
+        "relforcerowsecurity={}".format(
+            str(app_super).lower(),
+            str(app_bypass).lower(),
+            str(app_is_owner).lower(),
+            str(forced).lower(),
+        )
+    )
+    lines.append(
+        "APP_PRIVILEGES select={} insert={} update={} delete={} truncate={}".format(
+            str(select_priv).lower(),
+            str(insert_priv).lower(),
+            str(update_priv).lower(),
+            str(delete_priv).lower(),
+            str(truncate_priv).lower(),
         )
     )
 
@@ -642,6 +674,9 @@ def _proof_lines(names: RoleNames) -> list[str]:
 REQUIRED_LINES = (
     "RLS_FLAGS leads_enabled=True leads_forced=True app_bypassrls=false "
     "app_is_owner=false",
+    "RLS_ROLE rolsuper=false rolbypassrls=false app_is_owner=false "
+    "relforcerowsecurity=true",
+    "APP_PRIVILEGES select=true insert=true update=true delete=false truncate=false",
     "OWNER_FORCE rows_without_setting=0",
     "TENANT_RLS a1_rows=2 a2_rows=1 b1_rows=1 missing_setting_rows=0",
     "RLS_BAD_SETTING error=22P02 rows_returned=0",
@@ -675,6 +710,7 @@ def run_isolation_drill() -> list[str]:
         "engine=postgres host=127.0.0.1 database=v2_isolation_drill",
         "live_database_used=false",
         "render_used=false",
+        "staging_claim=false",
         "app_database_touched=false",
         "production_claim=false",
         "v1_render_rls=not_shipped",

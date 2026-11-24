@@ -38,6 +38,12 @@ from app.migration.process_restart_worker import (
 
 ROOT = Path(__file__).resolve().parent.parent.parent
 LOCAL_HOSTS = {"127.0.0.1", "localhost", "::1"}
+
+
+def _observed_dual_write_flag() -> str:
+    """The live env flag, not a hardcoded proof line."""
+    raw = os.environ.get("V2_DUAL_WRITE", "false")
+    return (raw if raw is not None else "false").strip().lower() or "false"
 ALLOWED_DATABASES = {"postgres", DRILL_DB}
 
 SCHEMA_SQL = """
@@ -372,6 +378,7 @@ REQUIRED_LINES = (
     "code_path=app.migration.process_restart_worker",
     "not_a_new_connection_in_the_same_process=true",
     "live_dual_write_flag=false",
+    "staging_claim=false",
     "chat_path_unchanged=true",
     "pids_differ=true",
     "process_killed=true",
@@ -395,7 +402,8 @@ def run_process_restart_drill() -> list[str]:
         "production_claim=false",
         "code_path=app.migration.process_restart_worker",
         "not_a_new_connection_in_the_same_process=true",
-        "live_dual_write_flag=false",
+        f"live_dual_write_flag={_observed_dual_write_flag()}",
+        "staging_claim=false",
         "chat_path_unchanged=true",
     ]
     reset_database()

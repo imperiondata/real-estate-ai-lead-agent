@@ -22,6 +22,7 @@ import argparse
 import os
 import sys
 import time
+from typing import Iterable
 from urllib.parse import urlparse
 
 import psycopg2
@@ -62,6 +63,27 @@ PHASE_MISSING = {
     "after_v2_before_v1": ("v1_leads",),
     "after_v1_v2_rolled_back": ("v2.leads",),
 }
+
+# Production commits V1 before V2. Rank is explicit so alphabetical order is
+# not the proof.
+_UPSERT_RANK = {"v1_leads": 0, "v2.leads": 1}
+
+
+def fail_tables_for_case(case: str) -> list[str] | None:
+    """Select the injected failure. Only one case name skips the V1 write."""
+    if case == "v1_success_v2_failure":
+        return ["v2.leads"]
+    if case == "v2_success_v1_failure":
+        return ["v1_leads"]
+    if case == "partial_commit":
+        return None
+    raise ValueError(f"unknown case {case}")
+
+
+def production_upsert_order(written: Iterable[str]) -> list[str]:
+    """Commit V1 before V2. A missing side is skipped, not reordered."""
+    return sorted(written, key=lambda name: (_UPSERT_RANK.get(name, 9), name))
+
 
 UPSERTS = {
     "v1_leads": (
@@ -159,14 +181,9 @@ def _write_case(conn, case: str) -> None:
     aggregate = _aggregate()
     store = _store()
 
-    if case == "v1_success_v2_failure":
-        fail_tables = ["v2.leads"]
-    elif case == "v2_success_v1_failure":
-        fail_tables = ["v1_leads"]
-    else:
-        # The decision is complete. V2 is then rolled back by the injected
-        # transaction below, which is the partial-commit case.
-        fail_tables = None
+    # The decision is complete for partial_commit. V2 is then rolled back by
+    # the injected transaction below. Only v2_success_v1_failure skips V1.
+    fail_tables = fail_tables_for_case(case)
 
     decision = apply_dual_write(
         store, aggregate, fail_tables=fail_tables, error="injected_crash"
@@ -184,7 +201,7 @@ def _write_case(conn, case: str) -> None:
 
     # V1 is authoritative and is committed first in production. The injected
     # V2-before-V1 case only skips the V1 write; it does not reorder a commit.
-    for table in decision["written"]:
+    for table in production_upsert_order(decision["written"]):
         _upsert(conn, table)
     _record_failure(conn, phase)
 

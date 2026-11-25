@@ -1,6 +1,6 @@
 fastapi
 uvicorn
-sqlalchemy
+SQLAlchemy==2.0.51
 psycopg2-binary
 google-genai
 google-api-python-client

@@ -3,14 +3,16 @@ name: v2-isolation
 on:
   push:
     paths:
-      - "app/migration/isolation_drill.py"
-      - "scripts/run_v2_isolation_drill.py"
+      - "app/migration/**"
+      - "app/industry/**"
+      - "scripts/**"
       - "tests/test_v2_agency_isolation.py"
       - ".github/workflows/v2-isolation.yml"
   pull_request:
     paths:
-      - "app/migration/isolation_drill.py"
-      - "scripts/run_v2_isolation_drill.py"
+      - "app/migration/**"
+      - "app/industry/**"
+      - "scripts/**"
       - "tests/test_v2_agency_isolation.py"
       - ".github/workflows/v2-isolation.yml"
 

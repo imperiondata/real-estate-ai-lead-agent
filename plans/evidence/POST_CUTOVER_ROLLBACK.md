@@ -42,6 +42,11 @@ Global `V2_DUAL_WRITE` stays `false`. The drill prints the observed value and
 refuses to run if it is anything else. `dual_write_source=drill_harness` records
 that the in-memory store was switched on for this drill only.
 
+`sqlalchemy_dsn()` names the `psycopg2` driver explicitly. SQLAlchemy 2.1
+resolves a plain `postgresql://` URL to `psycopg` v3, which this repo does not
+install; `database.py` rewrites the app engine the same way. The first CI run of
+this drill (`45577789615`) failed on that import; a unit test now pins it.
+
 ## What the raw log shows
 
 `plans/evidence/POST_CUTOVER_ROLLBACK.log`

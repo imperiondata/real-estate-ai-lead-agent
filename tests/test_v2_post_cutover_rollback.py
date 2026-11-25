@@ -18,6 +18,7 @@ from app.migration.post_cutover_rollback_drill import (
     DRILL_DB,
     REQUIRED_LINES,
     run_post_cutover_rollback_drill,
+    sqlalchemy_dsn,
 )
 
 
@@ -29,6 +30,16 @@ def _aggregate(lead_id: int, name: str) -> dict:
             "v2.leads": {lead_id: {"v1_lead_id": lead_id, "name": name}},
         },
     }
+
+
+def test_sqlalchemy_dsn_names_the_psycopg2_driver():
+    """SQLAlchemy 2.0.51 resolves a plain URL to psycopg v3, which is absent."""
+    assert sqlalchemy_dsn("postgresql://u:p@h:5432/d") == (
+        "postgresql+psycopg2://u:p@h:5432/d"
+    )
+    assert sqlalchemy_dsn("postgresql+psycopg2://u:p@h:5432/d") == (
+        "postgresql+psycopg2://u:p@h:5432/d"
+    )
 
 
 def test_switch_reads_to_v1_keeps_dual_write_and_the_shadow(monkeypatch):

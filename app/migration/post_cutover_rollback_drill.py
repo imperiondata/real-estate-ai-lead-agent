@@ -43,6 +43,21 @@ DRILL_DSN = f"postgresql://realestate:localpass@127.0.0.1:5432/{DRILL_DB}"
 ALLOWED_DATABASES = {"postgres", DRILL_DB}
 LOCAL_HOSTS = {"127.0.0.1", "localhost", "::1"}
 
+
+def sqlalchemy_dsn(dsn: str = DRILL_DSN) -> str:
+    """Name the psycopg2 driver explicitly for SQLAlchemy.
+
+    SQLAlchemy 2.1 resolves a plain ``postgresql://`` URL to psycopg v3, which
+    this repo does not install; ``requirements.txt`` leaves SQLAlchemy unpinned,
+    so CI gets 2.1 while ``requirements.lock`` pins 2.0. ``database.py``
+    rewrites the app engine the same way. ``psycopg2.connect`` keeps the plain
+    URL.
+    """
+    if dsn.startswith("postgresql://"):
+        return dsn.replace("postgresql://", "postgresql+psycopg2://", 1)
+    return dsn
+
+
 TENANT_ID = 1
 SEED_LEAD_ID = 1
 NEW_LEAD_ID = 2
@@ -195,7 +210,7 @@ def _create_schema() -> None:
     from models import Client, Lead
     from models import Session as SessionModel
 
-    engine = create_engine(DRILL_DSN)
+    engine = create_engine(sqlalchemy_dsn())
     try:
         Base.metadata.create_all(
             engine,
@@ -385,7 +400,7 @@ def _app_read_latest() -> dict:
     from main import serialize_lead
     from models import Lead
 
-    engine = create_engine(DRILL_DSN)
+    engine = create_engine(sqlalchemy_dsn())
     try:
         SessionFactory = sessionmaker(bind=engine)
         with SessionFactory() as session:

@@ -3,6 +3,7 @@
 **Date:** 24 November 2026
 **Owner:** Maitri
 **Scope:** localhost only. Not staging. Not a live email. Not Render.
+**Tier:** local test against loopback listeners on `127.0.0.1`. Not staging.
 
 A `TEST_MODE=true` `event_logs` row with `agent_type=recorded` is not this proof. That path never opens a socket.
 

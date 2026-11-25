@@ -3,6 +3,7 @@
 **Date:** 24 November 2026
 **Owner:** Maitri
 **Scope:** v3 `score_lead` only. Not staging. Not Render.
+**Tier:** local test now; CI-tested app behaviour once the suite is green. Not staging.
 
 `score_lead` returns a dict. It does not persist the row. The caller writes the columns.
 

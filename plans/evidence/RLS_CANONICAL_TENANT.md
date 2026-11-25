@@ -3,6 +3,7 @@
 **Date:** 24 November 2026
 **Owner:** Aritro
 **Scope:** throwaway `v2_isolation_drill` on `127.0.0.1` only. Not V1. Not Render. Not staging.
+**Tier:** synthetic database fixtures. Not staging.
 
 ## Name
 

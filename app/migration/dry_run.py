@@ -1,10 +1,10 @@
 """V2 migration dry-run rules.
 
-Full-table reconciliation, partial dual-write detection, and rollback.
-No database driver is imported. Nothing here opens a connection, runs DDL,
-or reads ``LIVE_DATABASE_URL`` from the environment. A future isolated
-Postgres drill must call ``assert_isolated_dsn`` before it connects, and
-that drill is not claimed by this module.
+Full-table reconciliation, partial dual-write detection, the post-cutover read
+switch, and rollback. No database driver is imported. Nothing here opens a
+connection, runs DDL, or reads ``LIVE_DATABASE_URL`` from the environment. A
+future isolated Postgres drill must call ``assert_isolated_dsn`` before it
+connects, and that drill is not claimed by this module.
 """
 
 from __future__ import annotations
@@ -531,6 +531,22 @@ def retry_missing(store: DryRunStore, aggregate: dict, failure: dict) -> dict:
     failure["missing"] = []
     store.assert_v1_unchanged()
     return {"status": "retried", "delay_minutes": delay, "retry_count": failure["retry_count"]}
+
+
+def switch_reads_to_v1(store: DryRunStore) -> dict:
+    """Point reads at V1 after the cut. Dual-write and the shadow stay on.
+
+    This is the post-cutover rollback: V1 is still receiving writes and the
+    shadow still matches it, so the shadow is not dropped and ``rollback()`` is
+    not called. Dropping the shadow is the pre-cutover procedure.
+    """
+    store.read_source = "v1"
+    store.assert_v1_unchanged()
+    return {
+        "read_source": store.read_source,
+        "dual_write": store.dual_write,
+        "shadow_tables": len(store.shadow),
+    }
 
 
 def rollback(store: DryRunStore) -> dict:

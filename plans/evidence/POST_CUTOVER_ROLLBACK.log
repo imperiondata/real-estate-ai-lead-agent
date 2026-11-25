@@ -1,0 +1,18 @@
+POST_CUTOVER_ROLLBACK_DRILL_START
+engine=postgres host=127.0.0.1 database=v2_post_cutover_rollback
+live_database_used=false
+render_used=false
+app_database_touched=false
+staging_claim=false
+live_dual_write_flag=false
+dual_write_source=drill_harness
+SIMULATED_CUT read_source=v2 dual_write=true
+SWITCH read_source=v1 dual_write_still_on=true shadow_retained=true
+WRITE_ORDER v1_then_v2
+V1_LATEST v1_latest=true v1_id=2 shadow_id=2
+APP_READ app_read=serialize_lead lead_id=2 lead_temperature=Hot
+COUNTS v1_total=2 shadow_total=2 new_v1_rows=1 new_shadow_rows=1 duplicate=false
+CHECKSUM v1_checksum_unchanged=true before=51b472b025a5a5a663bb94ddbc2fd94b47d409abc9e7df41fdbcbcc26cc974b0 after=51b472b025a5a5a663bb94ddbc2fd94b47d409abc9e7df41fdbcbcc26cc974b0
+TABLE_CHECKSUM v1=74dcc1dfc5f87d343625837de657db38d2cc55a203537a726a09b7c09a7130c2 shadow=74dcc1dfc5f87d343625837de657db38d2cc55a203537a726a09b7c09a7130c2 table_checksum_equal=true
+INTEGRITY lost=false
+POST_CUTOVER_ROLLBACK_PASS

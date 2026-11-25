@@ -104,7 +104,9 @@ Transient delays are 1, 2, 4, 8, then 16 minutes. The cap is 5. This is the shad
 
 ## 4. Tested rollback
 
-`rollback()` was executed by `tests/test_v2_migration_dry_run.py` against an in-memory fixture. No socket was opened.
+Two moments, two procedures.
+
+**Pre-cutover.** `rollback()` was executed by `tests/test_v2_migration_dry_run.py` against an in-memory fixture. No socket was opened.
 
 | Step | Result the test asserts |
 |---|---|
@@ -114,12 +116,14 @@ Transient delays are 1, 2, 4, 8, then 16 minutes. The cap is 5. This is the shad
 | Inject schema-invalid JSON | Shadow stays empty for that aggregate. Retry is `reject`. |
 | Roll back | `dual_write` is false, `read_source` is `v1`, the shadow namespace is empty, the V1 fixture is byte-identical. |
 
-The same function covers the two moments in this package:
+**Post-cutover.** `switch_reads_to_v1(store)` moves reads to V1 and leaves dual-write on and the shadow in place. It does not call `rollback()`. It was executed on 25 November 2026 by `scripts/run_v2_post_cutover_rollback_drill.py` against throwaway database `v2_post_cutover_rollback` on `127.0.0.1`. Global `V2_DUAL_WRITE` stayed false; the harness set dual-write for that database only. One new record was written after the switch in production order (V1 commit, then shadow upsert), read back through `serialize_lead`, and the original V1 checksum was unchanged. Raw output is `plans/evidence/POST_CUTOVER_ROLLBACK.log`; the note is `plans/evidence/POST_CUTOVER_ROLLBACK.md`. Synthetic local fixture only.
+
+The two moments have different procedures:
 
 | Moment | Action | Data loss |
 |---|---|---|
 | Before the read cut | `rollback()`: dual-write off, drop the shadow namespace | None. V1 was never rewritten. |
-| After the read cut, dual-write still on | `rollback()`: reads flip back to V1, then drop the shadow namespace | None. V1 is still receiving writes. |
+| After the read cut, dual-write still on | `switch_reads_to_v1()`: reads move to V1; dual-write and the shadow stay on. `rollback()` is not called | None. V1 is still receiving writes and the shadow still matches. |
 | After V1 writes have stopped | Not this package. Restore from the pre-stop `live_dr.py` dump using `LIVE_DATABASE_URL` only | Only if that dump is missing. |
 
 The local INF-01 drill is not this rollback. The 1 November isolated run executed the reconciliation and the failure-injection half against throwaway local Postgres (section 6). It did not execute rollback against Postgres. The 2 November reliability run did (section 7). That run drops schema `v2` with SQL. It does not claim that `rollback()` opened a socket.

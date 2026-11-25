@@ -106,12 +106,28 @@ Dual-write failure semantics:
 
 ### Rollback
 
-The tested procedure is `rollback()` in `app/migration/dry_run.py`, executed by `tests/test_v2_migration_dry_run.py` on an in-memory fixture. It turns dual-write off, points reads at V1, and drops the shadow namespace. The V1 fixture is unchanged. No socket is opened. On 2 November 2026 the same outcome was executed as SQL on throwaway database `v2_nov2_reliability`: `DROP SCHEMA v2 CASCADE` left the V1 checksum unchanged and removed the shadow schema. Raw output is `plans/evidence/NOV2_RELIABILITY_DRILL.log`. That run did not touch Render or `realestate_db`, and it is not a live cutover.
+Two moments, two procedures. They are not the same call.
+
+**Pre-cutover** is `rollback()` in `app/migration/dry_run.py`, executed by
+`tests/test_v2_migration_dry_run.py` on an in-memory fixture. It turns dual-write off, points reads at V1, and drops
+the shadow namespace. The V1 fixture is unchanged. No socket is opened. On 2 November 2026 the same outcome was
+executed as SQL on throwaway database `v2_nov2_reliability`: `DROP SCHEMA v2 CASCADE` left the V1 checksum unchanged
+and removed the shadow schema. Raw output is `plans/evidence/NOV2_RELIABILITY_DRILL.log`. That run did not touch
+Render or `realestate_db`, and it is not a live cutover.
+
+**Post-cutover** is `switch_reads_to_v1(store)`. It moves reads to V1 and leaves dual-write on and the shadow in
+place, because V1 is still receiving writes and the shadow still matches it. It does not call `rollback()` and does
+not drop the shadow. Executed 25 November 2026 on throwaway database `v2_post_cutover_rollback` on `127.0.0.1`, with
+the global `V2_DUAL_WRITE` observed as false and dual-write enabled inside the drill harness only. One new record was
+written after the switch in production order (V1 commit, then shadow upsert); the newest V1 row was read through
+`serialize_lead`, the original V1 checksum was unchanged, and no committed row was lost or duplicated. Raw output is
+`plans/evidence/POST_CUTOVER_ROLLBACK.log`; the note is `plans/evidence/POST_CUTOVER_ROLLBACK.md`. This is a
+synthetic local fixture, not Render, not `realestate_db`, and not staging.
 
 | Moment | Action | Data loss |
 |---|---|---|
 | Before the read cut | `rollback()`: turn `V2_DUAL_WRITE` off and drop the shadow namespace | None. V1 was never rewritten |
-| After the read cut, dual-write still on | `rollback()`: flip reads back to V1, then drop the shadow namespace | None. V1 is still receiving writes |
+| After the read cut, dual-write still on | `switch_reads_to_v1()`: reads move to V1; dual-write and the shadow stay on. `rollback()` is not called | None. V1 is still receiving writes and the shadow still matches |
 | After V1 writes have stopped | Not this package. Restore from the pre-stop `live_dr.py` dump | Only if the dump is missing |
 
 The local INF-01 drill is not the rollback for a Render cut. Live rollback uses `live_dr.py` and `LIVE_DATABASE_URL` only. `assert_isolated_dsn` refuses a Render host and refuses a DSN equal to `LIVE_DATABASE_URL`.

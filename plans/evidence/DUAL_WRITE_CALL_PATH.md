@@ -3,6 +3,7 @@
 **Date:** 24 November 2026
 **Owner:** Aritro
 **Scope:** throwaway `v2_process_restart` on `127.0.0.1` only. Not Render. Not `realestate_db`. Not a live cutover. Not the post-cutover rollback.
+**Tier:** synthetic database fixtures. Not staging.
 
 `plans/evidence/NOV4_PROCESS_RESTART.log` is the 4 November run. This note does not replace it.
 
